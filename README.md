@@ -1,0 +1,72 @@
+# Agentic SDLC Platform
+
+Turns a client requirement into reviewed, versioned engineering documents under human approval.
+Product scope: [`docs/product/PRD-v0.7.md`](docs/product/PRD-v0.7.md) (authority).
+Architecture: [`docs/architecture/TDD-v1.0.4.md`](docs/architecture/TDD-v1.0.4.md).
+Open decisions, conflicts and security gates: [`docs/decisions/decision-register.md`](docs/decisions/decision-register.md).
+
+## Status
+
+**Milestone 1 — foundation.** Tenant-aware sign-in, projects, audit trail and security events, on a modular
+monolith with PostgreSQL Row-Level Security. Requirements, review, clarification and approval workflows follow
+in later milestones. Staff roles (Business Reviewer, Auditor, Platform Admin) wait for owner decision O-06.
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `migration` |
+| `backend/src/main/resources/db/changelog/` | Liquibase schema (applied only by the `migrate` process) |
+| `db/bootstrap/` | Database roles and schemas, run once by the PostgreSQL superuser |
+| `frontend/` | React 19, TypeScript, Vite |
+| `docker-compose.yml` | Local stack: PostgreSQL, migrate (one-shot), api, web (nginx) |
+
+## Security model (Milestone 1)
+
+- Three database roles: `sdlc_owner` (owns objects, cannot log in), `sdlc_migrator` (Liquibase, acts as owner),
+  `sdlc_app` (runtime: no owner rights, no RLS bypass, no DDL). The API never holds migration credentials.
+- Every tenant-owned table has `tenant_id NOT NULL`, composite keys and **forced** RLS. The tenant comes only from
+  the authenticated session and is set per transaction (`set_config(..., true)`), so pooled connections cannot leak it.
+- Requests for another tenant's resource return 404 and are recorded as security events.
+- Audit trail is append-only for the application role and written in the same transaction as the change.
+- Server-side sessions (HttpOnly, SameSite=Strict cookies), CSRF token header, Argon2id passwords, login throttling.
+
+## Run locally with Docker Compose
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and replace every placeholder value, then:
+
+```bash
+docker compose up --build
+```
+
+Open <http://localhost:8080> and sign in with organisation `acme`, email `alice@acme.test` and the
+`SDLC_DEV_SEED_PASSWORD` from `.env`. Tenant `globex` (`gina@globex.test`) is a second tenant for isolation checks.
+
+## Develop and test
+
+Backend tests need PostgreSQL 16. They use Testcontainers when Docker is available, or an existing server
+given by a superuser URL (the tests create their own roles, database and data):
+
+```bash
+cd backend && ./mvnw verify
+```
+
+```bash
+cd backend && SDLC_TEST_ADMIN_JDBC_URL=jdbc:postgresql://localhost:5432/postgres SDLC_TEST_ADMIN_USER=postgres SDLC_TEST_ADMIN_PASSWORD=... ./mvnw verify
+```
+
+Frontend:
+
+```bash
+cd frontend && npm ci && npm run lint && npm run typecheck && npm test && npm run build
+```
+
+Run the frontend against a local API (proxied, single origin):
+
+```bash
+cd frontend && SDLC_API_URL=http://localhost:8080 npm run dev
+```
