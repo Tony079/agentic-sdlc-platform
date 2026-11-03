@@ -32,7 +32,9 @@ class SchemaSecurityIT {
                 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
                 WHERE n.nspname = 'app' AND c.relkind = 'r' ORDER BY 1
                 """, String.class);
-        assertThat(tenantTables).containsExactly("app_user", "audit_event", "project");
+        assertThat(tenantTables).containsExactly("app_user", "audit_event", "idempotency_record", "project",
+                "requirement", "requirement_key_counter", "requirement_revision", "workflow_instance",
+                "workflow_transition");
 
         for (String table : tenantTables) {
             Map<String, Object> rls = admin.queryForMap("""
@@ -97,6 +99,39 @@ class SchemaSecurityIT {
             assertThatThrownBy(() -> statement.execute("DELETE FROM app.audit_event"))
                     .hasMessageContaining("permission denied");
         }
+    }
+
+    /** Revision and transition history is append-only for the runtime role; no Milestone 2 table allows DELETE. */
+    @Test
+    void historyTablesAreAppendOnlyAndNothingIsDeletable() {
+        for (String table : List.of("requirement_revision", "workflow_transition", "idempotency_record")) {
+            Map<String, Object> grants = admin.queryForMap("""
+                    SELECT has_table_privilege('sdlc_app', ?, 'INSERT') AS can_insert,
+                           has_any_column_privilege('sdlc_app', ?, 'UPDATE') AS can_update,
+                           has_table_privilege('sdlc_app', ?, 'TRUNCATE') AS can_truncate
+                    """, "app." + table, "app." + table, "app." + table);
+            assertThat(grants).as(table).containsEntry("can_insert", true).containsEntry("can_update", false)
+                    .containsEntry("can_truncate", false);
+        }
+        for (String table : List.of("requirement_key_counter", "requirement", "requirement_revision",
+                "workflow_instance", "workflow_transition", "idempotency_record")) {
+            Boolean canDelete = admin.queryForObject("SELECT has_table_privilege('sdlc_app', ?, 'DELETE')",
+                    Boolean.class, "app." + table);
+            assertThat(canDelete).as(table + " DELETE").isFalse();
+        }
+        // Mutable rows expose only the columns the application must change.
+        List<String> requirementColumns = admin.queryForList("""
+                SELECT column_name FROM information_schema.column_privileges
+                WHERE grantee = 'sdlc_app' AND table_schema = 'app' AND table_name = 'requirement'
+                  AND privilege_type = 'UPDATE' ORDER BY column_name
+                """, String.class);
+        assertThat(requirementColumns).containsExactly("current_revision_no", "updated_at", "version");
+        List<String> instanceColumns = admin.queryForList("""
+                SELECT column_name FROM information_schema.column_privileges
+                WHERE grantee = 'sdlc_app' AND table_schema = 'app' AND table_name = 'workflow_instance'
+                  AND privilege_type = 'UPDATE' ORDER BY column_name
+                """, String.class);
+        assertThat(instanceColumns).containsExactly("last_seq", "projected_state", "updated_at", "version");
     }
 
     @Test

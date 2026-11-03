@@ -97,3 +97,73 @@ td {
   padding: 0.5rem;
   border-bottom: 1px solid #e1e4ea;
 }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  border: none;
+  padding: 0;
+}
+
+.field label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+textarea,
+select {
+  padding: 0.5rem;
+  border: 1px solid #8a94a6;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.requirement-form {
+  max-width: 720px;
+}
+
+.notice {
+  background: #eef3ff;
+  border-left: 4px solid #2f6fed;
+  padding: 0.5rem 0.75rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 1rem 0;
+}
+
+.state {
+  font-size: 0.85em;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #e1e4ea;
+}
+
+.state-submitted {
+  background: #dff3e4;
+}
+
+.state-cancelled {
+  background: #f6dede;
+}
+
+dl.content dt {
+  font-weight: 600;
+  margin-top: 0.75rem;
+}
+
+dl.content dd {
+  margin: 0.25rem 0 0;
+  white-space: pre-wrap;
+}
+
+.cancel-form {
+  max-width: 480px;
+}

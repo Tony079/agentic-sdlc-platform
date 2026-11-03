@@ -1,17 +1,19 @@
-import type { ErrorEnvelope } from './types';
+import type { ErrorEnvelope, FieldError } from './types';
 
 const CSRF_COOKIE = 'XSRF-TOKEN';
 const CSRF_HEADER = 'X-CSRF-Token';
 
-/** An API error carrying the server's stable error code (TDD 20.1 envelope). */
+/** An API error carrying the server's stable error code and field details (TDD 20.1 envelope). */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details: FieldError[];
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details: FieldError[] = []) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -35,8 +37,8 @@ async function ensureCsrfToken(): Promise<string> {
   return issued;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+async function request<T>(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json', ...extraHeaders };
   if (method !== 'GET') {
     headers[CSRF_HEADER] = await ensureCsrfToken();
   }
@@ -60,12 +62,19 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       response.status,
       envelope?.error?.code ?? 'UNKNOWN_ERROR',
       envelope?.error?.message ?? `Request failed (${response.status}).`,
+      envelope?.error?.details ?? [],
     );
   }
   return data as T;
 }
 
+/** If-Match value for optimistic locking: the version from the last response. */
+export function ifMatch(version: number): Record<string, string> {
+  return { 'If-Match': `"${version}"` };
+}
+
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) => request<T>('POST', path, body, headers),
+  put: <T>(path: string, body: unknown, headers?: Record<string, string>) => request<T>('PUT', path, body, headers),
 };

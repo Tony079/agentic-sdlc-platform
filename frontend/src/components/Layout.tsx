@@ -19,7 +19,7 @@ export function Layout() {
       <header className="topbar">
         <span className="brand">Agentic SDLC Platform</span>
         <nav aria-label="Main">
-          <NavLink to="/projects">Projects</NavLink>
+          <NavLink to="/projects">Projects</NavLink> <NavLink to="/requirements">Requirements</NavLink>
         </nav>
         {me && (
           <div className="session">

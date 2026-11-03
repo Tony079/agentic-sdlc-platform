@@ -30,7 +30,7 @@ public class GlobalExceptionHandler {
         if (e instanceof RateLimitedException limited) {
             response.header("Retry-After", Long.toString(Math.max(1, limited.retryAfter().toSeconds())));
         }
-        return response.body(ApiError.of(e.code(), e.getMessage()));
+        return response.body(ApiError.of(e.code(), e.getMessage(), e.details()));
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
