@@ -35,6 +35,21 @@ public final class ApiClient {
         public String errorCode() {
             return body == null ? null : body.path("error").path("code").asString();
         }
+
+        /** Field-level error codes from a 422 response, as "field:CODE". */
+        public java.util.List<String> fieldErrors() {
+            if (body == null) {
+                return java.util.List.of();
+            }
+            return body.path("error").path("details").valueStream()
+                    .map(d -> d.path("field").asString() + ":" + d.path("code").asString())
+                    .toList();
+        }
+
+        public String header(String name) {
+            java.util.List<String> values = headers.get(name.toLowerCase(java.util.Locale.ROOT));
+            return values == null || values.isEmpty() ? null : values.get(0);
+        }
     }
 
     public Response get(String path) {
@@ -62,6 +77,19 @@ public final class ApiClient {
         if (withCsrf) {
             builder.header("X-CSRF-Token", csrfCookie().orElseThrow());
         }
+        headers.forEach(builder::header);
+        return send(builder.build());
+    }
+
+    /** PUT with the current CSRF token and extra headers (for example If-Match). */
+    public Response put(String path, Object body, Map<String, String> headers) {
+        if (csrfCookie().isEmpty()) {
+            get("/api/v1/auth/csrf");
+        }
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri(path))
+                .header("Content-Type", "application/json")
+                .header("X-CSRF-Token", csrfCookie().orElseThrow())
+                .PUT(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
         headers.forEach(builder::header);
         return send(builder.build());
     }

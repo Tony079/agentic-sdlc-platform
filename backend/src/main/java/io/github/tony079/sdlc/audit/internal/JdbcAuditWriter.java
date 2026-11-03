@@ -23,6 +23,16 @@ class JdbcAuditWriter implements AuditWriter {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void record(AuditAction action, String resourceType, UUID resourceId, AuditResult result) {
+        insert(action, resourceType, resourceId, result);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordIndependently(AuditAction action, String resourceType, UUID resourceId, AuditResult result) {
+        insert(action, resourceType, resourceId, result);
+    }
+
+    private void insert(AuditAction action, String resourceType, UUID resourceId, AuditResult result) {
         UUID actor = TenantContext.currentActor().orElse(null);
         jdbc.sql("""
                 INSERT INTO app.audit_event (tenant_id, actor_type, actor_id, action, resource_type, resource_id,

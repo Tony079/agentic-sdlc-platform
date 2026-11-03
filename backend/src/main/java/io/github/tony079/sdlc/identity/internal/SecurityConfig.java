@@ -77,7 +77,8 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
-                        .requestMatchers("/api/v1/projects", "/api/v1/projects/**")
+                        .requestMatchers("/api/v1/projects", "/api/v1/projects/**",
+                                        "/api/v1/requirements", "/api/v1/requirements/**")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
                         .requestMatchers("/api/v1/me", "/api/v1/auth/logout").authenticated()
                         .anyRequest().denyAll())
