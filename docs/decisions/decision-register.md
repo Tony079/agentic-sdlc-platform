@@ -4,7 +4,7 @@ Tracks owner decisions, PRD/TDD conflicts, security findings and implementation 
 **PRD v0.7 is the product authority; TDD v1.0.4 is the architecture reference. Neither is modified here.**
 Entries are only marked RESOLVED by a recorded owner decision or verified evidence.
 
-Last updated: 2026-11-02 (Milestone 1).
+Last updated: 2026-11-03 (Milestone 2).
 
 ## 1. Owner approvals recorded
 
@@ -16,6 +16,12 @@ Last updated: 2026-11-02 (Milestone 1).
 | D-M1-C | 2026-11-02 | Root Java package `io.github.tony079.sdlc`; one package per TDD module with `api` / `internal` | |
 | D-M1-D | 2026-11-02 | Login uses **organisation (tenant slug) + email + password**. The organisation only selects the tenant for credential lookup; afterwards the tenant comes from the session (FR-AUTH-06) | Provisional, reversible. Relates to C-12 |
 | D-M1-E | 2026-11-02 | Development seed (tenants acme/globex, 2 users each) created by the migrate process, only when `SDLC_DEV_SEED=true`, password from the environment | Never in production |
+| M2-PLAN | 2026-11-03 | Milestone 2 implementation plan approved, on separate branch `claude/milestone-2-requirements`; PR #1 stays Milestone 1 only | Conditions: syntax-only repository URL validation; ILLEGAL_TRANSITION_ATTEMPTED survives rollback; owner-only visibility; open gates stay visible |
+| M2-Q1 | 2026-11-03 | The eight PRD FR-REQ-01 fields. Max lengths: title 200, description 20,000, businessObjective 5,000, expectedOutcomes 10,000, acceptanceCriteria 10,000, repositoryUrl 300, constraints 10,000, integrations 10,000. All required at submission except acceptanceCriteria; "None"/"Not applicable" valid for constraints and integrations. repositoryUrl: required at submission for EXISTING_REPOSITORY, optional in drafts, must be absent for NEW_PRODUCT, stored as unvalidated text (syntax only) | Resolves C-02 by owner decision |
+| M2-Q2 | 2026-11-03 | A draft may contain only projectId, kind and title; completeness is validated at submission with field-specific 422 errors | |
+| M2-Q4 | 2026-11-03 | In Milestone 2 submission performs only DRAFT → SUBMITTED; routing (T02/T03) uses the transactional outbox in Milestone 3 | No synchronous routing |
+| M2-C03 | 2026-11-03 | Human-readable requirement key `REQ-000123`, generated server-side, unique and concurrency-safe; UUID remains the primary key | Resolves C-03 by owner decision. Implemented per tenant (D-M2-01) |
+| M2-C06 | 2026-11-03 | The Client Approver provides/attaches the repository link; the Business Reviewer may resume manual intake only after the link is available and validated; no Business Reviewer bypass | Rule recorded. **Not implemented in Milestone 2** (needs the repository milestone and O-06) |
 
 ## 2. Implementation decisions (Milestone 1)
 
@@ -29,6 +35,28 @@ Last updated: 2026-11-02 (Milestone 1).
 | D-M1-06 | Liquibase 5.0.4 (managed by Boot 4.1.2); usage analytics disabled (`liquibase.analytics.enabled=false`) | Owner to confirm Liquibase 5 licence terms are acceptable | OPEN — owner check |
 | D-M1-07 | Single tenant role per user (`CLIENT_USER` or `CLIENT_APPROVER`) | PRD does not require multiple roles per user in M1 | ACTIVE |
 | D-M1-08 | GitHub Actions referenced by major version tag, container images by tag | SHA/digest pinning to follow; Dependabot enabled | OPEN — hardening |
+
+### Implementation decisions (Milestone 2)
+
+| ID | Decision | Rationale / limit | Status |
+|---|---|---|---|
+| D-M2-01 | Requirement keys are per tenant (each tenant has its own REQ-000001…) | A global sequence would let one tenant infer another's volume | ACTIVE |
+| D-M2-02 | Workflow state consistency is enforced declaratively in the database: deferred composite FK from `workflow_instance (id, last_seq, projected_state)` to the latest transition, predecessor FK in `workflow_transition`, and a CHECK listing legal transitions | No SECURITY DEFINER functions or triggers. Each milestone extends the CHECK in a reviewed migration | ACTIVE |
+| D-M2-03 | One client-visible version (`requirement.version`, ETag / If-Match) guards edits, submit and cancel; missing If-Match → 428 | All three mutate under `WHERE version = :expected` and exclude each other | ACTIVE |
+| D-M2-04 | Refused transitions are audited with `recordIndependently` (separate transaction) | Condition 3 of the M2 approval; proven by `AuditIT.illegalTransitionAttemptIsAuditedEvenThoughTheRequestRollsBack` | ACTIVE |
+| D-M2-05 | Idempotency records are kept indefinitely | The 24-hour replay window (TDD 20.1) and cleanup belong to the retention milestone | ACTIVE — known limit |
+| D-M2-06 | Cancellation reason: 10–500 characters, stored on the transition row (tenant-scoped); never in the audit trail | Audit stays content-free | ACTIVE |
+| D-M2-07 | The requirement list reads the workflow projection with a join; only the workflow module writes workflow tables | Reads are allowed by TDD 9.5; ArchUnit cannot inspect SQL, the schema constraints are the backstop | ACTIVE |
+
+### Pre-implementation verification (Milestone 2, scratch PostgreSQL 16.15)
+
+| ID | Check | Result |
+|---|---|---|
+| V-M2-1 | Per-tenant key generation, 60 concurrent transactions with rollbacks | Distinct, contiguous, rollback consumes no number. Re-proven by `RequirementConcurrencyIT` and `RequirementTransactionIT` |
+| V-M2-2 | Optimistic locking under concurrent writers | Second writer updates 0 rows → 409. Re-proven by `RequirementConcurrencyIT` |
+| V-M2-3 | Append-only revisions and transitions | UPDATE/DELETE/TRUNCATE denied for `sdlc_app`. Re-proven by `SchemaSecurityIT`, `RequirementRevisionIT`, `WorkflowConsistencyIT` |
+| V-M2-4 | projected_state ↔ transition history consistency | Database refuses state change without history, wrong predecessor, illegal pair, branching, leaving CANCELLED. Re-proven by `WorkflowConsistencyIT` |
+| V-M2-5 | Idempotent create under concurrency | **Finding:** reading the winner inside the claiming statement uses a stale snapshot and returns nothing. Fixed design: claim, then read in a separate statement. Proven by `RequirementTransactionIT` (commit and rollback races) |
 
 ## 3. Open owner decisions (from TDD v1.0.4 section 32; statuses unchanged)
 
@@ -52,12 +80,12 @@ Last updated: 2026-11-02 (Milestone 1).
 | ID | Summary | Decision owner | Needed before |
 |---|---|---|---|
 | C-01 | Repository registrant: PRD "admin" vs TDD Client Approver (TDD also self-inconsistent) | PO (O-05), SO | Repository milestone |
-| C-02 | Requirement form fields: PRD FR-REQ-01 lists 8 fields; TDD 20.4 has title/description | AO | Requirements milestone |
-| C-03 | Human-readable requirement ID (`REQ-000123`) absent in TDD | PO, AO | Requirements milestone |
+| C-02 | Requirement form fields: PRD FR-REQ-01 lists 8 fields; TDD 20.4 has title/description | AO | **RESOLVED by owner decision M2-Q1** (implemented in Milestone 2; TDD text unchanged) |
+| C-03 | Human-readable requirement ID (`REQ-000123`) absent in TDD | PO, AO | **RESOLVED by owner decision M2-C03** (implemented in Milestone 2; TDD text unchanged) |
 | C-04 | Document preview (FR-UPL-11) absent in TDD API | AO, SO | Upload milestone |
 | C-05 | Reviewer-raised clarification (FR-CLR-13) has no TDD endpoint | AO | Clarification milestone |
-| C-06 | MANUAL_INTAKE resume/conversion vs who may link a repository | PO, AO | Requirements milestone |
-| C-07 | Platform Admin cancel during MANUAL_INTAKE (PRD-internal ambiguity) | PO | Requirements milestone |
+| C-06 | MANUAL_INTAKE resume/conversion vs who may link a repository | PO, AO | Rule decided (M2-C06); implementation pending the repository milestone and O-06 |
+| C-07 | Platform Admin cancel during MANUAL_INTAKE (PRD-internal ambiguity) | PO | **PROPOSED, pending explicit Product Owner confirmation:** Platform Admin may cancel with a mandatory reason and an immutable audit event; nothing deleted. Not built (no Platform Admin accounts until O-06/O-13) |
 | C-08 | Audit purge executable by app role in TDD SQL (see S-01) | SO | Retention milestone |
 | C-09 | Client comment / which client role requests changes | PO | Client-view milestone |
 | C-10 | TDD 9.7 cites PRD "6B" for document states (should be 6C) | TDD author | Editorial |
@@ -68,6 +96,7 @@ Last updated: 2026-11-02 (Milestone 1).
 | C-15 | O-31 platform check "in M0" needs a target platform (O-07) | OO, AO | Production |
 | C-16 | Version diff P0 (FR-UI-02) vs P1 (FR-DOC-06) | PO (O-22) | Review milestone |
 | C-17 | P0 admin alerts (AC-EXT-33) vs P1 in-app alerts (FR-MON-02) | PO, SO | Upload milestone |
+| **C-18** | **Requirement visibility.** PRD section 4: "Client users can only see their own requirements." Decision M2-C06 has the Client Approver attach the repository link, which under the PRD wording they could not do for a Client User's requirement they cannot see. **Security implications:** tenant-wide approver visibility widens who in a tenant can read requirement content (weaker least privilege, larger exposure if an approver account is compromised); owner-only visibility blocks the approver's role in C-06. **Implemented now:** owner-only for both client roles; tenant-wide approver visibility is **not** built | PO | **OPEN** — before the repository milestone |
 
 ## 5. Security findings
 
@@ -76,10 +105,19 @@ Last updated: 2026-11-02 (Milestone 1).
 | S-01 | TDD archive: `sys.purge_expired_audit` executable by the app role | No — M1 schema has no purge function; `sdlc_app` has no UPDATE/DELETE on `audit_event` (verified by `SchemaSecurityIT`) | **OPEN** for the archive; must be resolved before any audit-retention implementation |
 | S-02 | TDD archive: app role may INSERT/UPDATE platform role assignments | No — M1 has no platform role tables | **OPEN**; must be resolved before staff roles (O-06) / provisioning (O-13) |
 | S-04 | Empty tenant setting on pooled connections | M1 helper uses `nullif(..., '')`; **verified** by `RlsPoolLeakIT` (one physical connection, no leak, zero rows without context, no error) | Verified for the M1 schema only; remains OPEN for the archive |
-| S-06 | TDD archive: REPO_VALIDATING retry safeguard (S-27) not implemented | No — no queue/retry in M1 | **OPEN**; must be implemented with the queue/admin-retry milestone |
+| S-06 | TDD archive: REPO_VALIDATING retry safeguard (S-27) not implemented | No — no queue/retry yet. Milestone 2's own transition CHECK allows only CREATE, T01 and T29, so no retry transition exists in this schema | **OPEN**; must be implemented with the queue/admin-retry milestone |
 | S-03, S-05, S-07..S-12 | See planning record | — | OPEN |
 
-## 6. Acceptance-criteria progress (Milestone 1)
+## 6. Acceptance-criteria progress
+
+### Milestone 2
+
+No acceptance criterion is claimed complete. Milestone 2 contributes evidence toward: AC-CORE-01 (requirement with ID
+and SUBMITTED state, audited; document attachments are a later milestone), FR-REQ-01/03/04/06/07 (notice), FR-AUTH-04/13
+(owner-only visibility with security events), FR-WF-01/09 (persisted state with transition history), FR-AUD-01/03.
+AC-DOC-18 / AC-EXT-28 (MANUAL_INTAKE routing) wait for the outbox in Milestone 3 (M2-Q4).
+
+### Milestone 1
 
 No acceptance criterion is claimed complete. Milestone 1 contributes evidence toward:
 AC-CORE-17 (build, tests without an LLM key; Compose smoke runs in CI), AC-EXT-36 (RLS, non-bypass role,

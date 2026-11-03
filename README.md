@@ -8,14 +8,21 @@ Open decisions, conflicts and security gates: [`docs/decisions/decision-register
 ## Status
 
 **Milestone 1 — foundation.** Tenant-aware sign-in, projects, audit trail and security events, on a modular
-monolith with PostgreSQL Row-Level Security. Requirements, review, clarification and approval workflows follow
-in later milestones. Staff roles (Business Reviewer, Auditor, Platform Admin) wait for owner decision O-06.
+monolith with PostgreSQL Row-Level Security.
+
+**Milestone 2 — requirement management.** Create, edit, view, submit and cancel requirements with the eight PRD
+FR-REQ-01 fields, human-readable keys (`REQ-000123`), immutable revisions, optimistic locking, idempotent creation and
+a database-enforced workflow history (DRAFT → SUBMITTED, cancel). Requirements are visible to their owner only.
+Routing after submission (manual intake / repository validation) arrives with the transactional outbox in Milestone 3.
+
+Review, clarification and approval workflows follow. Staff roles (Business Reviewer, Auditor, Platform Admin) wait
+for owner decision O-06.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `migration` |
+| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `requirement`, `workflow`, `migration` |
 | `backend/src/main/resources/db/changelog/` | Liquibase schema (applied only by the `migrate` process) |
 | `db/bootstrap/` | Database roles and schemas, run once by the PostgreSQL superuser |
 | `frontend/` | React 19, TypeScript, Vite |
