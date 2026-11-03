@@ -1,0 +1,9 @@
+# Milestone 1 schema. Applied only by the one-shot "migrate" process (login sdlc_migrator acting as sdlc_owner).
+# The running application has Liquibase disabled and holds no migration credentials.
+# This schema is authored for Milestone 1; the TDD evidence archive is NOT imported (decision register, CP-2).
+databaseChangeLog:
+  - include: { file: changes/0001-tenant-identity.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0002-spring-session.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0003-audit-security-events.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0004-project.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0005-rls-and-grants.sql, relativeToChangelogFile: true }

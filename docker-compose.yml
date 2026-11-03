@@ -1,0 +1,68 @@
+# Local development stack. Copy .env.example to .env and replace every placeholder secret first.
+# Not production configuration: no TLS, development seed data, cookies without the Secure flag.
+#
+#   docker compose up --build        then open http://localhost:${SDLC_WEB_PORT:-8080}
+#
+# MinIO (object storage) and ClamAV (scanner) are added with the document-upload milestone (TDD M2).
+name: sdlc-platform
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: postgres
+      SDLC_DB_NAME: sdlc
+      SDLC_DB_MIGRATOR_PASSWORD: ${SDLC_DB_MIGRATOR_PASSWORD:?set SDLC_DB_MIGRATOR_PASSWORD in .env}
+      SDLC_DB_APP_PASSWORD: ${SDLC_DB_APP_PASSWORD:?set SDLC_DB_APP_PASSWORD in .env}
+      SDLC_BOOTSTRAP_DIR: /sdlc-bootstrap
+    volumes:
+      - ./db/bootstrap:/sdlc-bootstrap:ro
+      - ./db/bootstrap/init.sh:/docker-entrypoint-initdb.d/10-sdlc-init.sh:ro
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sdlc"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # The database port is not published. Uncomment for local tooling only:
+    # ports: ["127.0.0.1:5432:5432"]
+
+  migrate:
+    build: ./backend
+    image: sdlc-platform-backend:local
+    command: ["--spring.profiles.active=migrate"]
+    environment:
+      SDLC_DB_URL: jdbc:postgresql://db:5432/sdlc
+      SDLC_DB_MIGRATOR_PASSWORD: ${SDLC_DB_MIGRATOR_PASSWORD}
+      SDLC_DEV_SEED: ${SDLC_DEV_SEED:-false}
+      SDLC_DEV_SEED_PASSWORD: ${SDLC_DEV_SEED_PASSWORD:-}
+      SDLC_LOG_FORMAT: ""
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: sdlc-platform-backend:local
+    environment:
+      SDLC_DB_URL: jdbc:postgresql://db:5432/sdlc
+      SDLC_DB_APP_PASSWORD: ${SDLC_DB_APP_PASSWORD}
+      # Local HTTP only. Must be true (the default) behind TLS.
+      SDLC_COOKIE_SECURE: "false"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:${SDLC_WEB_PORT:-8080}:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  db-data:

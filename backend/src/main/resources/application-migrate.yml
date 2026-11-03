@@ -1,0 +1,24 @@
+# One-shot migration process: runs Liquibase as sdlc_migrator acting as sdlc_owner, optionally seeds
+# development data, then exits. Never used by the running API.
+spring:
+  main:
+    web-application-type: none
+  datasource:
+    username: ${SDLC_DB_MIGRATOR_USER:sdlc_migrator}
+    password: ${SDLC_DB_MIGRATOR_PASSWORD:}
+    hikari:
+      maximum-pool-size: 2
+      data-source-properties:
+        # Objects are created as (and owned by) sdlc_owner; the migrator login holds no other authority.
+        options: "-c role=sdlc_owner"
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: app
+    liquibase-schema: migration_meta
+
+sdlc:
+  dev-seed:
+    # Development/demo data only. Must be explicitly enabled and needs a password from the environment.
+    enabled: ${SDLC_DEV_SEED:false}
+    password: ${SDLC_DEV_SEED_PASSWORD:}
