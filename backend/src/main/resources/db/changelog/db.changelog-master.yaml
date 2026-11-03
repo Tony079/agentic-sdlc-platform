@@ -7,3 +7,8 @@ databaseChangeLog:
   - include: { file: changes/0003-audit-security-events.sql, relativeToChangelogFile: true }
   - include: { file: changes/0004-project.sql, relativeToChangelogFile: true }
   - include: { file: changes/0005-rls-and-grants.sql, relativeToChangelogFile: true }
+  # Milestone 2: requirements, workflow projection and idempotency. 0001-0005 are applied and never edited.
+  - include: { file: changes/0006-requirement.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0007-workflow.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0008-idempotency.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0009-m2-rls-and-grants.sql, relativeToChangelogFile: true }
