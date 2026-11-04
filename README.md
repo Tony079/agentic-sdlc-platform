@@ -13,7 +13,13 @@ monolith with PostgreSQL Row-Level Security.
 **Milestone 2 — requirement management.** Create, edit, view, submit and cancel requirements with the eight PRD
 FR-REQ-01 fields, human-readable keys (`REQ-000123`), immutable revisions, optimistic locking, idempotent creation and
 a database-enforced workflow history (DRAFT → SUBMITTED, cancel). Requirements are visible to their owner only.
-Routing after submission (manual intake / repository validation) arrives with the transactional outbox in Milestone 3.
+
+**Milestone 3 — transactional outbox, job queue and routing.** Submission writes `RequirementSubmitted` to a
+transactional outbox in the same transaction. A separate **worker** process (login `sdlc_worker`) delivers events
+tenant by tenant under RLS and routes the requirement: existing repository → `REPO_VALIDATING` (a repository-validation
+job is queued; its handler arrives with the repository milestone), new product → `MANUAL_INTAKE`. The PostgreSQL job
+queue has leases, heartbeats, fencing epochs, bounded retries with backoff, dead-lettering and crash recovery. After
+submission the requirement type is locked; routed requirements are no longer editable.
 
 Review, clarification and approval workflows follow. Staff roles (Business Reviewer, Auditor, Platform Admin) wait
 for owner decision O-06.
@@ -22,16 +28,18 @@ for owner decision O-06.
 
 | Path | Contents |
 |---|---|
-| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `requirement`, `workflow`, `migration` |
+| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `requirement`, `workflow`, `outbox`, `queue`, `migration` |
 | `backend/src/main/resources/db/changelog/` | Liquibase schema (applied only by the `migrate` process) |
 | `db/bootstrap/` | Database roles and schemas, run once by the PostgreSQL superuser |
 | `frontend/` | React 19, TypeScript, Vite |
-| `docker-compose.yml` | Local stack: PostgreSQL, migrate (one-shot), api, web (nginx) |
+| `docker-compose.yml` | Local stack: PostgreSQL, migrate (one-shot), api, worker, web (nginx) |
 
 ## Security model (Milestone 1)
 
-- Three database roles: `sdlc_owner` (owns objects, cannot log in), `sdlc_migrator` (Liquibase, acts as owner),
-  `sdlc_app` (runtime: no owner rights, no RLS bypass, no DDL). The API never holds migration credentials.
+- Four database roles: `sdlc_owner` (owns objects, cannot log in), `sdlc_migrator` (Liquibase, acts as owner),
+  `sdlc_app` (API runtime: no owner rights, no RLS bypass, no DDL) and `sdlc_worker` (background worker: the same
+  restrictions, column-level grants for outbox delivery and the job queue, no DELETE, no access to requirement
+  content). The API never holds migration or worker credentials and cannot mark events delivered or touch jobs.
 - Every tenant-owned table has `tenant_id NOT NULL`, composite keys and **forced** RLS. The tenant comes only from
   the authenticated session and is set per transaction (`set_config(..., true)`), so pooled connections cannot leak it.
 - Requests for another tenant's resource return 404 and are recorded as security events.
