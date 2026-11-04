@@ -110,6 +110,8 @@ export function RequirementFormPage() {
         setMessage('This requirement was changed elsewhere. Reload the page to see the latest version.');
       } else if (error instanceof ApiError && error.code === 'REQUIREMENT_NOT_EDITABLE') {
         setMessage('This requirement can no longer be edited.');
+      } else if (error instanceof ApiError && error.code === 'KIND_CHANGE_NOT_ALLOWED') {
+        setMessage('The requirement type cannot be changed after submission.');
       } else {
         setMessage('The requirement could not be saved.');
       }
@@ -131,6 +133,7 @@ export function RequirementFormPage() {
         initial={initial}
         projects={projects.data?.items ?? []}
         projectLocked={Boolean(current)}
+        kindLocked={current?.state === 'SUBMITTED'}
         fieldErrors={fieldErrors}
         busy={busy}
         onSave={onSave}

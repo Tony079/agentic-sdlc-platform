@@ -136,6 +136,29 @@ describe('RequirementForm', () => {
     expect(screen.getByRole('heading', { name: 'Edit REQ-000001' })).toBeInTheDocument();
   });
 
+  it('locks the requirement type after submission and explains a refused type change', async () => {
+    document.cookie = 'XSRF-TOKEN=t1; path=/';
+    mockFetch((url, init) => {
+      if (url === '/api/v1/requirements/r1' && init.method === 'PUT') {
+        return { status: 409, body: { error: { code: 'KIND_CHANGE_NOT_ALLOWED', message: 'x', correlationId: null } } };
+      }
+      if (url === '/api/v1/requirements/r1') return { status: 200, body: detail({ state: 'SUBMITTED' }) };
+      return { status: 200, body: projects };
+    });
+    renderWithProviders(
+      <Routes>
+        <Route path="/requirements/:id/edit" element={<RequirementFormPage />} />
+      </Routes>,
+      '/requirements/r1/edit',
+    );
+    const user = userEvent.setup();
+    expect(await screen.findByLabelText('New product')).toBeDisabled();
+    expect(screen.getByLabelText('Enhancement to an existing repository')).toBeDisabled();
+    expect(screen.getByText('The requirement type cannot be changed after submission.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The requirement type cannot be changed after submission.');
+  });
+
   it('save and submit sends the submit with the saved version', async () => {
     document.cookie = 'XSRF-TOKEN=t1; path=/';
     const calls = mockFetch((url, init) => {

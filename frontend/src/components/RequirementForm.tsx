@@ -63,13 +63,15 @@ interface Props {
   projects: Project[];
   /** Project cannot change after creation. */
   projectLocked: boolean;
+  /** The requirement type cannot change after submission (decision Q-M3-5). */
+  kindLocked?: boolean;
   fieldErrors: FieldError[];
   busy: boolean;
   onSave: (values: RequirementFormValues, submitAfterSave: boolean) => void;
 }
 
 /** The requirement form (PRD FR-REQ-01). Drafts may be partial; completeness is checked by the server at submission. */
-export function RequirementForm({ initial, projects, projectLocked, fieldErrors, busy, onSave }: Props) {
+export function RequirementForm({ initial, projects, projectLocked, kindLocked = false, fieldErrors, busy, onSave }: Props) {
   const [values, setValues] = useState<RequirementFormValues>(initial);
 
   const errorFor = (field: string) => fieldErrors.find((e) => e.field === field);
@@ -143,14 +145,22 @@ export function RequirementForm({ initial, projects, projectLocked, fieldErrors,
             type="radio"
             name="kind"
             checked={values.kind === 'EXISTING_REPOSITORY'}
+            disabled={kindLocked}
             onChange={() => setKind('EXISTING_REPOSITORY')}
           />
           Enhancement to an existing repository
         </label>
         <label className="inline">
-          <input type="radio" name="kind" checked={values.kind === 'NEW_PRODUCT'} onChange={() => setKind('NEW_PRODUCT')} />
+          <input
+            type="radio"
+            name="kind"
+            checked={values.kind === 'NEW_PRODUCT'}
+            disabled={kindLocked}
+            onChange={() => setKind('NEW_PRODUCT')}
+          />
           New product
         </label>
+        {kindLocked && <p className="hint">The requirement type cannot be changed after submission.</p>}
         {values.kind === 'NEW_PRODUCT' && (
           <p className="notice" role="note">
             Automated greenfield analysis and scaffolding are not supported yet. New-product requests are kept for manual
