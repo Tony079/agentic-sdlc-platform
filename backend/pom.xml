@@ -64,6 +64,12 @@
             <artifactId>bcprov-jdk18on</artifactId>
             <version>${bouncycastle.version}</version>
         </dependency>
+        <!-- PDF text extraction, used only inside the separate extractor process (TDD 15.7). Apache-2.0. -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.5</version>
+        </dependency>
 
         <!-- Test -->
         <dependency>

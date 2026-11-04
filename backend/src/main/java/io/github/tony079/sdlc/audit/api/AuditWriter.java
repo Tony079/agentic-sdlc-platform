@@ -29,6 +29,8 @@ public interface AuditWriter {
         // Milestone 3: engine routing and background processing (actor SYSTEM).
         REQUIREMENT_ROUTED, OUTBOX_EVENT_DEAD, JOB_DEAD, JOBS_CANCELLED,
         // Milestone 4: attachments.
-        DOCUMENT_UPLOADED, DOCUMENT_DOWNLOADED, DOCUMENT_REMOVED, DOCUMENT_SCANNED_CLEAN, DOCUMENT_REJECTED
+        DOCUMENT_UPLOADED, DOCUMENT_DOWNLOADED, DOCUMENT_REMOVED, DOCUMENT_SCANNED_CLEAN, DOCUMENT_REJECTED,
+        // Milestone 5: processing.
+        DOCUMENT_PROCESSED, DOCUMENT_NOT_ANALYSABLE
     }
 }
