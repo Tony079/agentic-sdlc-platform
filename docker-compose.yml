@@ -71,6 +71,8 @@ services:
       SDLC_DB_WORKER_PASSWORD: ${SDLC_DB_WORKER_PASSWORD}
       SDLC_STORAGE_KEY: ${SDLC_STORAGE_KEY}
       SDLC_SCANNER_HOST: clamav
+      # Local development only: synthetic documents. Real client documents need O-15 (extractor isolation) first.
+      SDLC_DOCUMENT_EXTRACTION_ENABLED: "true"
     volumes:
       - doc-store:/var/lib/sdlc/documents
     depends_on:

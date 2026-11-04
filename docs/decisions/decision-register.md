@@ -4,7 +4,7 @@ Tracks owner decisions, PRD/TDD conflicts, security findings and implementation 
 **PRD v0.7 is the product authority; TDD v1.0.4 is the architecture reference. Neither is modified here.**
 Entries are only marked RESOLVED by a recorded owner decision or verified evidence.
 
-Last updated: 2026-11-04 (Milestone 4).
+Last updated: 2026-11-04 (Milestone 5).
 
 ## 1. Owner approvals recorded
 
@@ -86,6 +86,24 @@ Last updated: 2026-11-04 (Milestone 4).
 | D-M4-08 | Malware: version REJECTED_MALWARE, HIGH security event `MALWARE_DETECTED`, `ALERT` log line with the signature name (never shown to clients). The Platform Admin alert channel is C-17 (open) | AC-EXT-33 alert evidence partial | ACTIVE |
 | D-M4-09 | No ClamAV daemon in the development container: integration tests use a protocol-level clamd test double (`FakeClamd`, real INSTREAM protocol); CI's Compose smoke test uses the real `clamav/clamav:1.4` image with the EICAR test string | Honest evidence split | ACTIVE |
 
+### Implementation decisions (Milestone 5: document processing)
+
+| ID | Decision | Rationale / limit | Status |
+|---|---|---|---|
+| D-M5-01 | **Extraction is behind a secure gate**: `sdlc.documents.extraction.enabled` defaults to **false**; local Compose and tests switch it on for synthetic documents only | **O-15 OPEN — BLOCKING**: the M3S isolation spike has not run; no isolation claim is made | GATED by O-15 |
+| D-M5-02 | The parser runs in a separate OS process (`ExtractorMain`, PDFBox 3.0.5 for PDF, hardened StAX for DOCX, strict decoding for TXT/Markdown) with its own 256 MB heap, one CPU, a wall-clock limit, an **empty environment**, `/dev/null` stdin and a private per-job/epoch workspace; killed on timeout | Process isolation only. Container isolation (non-root, read-only root, no network, seccomp, extractor/coordinator pairs, TDD 15.7) is **not built** and is part of O-15 | ACTIVE — partial isolation |
+| D-M5-03 | The coordinator treats extractor output as untrusted: manifest schema and outcome list, SHA-256 of the chunk file, sequential ordinals, size/length caps, strict UTF-8; anything else is EXTRACTION_FAILED_FINAL `OUTPUT_INVALID` and nothing is stored | TDD 15.6 | ACTIVE |
+| D-M5-04 | Deterministic outcomes are final and not retried: encrypted → UNSUPPORTED_CONTENT `ENCRYPTED`; no text layer (image-only, no OCR) → UNSUPPORTED_CONTENT `NO_TEXT_LAYER`; corrupt or over 2 M characters / 5,000 chunks → EXTRACTION_FAILED_FINAL. Transient failures (timeout, crash, I/O) use the job type's 3 attempts; a dead job ends EXTRACTION_FAILED_FINAL `EXTRACTION_RETRIES_EXHAUSTED` | PRD AC-EXT-24, AC-DOC-10, FR-UPL-12 | ACTIVE |
+| D-M5-05 | States EXTRACTING and EXTRACTION_FAILED (retry pending) are not written; READY_FOR_EXTRACTION goes directly to its final state in the fenced commit | Same reasoning as D-M4-04 | ACTIVE |
+| D-M5-06 | No extraction is scheduled for a requirement in MANUAL_INTAKE (WF-M01); scheduling on resume (T04) waits for O-06. Documents scanned while the gate was off are not re-enqueued automatically when it is switched on | | ACTIVE — known limit |
+| D-M5-07 | Chunks (max 2,000 characters, page or heading label, SHA-256) are stored in `document_chunk` with a `simple` full-text index; worker-only grants; no embeddings (FR-DPR-09) | The API cannot read extracted text yet; evidence views come with the BRD | ACTIVE |
+
+### Pre-implementation verification (Milestone 5)
+
+| ID | Check | Result |
+|---|---|---|
+| V-M5-1 | Extractor launch from the packaged Spring Boot jar | **Finding (fixed before commit):** with `java -jar <relative path>` the class path was relative and the extractor (started in its own working directory) could not find the jar: every job failed `EXTRACTOR_CRASHED` and went dead, while tests (absolute class path) passed. Found by running the real jar end to end; class-path entries are now made absolute. Re-verified: Markdown upload → PROCESSED with heading label through the packaged jar |
+
 ### Pre-implementation verification (Milestone 4)
 
 | ID | Check | Result |
@@ -153,6 +171,14 @@ Last updated: 2026-11-04 (Milestone 4).
 | S-03, S-05, S-07..S-12 | See planning record | — | OPEN |
 
 ## 6. Acceptance-criteria progress
+
+### Milestone 5
+
+No acceptance criterion is claimed complete. Evidence toward: AC-DOC-10 (image-only and encrypted PDFs are not
+analysed), AC-DOC-16 (processing failure contained, workflow unchanged), AC-DOC-17 (idempotent extraction: state check
+under lock, unique keys), AC-EXT-24 (three attempts with backoff, transient errors only), AC-EXT-42 precondition (no
+extraction in MANUAL_INTAKE), FR-DPR-01..10 (FR-DPR-07 only at process level, O-15). **Real client documents remain
+blocked by O-15.**
 
 ### Milestone 4
 
