@@ -1,27 +1,36 @@
 package io.github.tony079.sdlc.workflow.internal;
 
+import java.util.List;
 import java.util.Optional;
 
 import io.github.tony079.sdlc.workflow.api.Transition;
 import io.github.tony079.sdlc.workflow.api.WorkflowState;
 
 /**
- * The legal transitions enabled in Milestone 2 (subset of TDD 9.3). Deterministic: the target depends only on the
- * transition and the current state. Mirrors the CHECK constraint on app.workflow_transition, which is the
- * database backstop if this table and the schema ever disagree.
+ * The legal transitions enabled so far (subset of TDD 9.3). Deterministic: the target depends only on the
+ * transition and the current state. Mirrors the CHECK constraints on app.workflow_transition and the stored
+ * definition R1-v1 (verified at startup by {@link DefinitionVerifier}); the database is the backstop.
  */
 final class TransitionTable {
+
+    record Rule(Transition transition, WorkflowState from, WorkflowState to) {
+    }
+
+    static final List<Rule> RULES = List.of(
+            new Rule(Transition.T01_SUBMIT, WorkflowState.DRAFT, WorkflowState.SUBMITTED),
+            new Rule(Transition.T02_ROUTE_REPOSITORY, WorkflowState.SUBMITTED, WorkflowState.REPO_VALIDATING),
+            new Rule(Transition.T03_ROUTE_MANUAL_INTAKE, WorkflowState.SUBMITTED, WorkflowState.MANUAL_INTAKE),
+            // PRD section 6: CANCELLED is reachable from any non-terminal state; these are the states reachable so far.
+            new Rule(Transition.T29_CANCEL, WorkflowState.DRAFT, WorkflowState.CANCELLED),
+            new Rule(Transition.T29_CANCEL, WorkflowState.SUBMITTED, WorkflowState.CANCELLED),
+            new Rule(Transition.T29_CANCEL, WorkflowState.MANUAL_INTAKE, WorkflowState.CANCELLED),
+            new Rule(Transition.T29_CANCEL, WorkflowState.REPO_VALIDATING, WorkflowState.CANCELLED));
 
     private TransitionTable() {
     }
 
     /** The target state, or empty if the transition is not legal from {@code from}. */
     static Optional<WorkflowState> target(Transition transition, WorkflowState from) {
-        return switch (transition) {
-            case T01_SUBMIT -> from == WorkflowState.DRAFT ? Optional.of(WorkflowState.SUBMITTED) : Optional.empty();
-            // PRD section 6: CANCELLED is reachable from any non-terminal state. Only DRAFT and SUBMITTED exist so far.
-            case T29_CANCEL -> from == WorkflowState.DRAFT || from == WorkflowState.SUBMITTED
-                    ? Optional.of(WorkflowState.CANCELLED) : Optional.empty();
-        };
+        return RULES.stream().filter(r -> r.transition() == transition && r.from() == from).map(Rule::to).findFirst();
     }
 }

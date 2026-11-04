@@ -121,6 +121,19 @@ class WorkflowConsistencyIT {
         assertThat(state()).isEqualTo("CANCELLED");
     }
 
+    /** Milestone 3: routing (T02/T03) is an engine transition; the database refuses it with a user actor. */
+    @Test
+    void routingTransitionsAreRefusedForAUserActor() {
+        move(2, "DRAFT", "SUBMITTED", "T01_SUBMIT");
+        assertThatThrownBy(() -> moveRaw(3, "SUBMITTED", "REPO_VALIDATING", "T02_ROUTE_REPOSITORY"))
+                .rootCause().hasMessageContaining("workflow_transition_engine_actor_check");
+        assertThatThrownBy(() -> moveRaw(3, "SUBMITTED", "MANUAL_INTAKE", "T03_ROUTE_MANUAL_INTAKE"))
+                .rootCause().hasMessageContaining("workflow_transition_engine_actor_check");
+        assertThatThrownBy(() -> moveRaw(3, "SUBMITTED", "MANUAL_INTAKE", "T02_ROUTE_REPOSITORY"))
+                .rootCause().hasMessageContaining("violates check constraint");
+        assertThat(state()).isEqualTo("SUBMITTED");
+    }
+
     @Test
     void historyCannotBranch() {
         assertThatThrownBy(() -> inTenant(() -> {

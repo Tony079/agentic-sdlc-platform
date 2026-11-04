@@ -40,6 +40,7 @@ public final class TestDatabase {
     private final String databaseName;
     private final String appPassword = randomSecret();
     private final String migratorPassword = randomSecret();
+    private final String workerPassword = randomSecret();
 
     private TestDatabase(String adminBaseUrl, String adminUser, String adminPassword) {
         this.adminBaseUrl = adminBaseUrl;
@@ -78,6 +79,19 @@ public final class TestDatabase {
         return appPassword;
     }
 
+    public String workerUser() {
+        return "sdlc_worker";
+    }
+
+    public String workerPassword() {
+        return workerPassword;
+    }
+
+    /** Opens a raw connection as sdlc_worker (for privilege tests). */
+    public Connection workerConnection() throws SQLException {
+        return DriverManager.getConnection(appUrl(), workerUser(), workerPassword);
+    }
+
     /** Opens a raw connection as sdlc_app (for privilege tests). */
     public Connection appConnection() throws SQLException {
         return DriverManager.getConnection(appUrl(), appUser(), appPassword);
@@ -99,6 +113,7 @@ public final class TestDatabase {
             statement.execute(Files.readString(BOOTSTRAP.resolve("00-roles.sql")));
             statement.execute("ALTER ROLE sdlc_migrator PASSWORD '" + migratorPassword + "'");
             statement.execute("ALTER ROLE sdlc_app PASSWORD '" + appPassword + "'");
+            statement.execute("ALTER ROLE sdlc_worker PASSWORD '" + workerPassword + "'");
         } catch (SQLException | IOException e) {
             throw new IllegalStateException("Bootstrap (roles) failed", e);
         }

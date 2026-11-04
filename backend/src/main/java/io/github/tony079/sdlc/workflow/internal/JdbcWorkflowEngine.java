@@ -2,13 +2,20 @@ package io.github.tony079.sdlc.workflow.internal;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import io.github.tony079.sdlc.audit.api.AuditWriter;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditAction;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditResult;
 import io.github.tony079.sdlc.common.api.ApiException;
+import io.github.tony079.sdlc.outbox.api.EventTypes;
+import io.github.tony079.sdlc.outbox.api.OutboxPublisher;
+import io.github.tony079.sdlc.queue.api.JobQueue;
+import io.github.tony079.sdlc.queue.api.JobRequest;
 import io.github.tony079.sdlc.tenancy.api.TenantContext;
+import io.github.tony079.sdlc.workflow.api.Route;
 import io.github.tony079.sdlc.workflow.api.TimelineEntry;
 import io.github.tony079.sdlc.workflow.api.Transition;
 import io.github.tony079.sdlc.workflow.api.WorkflowEngine;
@@ -24,13 +31,18 @@ import org.springframework.transaction.annotation.Transactional;
 class JdbcWorkflowEngine implements WorkflowEngine {
 
     static final String DEFINITION_VERSION = "R1-v1";
+    static final String AGGREGATE = "REQUIREMENT";
 
     private final JdbcClient jdbc;
     private final AuditWriter audit;
+    private final OutboxPublisher outbox;
+    private final JobQueue jobs;
 
-    JdbcWorkflowEngine(JdbcClient jdbc, AuditWriter audit) {
+    JdbcWorkflowEngine(JdbcClient jdbc, AuditWriter audit, OutboxPublisher outbox, JobQueue jobs) {
         this.jdbc = jdbc;
         this.audit = audit;
+        this.outbox = outbox;
+        this.jobs = jobs;
     }
 
     private record Current(UUID instanceId, WorkflowState state, int lastSeq) {
@@ -63,9 +75,70 @@ class JdbcWorkflowEngine implements WorkflowEngine {
     }
 
     @Override
+    public WorkflowState lockState(UUID requirementId) {
+        return lock(requirementId).state();
+    }
+
+    @Override
+    public WorkflowState submit(UUID requirementId, Route route) {
+        WorkflowState to = apply(requirementId, Transition.T01_SUBMIT, null);
+        outbox.publish(AGGREGATE, requirementId, EventTypes.REQUIREMENT_SUBMITTED,
+                Map.of("requirementId", requirementId.toString(), "route", route.name()));
+        return to;
+    }
+
+    @Override
     public WorkflowState transition(UUID requirementId, Transition transition, String reason) {
+        if (transition != Transition.T29_CANCEL) {
+            // T01 has its own command; T02/T03 are engine transitions that no user request can perform.
+            throw new IllegalArgumentException("Not a user transition: " + transition);
+        }
+        WorkflowState to = apply(requirementId, transition, reason);
+        outbox.publish(AGGREGATE, requirementId, EventTypes.REQUIREMENT_CANCELLED,
+                Map.of("requirementId", requirementId.toString()));
+        return to;
+    }
+
+    /**
+     * Engine routing after submission (T02/T03), called by the worker's routing consumer under the tenant
+     * context with no user actor. Returns empty, changing nothing, if the requirement is no longer SUBMITTED
+     * (for example it was cancelled before the event was delivered): the event is obsolete, not an error.
+     */
+    Optional<WorkflowState> route(UUID requirementId, Route route) {
+        if (TenantContext.currentActor().isPresent()) {
+            throw new IllegalStateException("Routing is an engine transition and cannot run for a user");
+        }
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.SUBMITTED) {
+            return Optional.empty();
+        }
+        Transition transition = route == Route.REPOSITORY ? Transition.T02_ROUTE_REPOSITORY
+                : Transition.T03_ROUTE_MANUAL_INTAKE;
+        WorkflowState to = applyLocked(requirementId, current, transition, null);
+        if (transition == Transition.T02_ROUTE_REPOSITORY) {
+            UUID stage = jdbc.sql("""
+                    INSERT INTO app.stage_execution (tenant_id, instance_id, stage_key, attempt_no, status)
+                    VALUES (:tenant, :instance, 'REPO_VALIDATION', 1, 'READY') RETURNING id
+                    """)
+                    .param("tenant", TenantContext.requireTenant()).param("instance", current.instanceId())
+                    .query(UUID.class).single();
+            jobs.enqueue(new JobRequest("REPO_VALIDATE", "repo-validate:" + requirementId + ":1", AGGREGATE,
+                    requirementId, stage, Map.of("requirementId", requirementId.toString()), 100));
+            outbox.publish(AGGREGATE, requirementId, EventTypes.REPO_VALIDATION_STARTED,
+                    Map.of("requirementId", requirementId.toString(), "stageExecutionId", stage.toString()));
+        } else {
+            // PRD 0.4: no extraction, repository validation or BA job is scheduled in MANUAL_INTAKE. The Business
+            // Reviewer notification (TDD T03) waits for staff accounts (O-06).
+            outbox.publish(AGGREGATE, requirementId, EventTypes.MANUAL_INTAKE_ENTERED,
+                    Map.of("requirementId", requirementId.toString()));
+        }
+        audit.record(AuditAction.REQUIREMENT_ROUTED, AGGREGATE, requirementId, AuditResult.SUCCESS);
+        return Optional.of(to);
+    }
+
+    private Current lock(UUID requirementId) {
         // Lock the instance: concurrent transitions of one requirement are applied one after the other.
-        Current current = jdbc.sql("""
+        return jdbc.sql("""
                 SELECT id, projected_state, last_seq FROM app.workflow_instance
                 WHERE requirement_id = :requirement FOR UPDATE
                 """)
@@ -73,11 +146,17 @@ class JdbcWorkflowEngine implements WorkflowEngine {
                 .query((rs, n) -> new Current(rs.getObject("id", UUID.class),
                         WorkflowState.valueOf(rs.getString("projected_state")), rs.getInt("last_seq")))
                 .single();
+    }
 
+    private WorkflowState apply(UUID requirementId, Transition transition, String reason) {
+        return applyLocked(requirementId, lock(requirementId), transition, reason);
+    }
+
+    private WorkflowState applyLocked(UUID requirementId, Current current, Transition transition, String reason) {
         WorkflowState target = TransitionTable.target(transition, current.state()).orElse(null);
         if (target == null) {
             // Survives the caller's rollback (decision: refused attempts stay on record).
-            audit.recordIndependently(AuditAction.ILLEGAL_TRANSITION_ATTEMPTED, "REQUIREMENT", requirementId,
+            audit.recordIndependently(AuditAction.ILLEGAL_TRANSITION_ATTEMPTED, AGGREGATE, requirementId,
                     AuditResult.DENIED);
             throw ApiException.conflict("ILLEGAL_TRANSITION",
                     "This action is not allowed in the requirement's current state (" + current.state() + ").");

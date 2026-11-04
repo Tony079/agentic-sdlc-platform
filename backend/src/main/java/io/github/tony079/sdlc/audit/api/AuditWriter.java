@@ -25,6 +25,8 @@ public interface AuditWriter {
     enum AuditAction {
         LOGIN, LOGOUT, PROJECT_CREATED,
         REQUIREMENT_CREATED, REQUIREMENT_REVISED, REQUIREMENT_SUBMITTED, REQUIREMENT_CANCELLED,
-        ILLEGAL_TRANSITION_ATTEMPTED
+        ILLEGAL_TRANSITION_ATTEMPTED,
+        // Milestone 3: engine routing and background processing (actor SYSTEM).
+        REQUIREMENT_ROUTED, OUTBOX_EVENT_DEAD, JOB_DEAD, JOBS_CANCELLED
     }
 }
