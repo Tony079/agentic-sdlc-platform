@@ -73,8 +73,54 @@ export function ifMatch(version: number): Record<string, string> {
   return { 'If-Match': `"${version}"` };
 }
 
+/**
+ * Multipart upload of one file with progress (PRD FR-UPL-08). XMLHttpRequest is used because fetch exposes no
+ * upload progress. Same CSRF and error-envelope handling as {@link request}.
+ */
+export async function uploadFile<T>(path: string, file: File, onProgress: (percent: number) => void): Promise<T> {
+  const token = await ensureCsrfToken();
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader(CSRF_HEADER, token);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    xhr.onerror = () => reject(new ApiError(0, 'NETWORK_ERROR', 'The upload failed. Check your connection.'));
+    xhr.onload = () => {
+      let data: unknown;
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : undefined;
+      } catch {
+        data = undefined;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data as T);
+        return;
+      }
+      const envelope = data as ErrorEnvelope | undefined;
+      reject(
+        new ApiError(
+          xhr.status,
+          envelope?.error?.code ?? 'UNKNOWN_ERROR',
+          envelope?.error?.message ?? `Upload failed (${xhr.status}).`,
+          envelope?.error?.details ?? [],
+        ),
+      );
+    };
+    const form = new FormData();
+    form.append('file', file);
+    xhr.send(form);
+  });
+}
+
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
+  delete: (path: string) => request<void>('DELETE', path),
   post: <T>(path: string, body?: unknown, headers?: Record<string, string>) => request<T>('POST', path, body, headers),
   put: <T>(path: string, body: unknown, headers?: Record<string, string>) => request<T>('PUT', path, body, headers),
 };

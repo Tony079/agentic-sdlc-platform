@@ -10,6 +10,7 @@ import type {
   TimelineEntry,
 } from '../api/types';
 import { fieldMessage } from '../components/RequirementForm';
+import { DocumentsPanel } from '../components/DocumentsPanel';
 
 const CONTENT_LABELS: [keyof RequirementContent, string][] = [
   ['description', 'Description'],
@@ -194,6 +195,8 @@ export function RequirementDetailPage() {
       )}
 
       <ContentView content={detail.content} />
+
+      <DocumentsPanel requirementId={detail.id} requirementState={detail.state} />
 
       <h2>Revisions</h2>
       <ul>

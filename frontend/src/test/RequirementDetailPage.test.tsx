@@ -67,7 +67,7 @@ describe('RequirementDetailPage', () => {
   });
 
   it('shows key, state, content and actions for a draft', async () => {
-    mockFetch((url) => (url.endsWith('/timeline') ? { status: 200, body: timeline } : { status: 200, body: detail() }));
+    mockFetch((url) => (url.endsWith('/timeline') ? { status: 200, body: timeline } : url.endsWith('/documents') ? { status: 200, body: { items: [] } } : { status: 200, body: detail() }));
     renderDetail();
     expect(await screen.findByRole('heading', { name: 'REQ-000042: Loyalty programme' })).toBeInTheDocument();
     expect(screen.getByText('DRAFT', { selector: '.state' })).toBeInTheDocument();
