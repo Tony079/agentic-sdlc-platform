@@ -4,7 +4,7 @@ Tracks owner decisions, PRD/TDD conflicts, security findings and implementation 
 **PRD v0.7 is the product authority; TDD v1.0.4 is the architecture reference. Neither is modified here.**
 Entries are only marked RESOLVED by a recorded owner decision or verified evidence.
 
-Last updated: 2026-11-04 (Milestone 3).
+Last updated: 2026-11-04 (Milestone 4).
 
 ## 1. Owner approvals recorded
 
@@ -72,6 +72,26 @@ Last updated: 2026-11-04 (Milestone 3).
 | D-M3-11 | All write commands lock the workflow instance before the requirement row (edit, submit, cancel, routing) | One lock order: no deadlocks, no edit after routing | ACTIVE |
 | D-M3-12 | Stored workflow definition `R1-v1` (table `workflow_definition`) must equal the engine's compiled transition table; the api and worker refuse to start otherwise (WF-D01) | Scope guard TDD 9.10 | ACTIVE |
 
+### Implementation decisions (Milestone 4: attachments)
+
+| ID | Decision | Rationale / limit | Status |
+|---|---|---|---|
+| D-M4-01 | Object storage is an `ObjectStore` port with one adapter: a private **encrypted file store** (AES-256-GCM per 64 KiB chunk, per-tenant HKDF-style key from a 32-byte master key `SDLC_STORAGE_KEY`, opaque `<tenant>/<uuid>` keys, atomic writes) on a volume shared by api and worker | PRD FR-STO-01 allows "an equivalent storage abstraction"; the production object store, its licence (MinIO terms) and KMS are **O-12 / C-13** (open). No S3 adapter is built yet | ACTIVE — production store gated by O-12 |
+| D-M4-02 | The API stores the file in quarantine and records the version; it emits `DocumentUploaded`. The worker enqueues and runs `DOCUMENT_SCAN` (TDD job DOC_VALIDATE_SCAN): decrypt into a per-job/epoch workspace, verify hash and size, validate structure, then scan; workspace deleted in every case; abandoned workspaces swept after 24 h | Keeps the API without queue privileges (Q-M3-3) | ACTIVE |
+| D-M4-03 | The API inserts versions without state or scan columns (column default QUARANTINED) and has no UPDATE on versions; only the worker records results. The database refuses any analysable state without a CLEAN scan (`document_version_clean_scan_required`), and a recorded scan result is immutable (trigger) | SEC-DOC-03 enforced in the database, not only in code | ACTIVE |
+| D-M4-04 | Intermediate states VALIDATING/SCANNING are not written; a version goes QUARANTINED → READY_FOR_EXTRACTION / REJECTED_INVALID / REJECTED_MALWARE in one fenced commit; scanner outage keeps it QUARANTINED (job deferred, no retry budget used, alert after 5 minutes) | Fewer non-transactional writes; fail-closed behaviour unchanged | ACTIVE |
+| D-M4-05 | Removal only in DRAFT (soft: `removed_at`); object deletion is a retention concern (O-02). Replacement after submission (new document version, FR-UPL-10) and staleness handling arrive with analysis (9.6) | | ACTIVE — known limit |
+| D-M4-06 | Uploads allowed in DRAFT, SUBMITTED, MANUAL_INTAKE (PRD 0.4) and REPO_VALIDATING; refused in terminal states (`409 DOCUMENTS_LOCKED`) | | ACTIVE |
+| D-M4-07 | Download only after a clean scan, as `application/octet-stream` attachment with `nosniff` and `no-store`, through the API (no presigned URLs); audited. In-app preview (FR-UPL-11) is **not built** | C-04 open | GATED by C-04 |
+| D-M4-08 | Malware: version REJECTED_MALWARE, HIGH security event `MALWARE_DETECTED`, `ALERT` log line with the signature name (never shown to clients). The Platform Admin alert channel is C-17 (open) | AC-EXT-33 alert evidence partial | ACTIVE |
+| D-M4-09 | No ClamAV daemon in the development container: integration tests use a protocol-level clamd test double (`FakeClamd`, real INSTREAM protocol); CI's Compose smoke test uses the real `clamav/clamav:1.4` image with the EICAR test string | Honest evidence split | ACTIVE |
+
+### Pre-implementation verification (Milestone 4)
+
+| ID | Check | Result |
+|---|---|---|
+| V-M4-1 | Fail-closed CHECK on scan results | **Finding (fixed before commit):** the first version used `OR scan_result = 'CLEAN'`, which evaluates to NULL (and therefore passes) when no scan exists; a superuser UPDATE to READY_FOR_EXTRACTION succeeded. Found by `DocumentApiIT.scanResultsCannotBeForgedOrSkipped`. Fixed with `IS NOT DISTINCT FROM 'CLEAN'` and a named constraint; changeset 0014 had never been applied outside throwaway test databases. All other CHECKs reviewed for the same pattern |
+
 ### Pre-implementation verification (Milestone 2, scratch PostgreSQL 16.15)
 
 | ID | Check | Result |
@@ -133,6 +153,16 @@ Last updated: 2026-11-04 (Milestone 3).
 | S-03, S-05, S-07..S-12 | See planning record | — | OPEN |
 
 ## 6. Acceptance-criteria progress
+
+### Milestone 4
+
+No acceptance criterion is claimed complete. Evidence toward: AC-DOC-01 (multiple uploads with status; the
+submission-with-documents flow), AC-DOC-02/03 (invalid, renamed executables and archives rejected by content), AC-DOC-04
+and AC-EXT-22 (scanner outage keeps files QUARANTINED; real-ClamAV path in CI only), AC-DOC-05/06 (cross-tenant and
+other-user access denied with security events), AC-DOC-07 (uploader, time, audited upload/download/removal), AC-DOC-08
+(duplicates), AC-DOC-09 (no content in PostgreSQL, opaque keys, private encrypted storage; production store O-12),
+AC-EXT-32/33/34/35 (gating, malware handling and alert, limits, scanner abstraction). Not yet: preview (C-04),
+UPLOAD_FAILED rows, versioning after submission.
 
 ### Milestone 3
 

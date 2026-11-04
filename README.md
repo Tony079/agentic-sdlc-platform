@@ -21,6 +21,11 @@ job is queued; its handler arrives with the repository milestone), new product â
 queue has leases, heartbeats, fencing epochs, bounded retries with backoff, dead-lettering and crash recovery. After
 submission the requirement type is locked; routed requirements are no longer editable.
 
+**Milestone 4 â€” attachments.** Clients attach PDF, DOCX, TXT and Markdown files (10 files, 20 MB each, 100 MB per
+requirement). Files are streamed into a private, encrypted store under opaque keys; the worker validates the real
+content (signatures, DOCX structure and decompression limits, text encoding) and scans it with ClamAV. Only clean files
+can be downloaded; malware is blocked and raises a security event; a scanner outage keeps files quarantined.
+
 Review, clarification and approval workflows follow. Staff roles (Business Reviewer, Auditor, Platform Admin) wait
 for owner decision O-06.
 
@@ -28,11 +33,11 @@ for owner decision O-06.
 
 | Path | Contents |
 |---|---|
-| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `requirement`, `workflow`, `outbox`, `queue`, `migration` |
+| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `requirement`, `workflow`, `outbox`, `queue`, `document`, `storage`, `scanner`, `migration` |
 | `backend/src/main/resources/db/changelog/` | Liquibase schema (applied only by the `migrate` process) |
 | `db/bootstrap/` | Database roles and schemas, run once by the PostgreSQL superuser |
 | `frontend/` | React 19, TypeScript, Vite |
-| `docker-compose.yml` | Local stack: PostgreSQL, migrate (one-shot), api, worker, web (nginx) |
+| `docker-compose.yml` | Local stack: PostgreSQL, migrate (one-shot), api, worker, ClamAV, web (nginx) |
 
 ## Security model (Milestone 1)
 

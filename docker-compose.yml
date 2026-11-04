@@ -3,7 +3,8 @@
 #
 #   docker compose up --build        then open http://localhost:${SDLC_WEB_PORT:-8080}
 #
-# MinIO (object storage) and ClamAV (scanner) are added with the document-upload milestone (TDD M2).
+# Attachments: private encrypted file store on the shared volume doc-store (D-M4-01; production store is O-12) and
+# ClamAV as the development scanner (FR-STO-11; production scanner is O-03).
 name: sdlc-platform
 
 services:
@@ -52,6 +53,9 @@ services:
       SDLC_DB_APP_PASSWORD: ${SDLC_DB_APP_PASSWORD}
       # Local HTTP only. Must be true (the default) behind TLS.
       SDLC_COOKIE_SECURE: "false"
+      SDLC_STORAGE_KEY: ${SDLC_STORAGE_KEY:?set SDLC_STORAGE_KEY in .env}
+    volumes:
+      - doc-store:/var/lib/sdlc/documents
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -65,15 +69,27 @@ services:
     environment:
       SDLC_DB_URL: jdbc:postgresql://db:5432/sdlc
       SDLC_DB_WORKER_PASSWORD: ${SDLC_DB_WORKER_PASSWORD}
+      SDLC_STORAGE_KEY: ${SDLC_STORAGE_KEY}
+      SDLC_SCANNER_HOST: clamav
+    volumes:
+      - doc-store:/var/lib/sdlc/documents
     depends_on:
       migrate:
         condition: service_completed_successfully
+      clamav:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "test -n \"$$(find /tmp/sdlc-worker-alive -mmin -1 2>/dev/null)\""]
       interval: 15s
       timeout: 5s
       retries: 8
       start_period: 60s
+    restart: unless-stopped
+
+  # Development malware scanner (clamd on 3310, internal network only). Downloads signatures at start-up; until it is
+  # ready, uploads stay QUARANTINED (fail closed).
+  clamav:
+    image: clamav/clamav:1.4
     restart: unless-stopped
 
   web:
@@ -86,3 +102,4 @@ services:
 
 volumes:
   db-data:
+  doc-store:
