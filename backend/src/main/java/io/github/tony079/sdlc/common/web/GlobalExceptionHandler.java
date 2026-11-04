@@ -16,6 +16,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /** Maps exceptions to the error envelope. Messages are fixed strings: no internal detail or SQL reaches the client. */
@@ -54,6 +57,19 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiError> mediaType(Exception e) {
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
                 .body(ApiError.of("UNSUPPORTED_MEDIA_TYPE", "The content type is not supported."));
+    }
+
+    /** Upload larger than the multipart limit (PRD FR-UPL-04, FR-STO-07): rejected before anything is stored. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ResponseEntity<ApiError> tooLarge(MaxUploadSizeExceededException e) {
+        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
+                .body(ApiError.of("FILE_TOO_LARGE", "The file exceeds the upload size limit."));
+    }
+
+    @ExceptionHandler({MissingServletRequestPartException.class, MultipartException.class})
+    ResponseEntity<ApiError> badMultipart(Exception e) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(ApiError.of("VALIDATION_FAILED", "A file is required."));
     }
 
     @ExceptionHandler(AccessDeniedException.class)

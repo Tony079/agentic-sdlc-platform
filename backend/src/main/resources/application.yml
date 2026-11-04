@@ -16,6 +16,13 @@ spring:
     jdbc:
       table-name: app.spring_session
       initialize-schema: never
+  servlet:
+    multipart:
+      # Attachments (PRD FR-UPL-04): spooled to a temporary file, never held in memory; the service applies the
+      # per-requirement count and total limits.
+      max-file-size: ${SDLC_DOCUMENTS_MAX_FILE_BYTES:20971520}
+      max-request-size: 21MB
+      file-size-threshold: 0
   jackson:
     deserialization:
       # Unknown JSON fields are rejected (TDD 20.1), so e.g. a client-supplied tenantId is never silently accepted.
@@ -64,3 +71,17 @@ sdlc:
   worker:
     # The API process never dispatches events or runs jobs; the worker profile enables both.
     enabled: false
+  documents:
+    max-file-bytes: ${SDLC_DOCUMENTS_MAX_FILE_BYTES:20971520}
+    max-files: 10
+    max-total-bytes: 104857600
+  storage:
+    # Private encrypted object store (D-M4-01). Both api and worker mount the same directory. The key is
+    # 32 random bytes, base64 (openssl rand -base64 32); without it the application does not start.
+    root: ${SDLC_STORAGE_ROOT:/var/lib/sdlc/documents}
+    encryption-key: ${SDLC_STORAGE_KEY:}
+  scanner:
+    clamd:
+      host: ${SDLC_SCANNER_HOST:localhost}
+      port: ${SDLC_SCANNER_PORT:3310}
+      timeout: 60s

@@ -22,6 +22,8 @@ public abstract class ApiIntegrationTest {
         registry.add("logging.structured.format.console", () -> "");
         // Per-client throttling is covered by LoginThrottleTest; all API tests share one client address.
         registry.add("sdlc.security.login-throttle.max-failures-per-client", () -> "1000");
+        registry.add("sdlc.storage.root", TestStorage.ROOT::toString);
+        registry.add("sdlc.storage.encryption-key", () -> TestStorage.KEY);
     }
 
     protected ApiClient client() {

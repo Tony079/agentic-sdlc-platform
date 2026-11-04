@@ -21,6 +21,8 @@ public interface SecurityEventRecorder {
          * missing id from another tenant's id, so every such miss is recorded as possible cross-tenant probing
          * (PRD FR-AUTH-04, FR-AUTH-13).
          */
-        RESOURCE_NOT_FOUND
+        RESOURCE_NOT_FOUND,
+        /** The malware scanner reported a threat in an uploaded file (PRD 6C.1 rule 3, AC-EXT-33). */
+        MALWARE_DETECTED
     }
 }

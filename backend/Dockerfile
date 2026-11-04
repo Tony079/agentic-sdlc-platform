@@ -10,6 +10,8 @@ RUN mvn -B -q -DskipTests package && cp target/sdlc-platform-*.jar /build/app.ja
 
 FROM eclipse-temurin:21-jre-noble
 RUN groupadd --system sdlc && useradd --system --gid sdlc --home-dir /app --shell /usr/sbin/nologin sdlc
+# Private attachment store (mounted as a volume in Compose); owned by the unprivileged user, not world-readable.
+RUN mkdir -p /var/lib/sdlc/documents && chown sdlc:sdlc /var/lib/sdlc/documents && chmod 700 /var/lib/sdlc/documents
 WORKDIR /app
 COPY --from=build --chown=root:root /build/app.jar /app/app.jar
 USER sdlc

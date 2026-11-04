@@ -30,6 +30,10 @@ public final class WorkerContext {
                             "--sdlc.worker.scheduling=false",
                             "--sdlc.worker.outbox.backoff-base=0s",
                             "--sdlc.worker.outbox.max-attempts=3",
+                            "--sdlc.storage.root=" + TestStorage.ROOT,
+                            "--sdlc.storage.encryption-key=" + TestStorage.KEY,
+                            "--sdlc.scanner.clamd.port=" + FakeClamd.port(),
+                            "--sdlc.scanner.clamd.timeout=5s",
                             "--logging.structured.format.console=");
         }
         return context;
