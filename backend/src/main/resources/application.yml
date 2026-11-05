@@ -2,6 +2,10 @@
 spring:
   application:
     name: sdlc-platform
+  autoconfigure:
+    # Users authenticate only through the tenant login endpoint; form login and HTTP Basic are disabled. Without this
+    # exclusion Spring Boot creates an unused in-memory user and prints its generated password to the log (SEC-M3-01).
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   datasource:
     url: ${SDLC_DB_URL:jdbc:postgresql://localhost:5432/sdlc}
     username: ${SDLC_DB_APP_USER:sdlc_app}
