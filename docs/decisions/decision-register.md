@@ -4,7 +4,7 @@ Tracks owner decisions, PRD/TDD conflicts, security findings and implementation 
 **PRD v0.7 is the product authority; TDD v1.0.4 is the architecture reference. Neither is modified here.**
 Entries are only marked RESOLVED by a recorded owner decision or verified evidence.
 
-Last updated: 2026-11-04 (Milestone 5).
+Last updated: 2026-11-05 (publication of Milestones 3–5, model gateway, readiness for R1-M4..M6).
 
 ## 1. Owner approvals recorded
 
@@ -211,3 +211,54 @@ No acceptance criterion is claimed complete. Milestone 1 contributes evidence to
 AC-CORE-17 (build, tests without an LLM key; Compose smoke runs in CI), AC-EXT-36 (RLS, non-bypass role,
 pooled-connection test; jobs clause pending C-14), AC-CORE-09 (API and database cross-tenant tests for projects),
 FR-AUTH-01/03/04/06/13/17/18/20/21, FR-AUD-01/02/05/06 (foundation), FR-MON-01 (failed login, resource miss).
+
+## 7. Model gateway and publication (2026-11-05)
+
+### Implementation decisions (model gateway foundation, branch `claude/model-gateway`)
+
+| ID | Decision | Rationale / limit | Status |
+|---|---|---|---|
+| D-GW-01 | Module `modelgateway`, port `ModelGateway.generate(ModelRequest)`, SPI `ModelProvider` (TDD 13.1 names the port `ModelClient.generate`; same contract) | Agents depend only on the port (FR-LLM-01/02) | ACTIVE |
+| D-GW-02 | Provider and model come only from server configuration (`sdlc.model.provider`, `sdlc.model.model-id`); default `none`, so every call fails with CONFIGURATION_ERROR and no data leaves the platform while **O-01** is open; an unknown provider stops start-up | No production provider is hard-coded | ACTIVE |
+| D-GW-03 | Tenant from the trusted tenant context only; calls are refused without a tenant and inside a database transaction | Slow calls never hold locks or connections | ACTIVE |
+| D-GW-04 | Only registered, ACTIVE prompt versions run: (id, version, SHA-256) must match `prompt_version` | An edited prompt needs a reviewed new version (FR-LLM-07) | ACTIVE |
+| D-GW-05 | Output binds strictly to a typed record (unknown, missing or trailing content rejected) and is checked with Bean Validation; one repair attempt with fixed trusted text that never quotes the invalid output | FR-LLM-06, TDD 13.4 | ACTIVE |
+| D-GW-06 | Per-attempt timeout enforced by the gateway; timeouts and unavailability retried up to `max-transient-retries` (default 2) then TIMEOUT / PROVIDER_UNAVAILABLE (transient, for job deferral); rate limit returned at once as RATE_LIMITED; other provider errors not retried | TDD 13.5 | ACTIVE |
+| D-GW-07 | `model_call_record` (tenant RLS, worker-only) stores provider, model, prompt version, outcome, attempts, tokens, cost, latency, request and correlation ids; never prompt, data or output text. Cost from `model_registry` prices | FR-LLM-04, TDD 13.6 | ACTIVE |
+| D-GW-08 | Budget caps (tenant per month, per requirement) are configurable and empty by default | Values are **O-09** (open) | ACTIVE — values open |
+| D-GW-09 | Tool calling is **not** in the gateway yet; it belongs with the agent runtime's tool registry in R1-M5 (FR-LLM-01 partially met) | Avoids a speculative API | KNOWN GAP |
+| D-GW-10 | `FakeModelProvider` is deterministic (scripted or canned replies, token estimate ceil(chars/4), no network, no dependencies); `model_registry` CHECK ties provider `fake` to data class FAKE | FR-LLM-09 fake provider; the hosted adapter waits for O-01 | ACTIVE |
+
+### Findings during publication and verification
+
+| ID | Finding | Resolution | Status |
+|---|---|---|---|
+| V-CI-1 | First CI run of PRs #3–#5: Compose step "Worker routes ... (Milestone 3)" failed. Cause: the step expected REPO_VALIDATING, but the Milestone 2 smoke requirement is NEW_PRODUCT and was correctly routed to MANUAL_INTAKE (worker snapshot showed no pending events and no jobs). Reproduced locally with the packaged jar on a fresh database | Assertion corrected (commit `bf4318f`), merged forward into M4/M5 with merge commits (no rebase, no force-push). Later steps (real ClamAV, extraction) had not run in the first CI attempt because the job stopped at this step | RESOLVED — CI green on `bf4318f`, `ab1ac05`, `7e98a34` |
+| SEC-M3-01 | The API logged "Using generated security password": Spring Boot created an unused in-memory user (form login and HTTP Basic disabled, so not usable). Present since Milestone 1 | `UserDetailsServiceAutoConfiguration` excluded; `NoDefaultUserIT` guards it. Fixed on the new branch; PR #1 is unchanged | FIXED on `claude/model-gateway` (not yet on PR #1/#2 lineage) |
+| SEC-REVIEW-1 | Extractor subprocess runs as the worker's OS user inside the worker container: no separate container, no seccomp, network not blocked at OS level | Recorded under O-15 (extraction gate default off) | OPEN (O-15) |
+| SEC-REVIEW-2 | Storage encryption key (`SDLC_STORAGE_KEY`) is a single static master key from the environment; no rotation or KMS | Recorded under O-12/C-13 | OPEN (O-12/C-13) |
+| SEC-REVIEW-3 | `clamav/clamav:1.4` runs with the image defaults; not reviewed for least privilege; dev/CI scanner only | Production scanner is O-03 | OPEN (O-03) |
+
+## 8. Outstanding decisions — structured view (2026-11-05)
+
+Original IDs and descriptions are preserved above; this table adds owner, options, impact and gates. **No entry is
+resolved here.** "Recommendation" is given only where an earlier planning record (pre-M0 plan, 2026-11-02) made one.
+
+| ID | Description | Owner | Options | Recommendation | Implementation impact | Blocked milestones | Decision deadline | Status | Evidence of resolution |
+|---|---|---|---|---|---|---|---|---|---|
+| C-01 / O-05 | Who registers a GitHub repository (PRD "admin" vs TDD Client Approver; TDD self-inconsistent) | PO, SO | A Client Approver; B Platform Admin (needs O-06/O-13); C owner registers + approver confirms (PRD clarification) | None made | Repository registration API authorisation; `sourcerepo` module | **R1-M4** (and so R1-M5, R1-M6) | Before R1-M4 starts | OPEN — BLOCKING | Signed decision record; PRD/TDD alignment note |
+| O-06 | Internal staff access model (global staff, assignments, active tenant) | SO, PO | A global staff + assignment-gated active tenant; B per-tenant staff accounts; C tenant per request (conflicts FR-AUTH-06); D tenant fixed at login; E staff see all (rejected) | Pre-M0 plan: A with conditions | `identity` staff model, reviewer UI, T04/T05, T21–T23 | **R1-M6**; R1-M4 if C-01 = B | Before R1-M6 (or R1-M4 if B) | OPEN — BLOCKING | Accepted text per item (pre-M0 brief) |
+| O-11 | MFA for internal staff | SO | A none; B TOTP; C WebAuthn; D MFA for all users | Pre-M0 plan: B for all staff | Staff login | **R1-M6** | Before any staff login | OPEN | Accepted factor, roles, recovery procedure |
+| O-13 | Provisioning flow and two-admin bootstrap | PO, SO | A mutual-approval ceremony; B single first admin (conflicts FR-AUTH-22); C env bootstrap (rejected); D two-step ceremony with admin functions | Pre-M0 plan: A for dev/test, D before production | Admin bootstrap, tenant/user provisioning, recovery APIs (dead events/jobs, Q-M3-6) | **R1-M6**; R1-M4 if C-01 = B | Before R1-M6 | OPEN — BLOCKING | Accepted ceremony + evidence record |
+| O-32 | Platform-admin access-grant policy to tenant content | PO, SO | (TDD 19.8 design or alternatives) | None | Admin read of tenant content | R1-M6 (AC-EXT-37), Gate G1 | Before Gate G1 | OPEN — BLOCKING for G1 | Accepted policy; AC-EXT-37 tests |
+| C-07 | Platform Admin cancellation in MANUAL_INTAKE | PO | Proposed: admin cancel with mandatory reason, immutable audit | Proposal recorded 2026-11-03 | T29 by admin | R1-M6 admin features | Before admin features | OPEN (proposed) | Product Owner confirmation |
+| C-18 | Client Approver visibility of Client Users' requirements | PO | A owner-only (current); B tenant-wide for approvers; C approver access limited to repository linking | None | Requirement/document visibility, repository linking | **R1-M4** (if approver links repositories) | Before R1-M4 | OPEN | Signed decision; visibility tests updated |
+| D-M1-06 | Liquibase 5 licence acceptability | Owner | A accept Liquibase 5; B pin Liquibase 4.x; C other tool | None | Migration tooling | Production | Before production | OPEN | Owner confirmation of licence |
+| CP-2 | SQL archive baseline selection | Owner | Supply newer 9-file set, or select original archive, or keep own schema | Own schema in use (D-M1-01) | Archive reuse only | None (archive not used) | Only if the archive is to be used | OPEN — BLOCKED | Signed reconciliation + baseline choice |
+| S-01 | Archive: app role can purge audit | SO | Dedicated retention login; admin-ops function; PRD interpretation | Pre-M0 plan: dedicated retention login | Retention milestone | Retention (R1-M6 scope) | Before audit retention | OPEN (archive); own schema has no purge | Catalog test: runtime login cannot purge |
+| S-02 | Archive: app role can write platform role assignments | SO | Role grants only through privileged admin path; revoke runtime writes | Pre-M0 plan: privileged path | Staff roles | **R1-M6** | Before staff roles exist | OPEN | Catalog + negative tests |
+| S-06 | Archive: REPO_VALIDATING retry safeguard not implemented | SO, PO | Implement S-27 set; or keep no retry path | Own schema: no retry path exists | Admin retry | R1-M4 (T09), admin retry | Before any admin retry | OPEN (archive) | S-27 tests if retry is ever built |
+| O-15 | Extractor isolation spike (M3S) | SO, AO | Container pair per TDD 15.7; microVM; other | None (spike decides) | `docprocessing` extractor runtime; extraction gate | Real client documents (onboarding); R1-M5 on real data | Before any real client document | OPEN — BLOCKING | M3S report reviewed by SO; architecture decision |
+| O-12 / C-13 | Production object store, licence, encryption at rest / KMS | SO, AO | S3-compatible managed store; MinIO (licence re-check); other | None | `storage` adapter, key management | Production / onboarding | Before production data | OPEN | Store chosen; encryption and key rotation verified |
+| O-01 | LLM provider and model | PO | Evaluate OpenAI, Anthropic, Google per FR-LLM-08/10/11 | None (evaluation decides) | Hosted `ModelProvider` adapter, `model_registry` row, data-handling terms | **R1-M5** real BRDs | Before R1-M5 on real data | OPEN | Evaluation report (TDD 13.7) + PO decision |
+| C-19 | Programme brief lists Release 2/3 items (estimation, pricing, estimate acceptance, client scope approval, Architect Agent, TDD generation) | PO | Keep PRD v0.7 scope; or change the PRD | PRD prevails | Scope guard (ArchUnit) unchanged | None in Release 1 | — | OPEN | A new PRD version, if scope changes |

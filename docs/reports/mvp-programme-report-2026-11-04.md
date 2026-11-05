@@ -1,8 +1,74 @@
 # MVP Programme Report — 2026-11-04
 
 Scope authority: PRD v0.7 (product), TDD v1.0.4 (architecture), decision register. Neither document was modified.
-All results below were produced in this session against PostgreSQL 16.15. CI has **not** run on Milestones 3–5,
-because nothing was pushed.
+Originally written 2026-11-04 (local evidence only). **Updated 2026-11-05:** branches published, PRs #3–#5 opened,
+CI and the Docker Compose smoke test run, model gateway added. The 2026-11-05 section below supersedes earlier
+"not pushed / CI not run" statements; the original text is kept for history.
+
+## Update 2026-11-05
+
+### Milestone numbering (PRD vs repository)
+
+The repository's "Milestone N" labels count implementation increments; the PRD's R1-Mx labels are product milestones.
+Branch names are historical and are not renamed.
+
+| PRD milestone | Implementation workstream | Branch | PR | Scope | Status (2026-11-05) | Verification evidence |
+|---|---|---|---|---|---|---|
+| R1-M0 | Milestone 1 | `claude/keen-noether-o7qkue` | [#1](https://github.com/Tony079/agentic-sdlc-platform/pull/1) → `main` | Skeleton, auth, tenancy, RLS, audit, Compose, CI | COMPLETED AND VERIFIED (CI green, not merged) | CI runs 1, 2 |
+| R1-M1 (part 1) | Milestone 2 | `claude/milestone-2-requirements` | [#2](https://github.com/Tony079/agentic-sdlc-platform/pull/2) → #1 | Requirement submission | COMPLETED AND VERIFIED (CI green, not merged) | CI runs 3, 4 |
+| R1-M1 (part 2) | Milestone 3 | `claude/milestone-3-outbox-routing` | [#3](https://github.com/Tony079/agentic-sdlc-platform/pull/3) → #2 | Outbox, job queue, worker login, routing, definition R1-v1 | COMPLETED AND VERIFIED (CI green, not merged) | CI runs 11, 14 on `bf4318f` |
+| R1-M2 | Milestone 4 | `claude/milestone-4-documents` | [#4](https://github.com/Tony079/agentic-sdlc-platform/pull/4) → #3 | Upload, encrypted storage, validation, ClamAV, quarantine | COMPLETED AND VERIFIED (CI green incl. real ClamAV, not merged) | CI runs 12, 15 on `ab1ac05` |
+| R1-M3 | Milestone 5 | `claude/milestone-5-document-processing` | [#5](https://github.com/Tony079/agentic-sdlc-platform/pull/5) → #4 | Extraction, chunks, retries (gate O-15) | COMPLETED AND VERIFIED for synthetic documents; real documents BLOCKED BY OWNER DECISION (O-15) | CI runs 13, 16 on `7e98a34` |
+| R1-M5 (foundation) | Model gateway | `claude/model-gateway` (local, not pushed) | — | Provider-neutral gateway + fake provider | IMPLEMENTED, LOCAL TESTS PASSING (CI not run) | Local `mvn verify`: 175 tests |
+| R1-M4 | — | — | — | Repository registration, snapshot, inventory | BLOCKED BY OWNER DECISION (C-01/O-05, C-18; O-06/O-13 if admin) | Readiness spec |
+| R1-M5 | — | — | — | Agent runtime, BA agent, BRD, evidence checker | BLOCKED BY OWNER DECISION (needs R1-M4; O-01 for real model; O-15 for real documents) | Readiness spec |
+| R1-M6 | — | — | — | Review, approvals, clarifications, client view, G1 | BLOCKED BY OWNER DECISION (O-06, O-11, O-13, S-02, O-32) | Readiness spec |
+
+Readiness package for R1-M4..R1-M6: `docs/architecture/r1-m4-m6-implementation-readiness.md`.
+
+### Publication
+
+- Pre-push checks: clean tree; linear ancestry `1bc15f7` → M3 → M4 → M5 with no merge commits and no changes to
+  PRD/TDD or changesets 0001–0009; remote PR #1/#2 heads unchanged (`652fa9a`, `1bc15f7`); gitleaks v8.21.2 over all
+  local history (24 commits): no leaks.
+- Pushed (normal push, no force): the three branches. Opened stacked PRs #3 (base #2's branch), #4 (base #3's branch),
+  #5 (base #4's branch). None merged. PR #1 and PR #2 not modified or retargeted.
+- CI fix: see V-CI-1 in the decision register; propagated with merge commits `ab1ac05` (into M4) and `a62c738`
+  (into M5); an M5 Compose step for extraction added (`7e98a34`).
+
+### CI results (GitHub Actions workflow "CI")
+
+| Run | Event | Branch / SHA | Backend | Frontend | Secret scan | Compose smoke | Conclusion |
+|---|---|---|---|---|---|---|---|
+| 5, 8 | push, PR #3 | M3 `8340877` | pass | pass | pass | **fail** (M3 step, V-CI-1) | failure |
+| 6, 9 | push, PR #4 | M4 `72c5e8d` | pass | pass | pass | **fail** (same step; ClamAV step not reached) | failure |
+| 7, 10 | push, PR #5 | M5 `c186877` | pass | pass | pass | **fail** (same step) | failure |
+| 11, 14 | push, PR #3 | M3 `bf4318f` | pass | pass | pass | pass | **success** |
+| 12, 15 | push, PR #4 | M4 `ab1ac05` | pass | pass | pass | pass (real ClamAV: clean file READY_FOR_EXTRACTION, EICAR REJECTED_MALWARE, download 409) | **success** |
+| 13, 16 | push, PR #5 | M5 `7e98a34` | pass | pass | pass | pass (all steps incl. extraction of a synthetic Markdown file into chunks) | **success** |
+
+Compose smoke steps verified in CI on `7e98a34`: login and cross-tenant 404; requirement create/edit/submit; worker
+routing to MANUAL_INTAKE; upload, **real ClamAV** scan and download, EICAR blocked (409 on download); extraction to
+PROCESSED with stored chunks. **Not verified in CI:** scanner *outage* fail-closed behaviour (covered only by
+integration tests with the protocol-level clamd test double); scanner health alerting (log/metric only, C-17).
+
+### Security checks (2026-11-05)
+
+- gitleaks: local v8.21.2 over all history — no leaks; CI secret-scan job green on every run.
+- Secrets: database, storage and seed secrets come only from the environment (`.env` locally, random per CI run);
+  `.env.example` holds placeholders only. No GitHub App private key exists in the code yet (R1-M4 not built).
+- Containers: backend runs as the non-root `sdlc` user; web is unprivileged nginx; no `privileged`, capabilities or
+  host mounts in Compose; database, scanner and worker ports are not published; web bound to 127.0.0.1.
+- Findings: **SEC-M3-01** (generated default user/password logged; fixed on `claude/model-gateway`), SEC-REVIEW-1..3
+  (extractor isolation → O-15; static storage key → O-12/C-13; ClamAV container defaults → O-03).
+
+### Model gateway (local branch `claude/model-gateway`)
+
+See decision register section 7 (D-GW-01..10). Changeset `0016-model-gateway`; module `modelgateway`; tests
+`ModelGatewayIT` (14), `ModelProviderRegistryTest` (3), ArchUnit rule `modelGatewayCannotReachStateChangingModules`,
+`NoDefaultUserIT` (2). Full local suite on this branch: **175 tests, 0 failures** (PostgreSQL 16.15). No real provider
+(O-01); tool calling deferred to the R1-M5 agent runtime (D-GW-09).
+
 
 ## G. Readiness verdict: **MVP PARTIALLY COMPLETE**
 
