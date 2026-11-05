@@ -34,6 +34,8 @@ public final class WorkerContext {
                             "--sdlc.storage.encryption-key=" + TestStorage.KEY,
                             "--sdlc.scanner.clamd.port=" + FakeClamd.port(),
                             "--sdlc.scanner.clamd.timeout=5s",
+                            "--sdlc.documents.extraction.enabled=true",
+                            "--sdlc.documents.extraction.timeout=60s",
                             "--logging.structured.format.console=");
         }
         return context;

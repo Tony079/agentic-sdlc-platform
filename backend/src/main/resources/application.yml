@@ -75,6 +75,12 @@ sdlc:
     max-file-bytes: ${SDLC_DOCUMENTS_MAX_FILE_BYTES:20971520}
     max-files: 10
     max-total-bytes: 104857600
+    extraction:
+      # SECURE GATE (O-15, OPEN - BLOCKING): parsing of real client documents stays off until the extractor
+      # isolation spike M3S is accepted. Local development and tests switch it on explicitly.
+      enabled: ${SDLC_DOCUMENT_EXTRACTION_ENABLED:false}
+      timeout: 120s
+      max-heap: 256m
   storage:
     # Private encrypted object store (D-M4-01). Both api and worker mount the same directory. The key is
     # 32 random bytes, base64 (openssl rand -base64 32); without it the application does not start.

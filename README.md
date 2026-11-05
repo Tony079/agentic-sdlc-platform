@@ -26,6 +26,12 @@ requirement). Files are streamed into a private, encrypted store under opaque ke
 content (signatures, DOCX structure and decompression limits, text encoding) and scans it with ClamAV. Only clean files
 can be downloaded; malware is blocked and raises a security event; a scanner outage keeps files quarantined.
 
+**Milestone 5 — document processing.** Clean files are turned into text chunks (with page or heading labels and a
+full-text index) by an extractor that runs as a separate, restricted process; the worker validates its output before
+storing anything. Encrypted and image-only files are marked as not analysed (no OCR). **Extraction is switched off by
+default** (`SDLC_DOCUMENT_EXTRACTION_ENABLED`) until the extractor isolation decision O-15 is closed; the local Compose
+stack enables it for synthetic test documents only.
+
 Review, clarification and approval workflows follow. Staff roles (Business Reviewer, Auditor, Platform Admin) wait
 for owner decision O-06.
 
@@ -33,7 +39,7 @@ for owner decision O-06.
 
 | Path | Contents |
 |---|---|
-| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `requirement`, `workflow`, `outbox`, `queue`, `document`, `storage`, `scanner`, `migration` |
+| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `requirement`, `workflow`, `outbox`, `queue`, `document`, `storage`, `scanner`, `docprocessing`, `migration` |
 | `backend/src/main/resources/db/changelog/` | Liquibase schema (applied only by the `migrate` process) |
 | `db/bootstrap/` | Database roles and schemas, run once by the PostgreSQL superuser |
 | `frontend/` | React 19, TypeScript, Vite |
