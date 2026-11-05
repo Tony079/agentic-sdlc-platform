@@ -94,6 +94,52 @@ public final class ApiClient {
         return send(builder.build());
     }
 
+    /** Multipart upload of one file in part "file", with the CSRF token. */
+    public Response upload(String path, String fileName, String contentType, byte[] content) {
+        if (csrfCookie().isEmpty()) {
+            get("/api/v1/auth/csrf");
+        }
+        String boundary = "----sdlc-test-" + java.util.UUID.randomUUID();
+        java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
+        String head = "--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + fileName
+                + "\"\r\n" + (contentType == null ? "" : "Content-Type: " + contentType + "\r\n") + "\r\n";
+        body.writeBytes(head.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        body.writeBytes(content);
+        body.writeBytes(("\r\n--" + boundary + "--\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return send(HttpRequest.newBuilder(uri(path))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .header("X-CSRF-Token", csrfCookie().orElseThrow())
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.toByteArray()))
+                .build());
+    }
+
+    public Response delete(String path) {
+        if (csrfCookie().isEmpty()) {
+            get("/api/v1/auth/csrf");
+        }
+        return send(HttpRequest.newBuilder(uri(path)).header("X-CSRF-Token", csrfCookie().orElseThrow()).DELETE().build());
+    }
+
+    public record Download(int status, byte[] body, Map<String, java.util.List<String>> headers) {
+        public String header(String name) {
+            java.util.List<String> values = headers.get(name.toLowerCase(java.util.Locale.ROOT));
+            return values == null || values.isEmpty() ? null : values.get(0);
+        }
+    }
+
+    public Download download(String path) {
+        try {
+            HttpResponse<byte[]> response = http.send(HttpRequest.newBuilder(uri(path)).GET().build(),
+                    HttpResponse.BodyHandlers.ofByteArray());
+            return new Download(response.statusCode(), response.body(), response.headers().map());
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
     public Response login(String organisation, String email, String password) {
         return post("/api/v1/auth/login", Map.of("organisation", organisation, "email", email, "password", password));
     }

@@ -167,3 +167,8 @@ dl.content dd {
 .cancel-form {
   max-width: 480px;
 }
+
+.documents li { margin: 0.25rem 0; }
+.documents button { margin-left: 0.5rem; }
+.doc-rejected_invalid, .doc-rejected_malware, .doc-extraction_failed_final { color: #a00; }
+.upload input { display: block; margin-top: 0.25rem; }

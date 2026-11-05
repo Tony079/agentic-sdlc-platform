@@ -17,3 +17,5 @@ databaseChangeLog:
   - include: { file: changes/0011-job-queue.sql, relativeToChangelogFile: true }
   - include: { file: changes/0012-m3-workflow.sql, relativeToChangelogFile: true }
   - include: { file: changes/0013-m3-rls-and-grants.sql, relativeToChangelogFile: true }
+  # Milestone 4: requirement attachments (upload, validation, malware scan, private storage).
+  - include: { file: changes/0014-document.sql, relativeToChangelogFile: true }

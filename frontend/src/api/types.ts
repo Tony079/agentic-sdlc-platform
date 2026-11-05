@@ -110,3 +110,40 @@ export interface TimelineEntry {
   transition: string;
   occurredAt: string;
 }
+
+/** PRD section 6C document processing states. */
+export type DocumentState =
+  | 'UPLOADING'
+  | 'QUARANTINED'
+  | 'VALIDATING'
+  | 'SCANNING'
+  | 'READY_FOR_EXTRACTION'
+  | 'EXTRACTING'
+  | 'PROCESSED'
+  | 'EXTRACTION_FAILED'
+  | 'EXTRACTION_FAILED_FINAL'
+  | 'UNSUPPORTED_CONTENT'
+  | 'REJECTED_INVALID'
+  | 'REJECTED_MALWARE'
+  | 'UPLOAD_FAILED'
+  | 'SUPERSEDED'
+  | 'DELETED';
+
+export interface DocumentItem {
+  documentId: string;
+  versionId: string;
+  versionNo: number;
+  fileName: string;
+  type: 'PDF' | 'DOCX' | 'TXT' | 'MARKDOWN';
+  sizeBytes: number;
+  state: DocumentState;
+  reasonCode: string | null;
+  uploadedBy: string;
+  uploadedAt: string;
+  downloadable: boolean;
+}
+
+export interface DocumentList {
+  items: DocumentItem[];
+  limits: { maxFileBytes: number; maxFiles: number; maxTotalBytes: number };
+}

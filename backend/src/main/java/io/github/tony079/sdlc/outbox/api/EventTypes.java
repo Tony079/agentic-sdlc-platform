@@ -13,10 +13,13 @@ public final class EventTypes {
     public static final String MANUAL_INTAKE_ENTERED = "ManualIntakeEntered";
     public static final String REQUIREMENT_CANCELLED = "RequirementCancelled";
     public static final String JOB_DEAD = "JobDead";
+    public static final String DOCUMENT_UPLOADED = "DocumentUploaded";
+    public static final String DOCUMENT_SCANNED = "DocumentScanned";
+    public static final String DOCUMENT_FAILED = "DocumentFailed";
 
     private static final Map<String, Integer> VERSIONS = Map.of(
             REQUIREMENT_SUBMITTED, 1, REPO_VALIDATION_STARTED, 1, MANUAL_INTAKE_ENTERED, 1,
-            REQUIREMENT_CANCELLED, 1, JOB_DEAD, 1);
+            REQUIREMENT_CANCELLED, 1, JOB_DEAD, 1, DOCUMENT_UPLOADED, 1, DOCUMENT_SCANNED, 1, DOCUMENT_FAILED, 1);
 
     private EventTypes() {
     }
