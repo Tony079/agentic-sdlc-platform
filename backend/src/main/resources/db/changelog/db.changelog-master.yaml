@@ -21,3 +21,5 @@ databaseChangeLog:
   - include: { file: changes/0014-document.sql, relativeToChangelogFile: true }
   # Milestone 5: document processing output (extraction runs and text chunks).
   - include: { file: changes/0015-document-extraction.sql, relativeToChangelogFile: true }
+  # Model gateway (PRD R1-M5 foundation): model registry, versioned prompts, per-call usage records.
+  - include: { file: changes/0016-model-gateway.sql, relativeToChangelogFile: true }
