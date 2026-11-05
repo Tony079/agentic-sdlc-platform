@@ -61,3 +61,6 @@ sdlc:
       max-failures-per-account: 5
       max-failures-per-client: 20
       window: 10m
+  worker:
+    # The API process never dispatches events or runs jobs; the worker profile enables both.
+    enabled: false

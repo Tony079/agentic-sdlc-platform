@@ -23,6 +23,7 @@ import io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder;
 import io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder.SecurityEventType;
 import io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder.Severity;
 import io.github.tony079.sdlc.tenancy.api.TenantContext;
+import io.github.tony079.sdlc.workflow.api.Route;
 import io.github.tony079.sdlc.workflow.api.TimelineEntry;
 import io.github.tony079.sdlc.workflow.api.Transition;
 import io.github.tony079.sdlc.workflow.api.WorkflowEngine;
@@ -143,7 +144,14 @@ class RequirementService {
         return workflow.timeline(id);
     }
 
-    /** Edits create a new immutable revision (FR-REQ-04). Allowed in DRAFT and SUBMITTED. */
+    /**
+     * Edits create a new immutable revision (FR-REQ-04). Allowed in DRAFT and SUBMITTED; once routed (MANUAL_INTAKE,
+     * REPO_VALIDATING, ...) a requirement is not editable (interim policy, decision Q-M3-5). After submission the
+     * kind cannot change (409 KIND_CHANGE_NOT_ALLOWED), because the route was already derived from it.
+     *
+     * <p>Lock order (all commands): workflow instance first, then the requirement row, so an edit can never
+     * interleave with routing or deadlock with a concurrent submit or cancel.
+     */
     @Transactional
     public Detail update(UUID id, long expectedVersion, RequirementFields fields) {
         RequirementRepository.Row row = owned(id);
@@ -151,10 +159,17 @@ class RequirementService {
         if (!errors.isEmpty()) {
             throw ApiException.validation(errors);
         }
-        WorkflowState state = workflow.state(id);
+        WorkflowState state = workflow.lockState(id);
         if (state != WorkflowState.DRAFT && state != WorkflowState.SUBMITTED) {
             throw ApiException.conflict("REQUIREMENT_NOT_EDITABLE",
                     "A requirement in state " + state + " can no longer be edited.");
+        }
+        if (state == WorkflowState.SUBMITTED) {
+            String submittedKind = requirements.findRevision(id, row.currentRevisionNo()).orElseThrow().content().kind();
+            if (!submittedKind.equals(fields.kind())) {
+                throw ApiException.conflict("KIND_CHANGE_NOT_ALLOWED",
+                        "The requirement type cannot be changed after submission.");
+            }
         }
         int nextRevision = row.currentRevisionNo() + 1;
         if (row.version() != expectedVersion || !requirements.advance(id, expectedVersion, nextRevision)) {
@@ -169,6 +184,7 @@ class RequirementService {
     @Transactional
     public Detail submit(UUID id, long expectedVersion) {
         RequirementRepository.Row row = owned(id);
+        workflow.lockState(id);
         if (row.version() != expectedVersion) {
             throw ApiException.versionChanged();
         }
@@ -180,7 +196,10 @@ class RequirementService {
         if (!requirements.advance(id, expectedVersion, row.currentRevisionNo())) {
             throw ApiException.versionChanged();
         }
-        workflow.transition(id, Transition.T01_SUBMIT, null);
+        // RequirementSubmitted is written to the outbox in this transaction; routing follows in the worker.
+        Route route = RequirementFields.EXISTING_REPOSITORY.equals(current.content().kind()) ? Route.REPOSITORY
+                : Route.MANUAL_INTAKE;
+        workflow.submit(id, route);
         audit.record(AuditAction.REQUIREMENT_SUBMITTED, "REQUIREMENT", id, AuditResult.SUCCESS);
         return detail(id, actor());
     }
@@ -196,6 +215,7 @@ class RequirementService {
             throw ApiException.validation(List.of(new FieldError("reason", "INVALID_LENGTH")));
         }
         RequirementRepository.Row row = owned(id);
+        workflow.lockState(id);
         if (row.version() != expectedVersion || !requirements.advance(id, expectedVersion, row.currentRevisionNo())) {
             throw ApiException.versionChanged();
         }

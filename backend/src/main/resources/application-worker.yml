@@ -1,0 +1,25 @@
+# Background worker process (decision Q-M3-3): outbox dispatcher and job queue. Same image as the API, started with
+# "--spring.profiles.active=worker". Connects as sdlc_worker; serves no HTTP. Never holds API or migration credentials.
+spring:
+  main:
+    web-application-type: none
+  datasource:
+    username: ${SDLC_DB_WORKER_USER:sdlc_worker}
+    password: ${SDLC_DB_WORKER_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${SDLC_DB_WORKER_POOL_SIZE:6}
+
+sdlc:
+  worker:
+    enabled: true
+    scheduling: true
+    poll-interval: ${SDLC_WORKER_POLL_INTERVAL:1s}
+    snapshot-interval: 60s
+    liveness-file: ${SDLC_WORKER_LIVENESS_FILE:/tmp/sdlc-worker-alive}
+    outbox:
+      max-attempts: 10
+      backoff-base: 2s
+      backoff-cap: 5m
+      batch-size: 50
+    jobs:
+      concurrency: ${SDLC_WORKER_JOB_CONCURRENCY:2}

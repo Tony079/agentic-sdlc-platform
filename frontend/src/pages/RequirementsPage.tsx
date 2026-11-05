@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { ProjectList, RequirementPage, RequirementState } from '../api/types';
 
-const FILTER_STATES: RequirementState[] = ['DRAFT', 'SUBMITTED', 'CANCELLED'];
+const FILTER_STATES: RequirementState[] = ['DRAFT', 'SUBMITTED', 'REPO_VALIDATING', 'MANUAL_INTAKE', 'CANCELLED'];
 
 export function RequirementsPage() {
   const [state, setState] = useState('');

@@ -1,0 +1,37 @@
+package io.github.tony079.sdlc.outbox.api;
+
+import java.util.Map;
+
+/**
+ * Event types in use and their current payload version (TDD 11.5). Consumers accept the current and the
+ * previous version. The database CHECK holds the full Release 1 catalogue.
+ */
+public final class EventTypes {
+
+    public static final String REQUIREMENT_SUBMITTED = "RequirementSubmitted";
+    public static final String REPO_VALIDATION_STARTED = "RepoValidationStarted";
+    public static final String MANUAL_INTAKE_ENTERED = "ManualIntakeEntered";
+    public static final String REQUIREMENT_CANCELLED = "RequirementCancelled";
+    public static final String JOB_DEAD = "JobDead";
+
+    private static final Map<String, Integer> VERSIONS = Map.of(
+            REQUIREMENT_SUBMITTED, 1, REPO_VALIDATION_STARTED, 1, MANUAL_INTAKE_ENTERED, 1,
+            REQUIREMENT_CANCELLED, 1, JOB_DEAD, 1);
+
+    private EventTypes() {
+    }
+
+    public static int currentVersion(String eventType) {
+        Integer version = VERSIONS.get(eventType);
+        if (version == null) {
+            throw new IllegalArgumentException("Unknown event type " + eventType);
+        }
+        return version;
+    }
+
+    /** Whether a consumer of the current version can read {@code version} (current or previous). */
+    public static boolean isSupported(String eventType, int version) {
+        int current = currentVersion(eventType);
+        return version == current || version == current - 1 && version >= 1;
+    }
+}

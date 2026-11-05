@@ -2,7 +2,13 @@ import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError, ifMatch } from '../api/client';
-import type { RequirementContent, RequirementDetail, RequirementRevision, TimelineEntry } from '../api/types';
+import type {
+  RequirementContent,
+  RequirementDetail,
+  RequirementRevision,
+  RequirementState,
+  TimelineEntry,
+} from '../api/types';
 import { fieldMessage } from '../components/RequirementForm';
 
 const CONTENT_LABELS: [keyof RequirementContent, string][] = [
@@ -32,6 +38,18 @@ function ContentView({ content }: { content: RequirementContent }) {
   );
 }
 
+/** What each state reached so far means for the client (PRD section 6). */
+const STATE_NOTES: Partial<Record<RequirementState, string>> = {
+  SUBMITTED: 'Submitted. The platform is routing the requirement; this page updates automatically.',
+  REPO_VALIDATING:
+    'Waiting for repository validation. Repository connection and analysis are not available yet, so the requirement stays here for now.',
+  MANUAL_INTAKE:
+    'New-product request kept for manual intake by the platform team. No automated analysis is scheduled.',
+};
+
+/** States in which the owner may cancel (PRD section 6: any non-terminal state; these are the ones reachable so far). */
+const CANCELLABLE: RequirementState[] = ['DRAFT', 'SUBMITTED', 'MANUAL_INTAKE', 'REPO_VALIDATING'];
+
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     switch (error.code) {
@@ -60,10 +78,13 @@ export function RequirementDetailPage() {
   const requirement = useQuery({
     queryKey: ['requirement', id],
     queryFn: () => api.get<RequirementDetail>(`/api/v1/requirements/${id}`),
+    // Routing happens asynchronously in the worker: poll briefly while the requirement is SUBMITTED.
+    refetchInterval: (query) => (query.state.data?.state === 'SUBMITTED' ? 3000 : false),
   });
   const timeline = useQuery({
     queryKey: ['requirement', id, 'timeline'],
     queryFn: () => api.get<TimelineEntry[]>(`/api/v1/requirements/${id}/timeline`),
+    refetchInterval: requirement.data?.state === 'SUBMITTED' ? 3000 : false,
   });
 
   if (requirement.isPending) {
@@ -80,6 +101,8 @@ export function RequirementDetailPage() {
   }
   const detail = requirement.data;
   const editable = detail.state === 'DRAFT' || detail.state === 'SUBMITTED';
+  const cancellable = CANCELLABLE.includes(detail.state);
+  const note = STATE_NOTES[detail.state];
 
   async function run(action: () => Promise<RequirementDetail>) {
     setBusy(true);
@@ -127,6 +150,11 @@ export function RequirementDetailPage() {
         State: <span className={`state state-${detail.state.toLowerCase()}`}>{detail.state}</span> · Revision{' '}
         {detail.currentRevisionNo}
       </p>
+      {note && (
+        <p className="notice" role="status">
+          {note}
+        </p>
+      )}
       {actionError && (
         <p role="alert" className="error">
           {actionError}{' '}
@@ -143,7 +171,7 @@ export function RequirementDetailPage() {
             Submit
           </button>
         )}
-        {editable && !cancelling && (
+        {cancellable && !cancelling && (
           <button type="button" onClick={() => setCancelling(true)} disabled={busy}>
             Cancel requirement
           </button>

@@ -12,3 +12,8 @@ databaseChangeLog:
   - include: { file: changes/0007-workflow.sql, relativeToChangelogFile: true }
   - include: { file: changes/0008-idempotency.sql, relativeToChangelogFile: true }
   - include: { file: changes/0009-m2-rls-and-grants.sql, relativeToChangelogFile: true }
+  # Milestone 3: transactional outbox, job queue, routing after submission, worker login grants.
+  - include: { file: changes/0010-outbox.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0011-job-queue.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0012-m3-workflow.sql, relativeToChangelogFile: true }
+  - include: { file: changes/0013-m3-rls-and-grants.sql, relativeToChangelogFile: true }

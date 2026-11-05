@@ -95,6 +95,7 @@ jobs:
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
             echo "SDLC_DB_MIGRATOR_PASSWORD=$(openssl rand -hex 24)"
             echo "SDLC_DB_APP_PASSWORD=$(openssl rand -hex 24)"
+            echo "SDLC_DB_WORKER_PASSWORD=$(openssl rand -hex 24)"
             echo "SDLC_DEV_SEED=true"
             echo "SDLC_DEV_SEED_PASSWORD=ci-demo-password-1"
             echo "SDLC_WEB_PORT=8080"
@@ -151,6 +152,21 @@ jobs:
           CODE=$(curl -s -o /dev/null -w '%{http_code}' -b g.jar $B/api/v1/requirements/$ID)
           test "$CODE" = "404"
           echo "compose smoke (Milestone 2): OK"
+          echo "$ID" > req.id
+      - name: Worker routes the submitted requirement through the outbox (Milestone 3)
+        run: |
+          set -euo pipefail
+          B=http://localhost:8080
+          ID=$(cat req.id)
+          # The Milestone 2 smoke requirement is NEW_PRODUCT, so the worker must route it to MANUAL_INTAKE (T03).
+          for i in $(seq 1 60); do
+            STATE=$(curl -sf -b r.jar $B/api/v1/requirements/$ID | python3 -c 'import sys,json;print(json.load(sys.stdin)["state"])')
+            if [ "$STATE" != "SUBMITTED" ]; then echo "routed: $STATE"; break; fi
+            sleep 2
+          done
+          test "$STATE" = "MANUAL_INTAKE"
+          test "$(docker compose ps worker --format '{{.State}}')" = "running"
+          echo "compose smoke (Milestone 3): OK"
       - name: Logs on failure
         if: failure()
         run: docker compose logs --no-color

@@ -1,5 +1,6 @@
 package io.github.tony079.sdlc.tenancy.internal;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,5 +27,11 @@ class JdbcTenantLookup implements TenantLookup {
                 .param("slug", slug)
                 .query((rs, n) -> new TenantRef(rs.getObject("id", UUID.class), rs.getString("slug"), rs.getString("name")))
                 .optional();
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public List<UUID> activeTenantIds() {
+        return jdbc.sql("SELECT id FROM app.tenant WHERE status = 'ACTIVE' ORDER BY id").query(UUID.class).list();
     }
 }

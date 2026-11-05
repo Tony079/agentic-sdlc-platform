@@ -32,9 +32,9 @@ class SchemaSecurityIT {
                 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
                 WHERE n.nspname = 'app' AND c.relkind = 'r' ORDER BY 1
                 """, String.class);
-        assertThat(tenantTables).containsExactly("app_user", "audit_event", "idempotency_record", "project",
-                "requirement", "requirement_key_counter", "requirement_revision", "workflow_instance",
-                "workflow_transition");
+        assertThat(tenantTables).containsExactly("app_user", "audit_event", "idempotency_record", "job", "job_attempt",
+                "outbox_event", "processed_event", "project", "requirement", "requirement_key_counter",
+                "requirement_revision", "stage_execution", "workflow_instance", "workflow_transition");
 
         for (String table : tenantTables) {
             Map<String, Object> rls = admin.queryForMap("""
@@ -59,10 +59,19 @@ class SchemaSecurityIT {
 
     @Test
     void runtimeRoleIsNotPrivileged() {
-        Map<String, Object> role = admin.queryForMap(
-                "SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = 'sdlc_app'");
-        assertThat(role).containsEntry("rolsuper", false).containsEntry("rolbypassrls", false)
-                .containsEntry("rolcreaterole", false).containsEntry("rolcreatedb", false);
+        for (String login : List.of("sdlc_app", "sdlc_worker")) {
+            Map<String, Object> role = admin.queryForMap(
+                    "SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = ?", login);
+            assertThat(role).as(login).containsEntry("rolsuper", false).containsEntry("rolbypassrls", false)
+                    .containsEntry("rolcreaterole", false).containsEntry("rolcreatedb", false);
+            Map<String, Object> rights = admin.queryForMap("""
+                    SELECT has_schema_privilege(?, 'app', 'CREATE') AS schema_create,
+                           has_database_privilege(?, current_database(), 'TEMP') AS db_temp,
+                           pg_has_role(?, 'sdlc_owner', 'MEMBER') AS owner_member
+                    """, login, login, login);
+            assertThat(rights).as(login).containsEntry("schema_create", false).containsEntry("db_temp", false)
+                    .containsEntry("owner_member", false);
+        }
 
         Integer owned = admin.queryForObject("""
                 SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -142,6 +151,109 @@ class SchemaSecurityIT {
         props.setProperty("options", "-c role=sdlc_owner");
         assertThatThrownBy(() -> DriverManager.getConnection(db.appUrl(), props).close())
                 .hasMessageContaining("permission denied to set role");
+    }
+
+    /**
+     * Milestone 3 boundary (decision Q-M3-3): the API login may only produce outbox events; delivery state, consumer
+     * idempotency records and the job queue belong to the worker login, which itself has no DELETE anywhere and no
+     * access to requirement content, users or sessions.
+     */
+    @Test
+    void apiAndWorkerLoginsHaveSeparateNarrowPrivileges() {
+        assertThat(columns("sdlc_app", "outbox_event", "INSERT"))
+                .containsExactly("aggregate_id", "aggregate_type", "event_type", "payload", "tenant_id");
+        assertThat(columns("sdlc_app", "outbox_event", "UPDATE")).isEmpty();
+        assertThat(columns("sdlc_app", "outbox_event", "SELECT")).isEmpty();
+        for (String table : List.of("processed_event", "job", "job_attempt")) {
+            String name = "app." + table;
+            assertThat(admin.queryForObject("""
+                    SELECT has_any_column_privilege('sdlc_app', ?, 'SELECT') OR has_any_column_privilege('sdlc_app', ?, 'INSERT')
+                        OR has_any_column_privilege('sdlc_app', ?, 'UPDATE') OR has_table_privilege('sdlc_app', ?, 'DELETE')
+                    """, Boolean.class, name, name, name, name)).as("sdlc_app on " + table).isFalse();
+        }
+
+        assertThat(columns("sdlc_worker", "outbox_event", "UPDATE"))
+                .containsExactly("attempts", "dead_at", "last_error_code", "next_attempt_at", "published_at");
+        assertThat(columns("sdlc_worker", "job", "UPDATE")).doesNotContain("max_attempts", "max_infra_failures",
+                "lease_seconds", "max_runtime_seconds", "backoff_base_seconds", "backoff_cap_seconds", "tenant_id",
+                "job_type", "payload", "idempotency_key");
+        assertThat(columns("sdlc_worker", "workflow_instance", "UPDATE"))
+                .containsExactly("last_seq", "projected_state", "updated_at", "version");
+        assertThat(admin.queryForList("""
+                SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'app' AND c.relkind = 'r'
+                  AND (has_table_privilege('sdlc_worker', c.oid, 'DELETE') OR has_table_privilege('sdlc_worker', c.oid, 'TRUNCATE')
+                       OR has_table_privilege('sdlc_app', c.oid, 'TRUNCATE'))
+                """, String.class)).as("DELETE/TRUNCATE").isEmpty();
+        for (String table : List.of("requirement", "requirement_revision", "app_user", "spring_session", "project",
+                "idempotency_record", "job_type", "workflow_definition")) {
+            String name = "app." + table;
+            assertThat(admin.queryForObject(
+                    "SELECT has_any_column_privilege('sdlc_worker', ?, 'INSERT') OR has_any_column_privilege('sdlc_worker', ?, 'UPDATE')",
+                    Boolean.class, name, name)).as("worker writes " + table).isFalse();
+        }
+        for (String table : List.of("requirement", "requirement_revision", "app_user", "spring_session", "project")) {
+            assertThat(admin.queryForObject("SELECT has_any_column_privilege('sdlc_worker', ?, 'SELECT')", Boolean.class,
+                    "app." + table)).as("worker reads " + table).isFalse();
+        }
+        assertThat(columns("sdlc_worker", "tenant", "SELECT")).containsExactly("id", "status");
+    }
+
+    @Test
+    void apiLoginCannotMarkEventsPublishedOrWriteProcessedEvents() throws SQLException {
+        String tenant = db.tenantId("acme").toString();
+        try (Connection app = db.appConnection(); Statement statement = app.createStatement()) {
+            statement.execute("SELECT set_config('app.tenant_id', '" + tenant + "', false)");
+            assertThatThrownBy(() -> statement.executeUpdate("UPDATE app.outbox_event SET published_at = now()"))
+                    .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.executeUpdate("UPDATE app.outbox_event SET dead_at = now()"))
+                    .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.executeUpdate("INSERT INTO app.outbox_event (tenant_id, aggregate_type, "
+                    + "aggregate_id, event_type, payload, published_at) VALUES ('" + tenant + "', 'REQUIREMENT', "
+                    + "gen_random_uuid(), 'RequirementSubmitted', '{\"v\":1}', now())"))
+                    .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.executeUpdate("INSERT INTO app.processed_event (tenant_id, event_id, consumer) "
+                    + "VALUES ('" + tenant + "', gen_random_uuid(), 'workflow-routing')"))
+                    .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.executeQuery("SELECT * FROM app.outbox_event"))
+                    .hasMessageContaining("permission denied");
+        }
+        try (Connection worker = db.workerConnection(); Statement statement = worker.createStatement()) {
+            statement.execute("SELECT set_config('app.tenant_id', '" + tenant + "', false)");
+            assertThatThrownBy(() -> statement.executeQuery("SELECT title FROM app.requirement_revision"))
+                    .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.executeUpdate("DELETE FROM app.outbox_event"))
+                    .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.executeUpdate("UPDATE app.outbox_event SET payload = '{\"v\":2}'"))
+                    .hasMessageContaining("permission denied");
+        }
+    }
+
+    /** No privileged functions exist (decision Q-M3-2); PL/pgSQL functions pin their search_path. */
+    @Test
+    void noSecurityDefinerFunctionsAndNoPublicExecute() {
+        assertThat(admin.queryForList("""
+                SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'app' AND p.prosecdef
+                """, String.class)).isEmpty();
+        assertThat(admin.queryForList("""
+                SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'app' AND has_function_privilege('public', p.oid, 'EXECUTE')
+                """, String.class)).isEmpty();
+        assertThat(admin.queryForList("""
+                SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'app' AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
+                  AND NOT coalesce(array_to_string(p.proconfig, ',') LIKE '%search_path=pg_catalog, app%', false)
+                """, String.class)).isEmpty();
+    }
+
+    private List<String> columns(String role, String table, String privilege) {
+        return admin.queryForList("""
+                SELECT a.attname::text FROM pg_attribute a
+                WHERE a.attrelid = ?::regclass AND a.attnum > 0 AND NOT a.attisdropped
+                  AND has_column_privilege(?, a.attrelid, a.attnum, ?)
+                ORDER BY a.attname
+                """, String.class, "app." + table, role, privilege);
     }
 
     @Test

@@ -4,7 +4,7 @@ Tracks owner decisions, PRD/TDD conflicts, security findings and implementation 
 **PRD v0.7 is the product authority; TDD v1.0.4 is the architecture reference. Neither is modified here.**
 Entries are only marked RESOLVED by a recorded owner decision or verified evidence.
 
-Last updated: 2026-11-03 (Milestone 2).
+Last updated: 2026-11-04 (Milestone 3).
 
 ## 1. Owner approvals recorded
 
@@ -21,6 +21,13 @@ Last updated: 2026-11-03 (Milestone 2).
 | M2-Q2 | 2026-11-03 | A draft may contain only projectId, kind and title; completeness is validated at submission with field-specific 422 errors | |
 | M2-Q4 | 2026-11-03 | In Milestone 2 submission performs only DRAFT → SUBMITTED; routing (T02/T03) uses the transactional outbox in Milestone 3 | No synchronous routing |
 | M2-C03 | 2026-11-03 | Human-readable requirement key `REQ-000123`, generated server-side, unique and concurrency-safe; UUID remains the primary key | Resolves C-03 by owner decision. Implemented per tenant (D-M2-01) |
+| MVP-PROG | 2026-11-04 | Owner instruction to complete all implementable MVP milestones in one programme, without approval stops between ordinary milestones; no push, PR, merge or retarget without separate authorisation | Open decisions stay open; blocked features stay behind secure gates. Scope conflict recorded as **C-19** |
+| M3-Q1 | 2026-11-04 | Outbox: single-transaction row-lock dispatch (`FOR UPDATE SKIP LOCKED`, consumers in the same transaction under savepoints); no claim lease or dispatch epoch | Deviation from TDD 11.2 lease/epoch design for the database-only dispatcher |
+| M3-Q2 | 2026-11-04 | Tenant-wise dispatch inside each tenant's RLS context; no privileged cross-tenant function, no SECURITY DEFINER | |
+| M3-Q3 | 2026-11-04 | Separate worker login `sdlc_worker` with column-level grants; the API cannot mark events published/dead | |
+| M3-Q4 | 2026-11-04 | **REJECTED** (deferring the job queue). The PostgreSQL job queue with leases, heartbeats, fencing epochs, bounded retries, backoff, dead-lettering and recovery is built in Milestone 3 (PRD R1-M1) | Job types get handlers in their own milestones |
+| M3-Q5 | 2026-11-04 | DRAFT editable; SUBMITTED editable but the kind cannot change (409 `KIND_CHANGE_NOT_ALLOWED`); routed states not editable (interim policy) | |
+| M3-Q6 | 2026-11-04 | No dead-event recovery API until the admin authorisation decisions (O-06/O-13); dead events recorded, audited, alerted and isolated per aggregate; no invented FAILED transition | A requirement whose routing event dies stays SUBMITTED |
 | M2-C06 | 2026-11-03 | The Client Approver provides/attaches the repository link; the Business Reviewer may resume manual intake only after the link is available and validated; no Business Reviewer bypass | Rule recorded. **Not implemented in Milestone 2** (needs the repository milestone and O-06) |
 
 ## 2. Implementation decisions (Milestone 1)
@@ -47,6 +54,23 @@ Last updated: 2026-11-03 (Milestone 2).
 | D-M2-05 | Idempotency records are kept indefinitely | The 24-hour replay window (TDD 20.1) and cleanup belong to the retention milestone | ACTIVE — known limit |
 | D-M2-06 | Cancellation reason: 10–500 characters, stored on the transition row (tenant-scoped); never in the audit trail | Audit stays content-free | ACTIVE |
 | D-M2-07 | The requirement list reads the workflow projection with a join; only the workflow module writes workflow tables | Reads are allowed by TDD 9.5; ArchUnit cannot inspect SQL, the schema constraints are the backstop | ACTIVE |
+
+### Implementation decisions (Milestone 3)
+
+| ID | Decision | Rationale / limit | Status |
+|---|---|---|---|
+| D-M3-01 | One image, three processes: `api` (sdlc_app), `worker` (profile `worker`, sdlc_worker, no HTTP), one-shot `migrate` | Background privileges never reachable from an HTTP request | ACTIVE |
+| D-M3-02 | The worker lists ACTIVE tenants from the global registry (columns `id`, `status` only) and then works inside one tenant's transaction context at a time | Q-M3-2 without a cross-tenant function; cost is one query per tenant per poll | ACTIVE |
+| D-M3-03 | One event per dispatch transaction (LIMIT 1, SKIP LOCKED); per-aggregate order by "no earlier unpublished event of the aggregate" | Smallest blast radius per transaction | ACTIVE |
+| D-M3-04 | Delivered and dead outbox events, finished jobs and closed attempts are final, enforced by invoker-rights BEFORE UPDATE triggers with a fixed `search_path` (no SECURITY DEFINER). Job policy is copied from `job_type` by a BEFORE INSERT trigger | D-M2-02 ("no triggers") still holds for the workflow tables; these guards protect queue/outbox integrity even against the superuser | ACTIVE |
+| D-M3-05 | `RequirementSubmitted` carries the route code (`REPOSITORY` / `MANUAL_INTAKE`), derived from the kind at submission | The worker needs no access to requirement content; the kind is locked after submission (Q-M3-5) | ACTIVE |
+| D-M3-06 | T02 creates stage execution REPO_VALIDATION (READY) and enqueues one REPO_VALIDATE job (idempotency key `repo-validate:<requirement>:1`). **No REPO_VALIDATE handler exists yet**: the job stays QUEUED and is reported as backlog until the repository milestone | Repository validation needs the GitHub integration (O-05, C-01, C-18) | ACTIVE — known limit |
+| D-M3-07 | JobDead marks the stage execution FAILED only. Workflow FAILED transitions (T09, T19) arrive with the stages whose handlers can fail | Q-M3-6: no invented transition | ACTIVE |
+| D-M3-08 | Operational visibility: Micrometer gauges/counters (outbox pending, dead, oldest pending age; queue backlog, leased, expired leases, dead jobs; dispatch/claim/retry/dead counters), a periodic `ops.snapshot` log line and `ALERT` log lines. No HTTP metrics endpoint yet | Exposing metrics needs an operator authentication model (O-06/O-13); C-17 alert channel still open | ACTIVE — known limit |
+| D-M3-09 | T03 Business Reviewer notification is not sent | Staff accounts do not exist (O-06) | GATED by O-06 |
+| D-M3-10 | Upgrade of an existing database needs the bootstrap scripts re-run (they are idempotent) before `migrate`, to create `sdlc_worker` | Fresh Compose volumes run them automatically | ACTIVE — operator note |
+| D-M3-11 | All write commands lock the workflow instance before the requirement row (edit, submit, cancel, routing) | One lock order: no deadlocks, no edit after routing | ACTIVE |
+| D-M3-12 | Stored workflow definition `R1-v1` (table `workflow_definition`) must equal the engine's compiled transition table; the api and worker refuse to start otherwise (WF-D01) | Scope guard TDD 9.10 | ACTIVE |
 
 ### Pre-implementation verification (Milestone 2, scratch PostgreSQL 16.15)
 
@@ -105,10 +129,18 @@ Last updated: 2026-11-03 (Milestone 2).
 | S-01 | TDD archive: `sys.purge_expired_audit` executable by the app role | No — M1 schema has no purge function; `sdlc_app` has no UPDATE/DELETE on `audit_event` (verified by `SchemaSecurityIT`) | **OPEN** for the archive; must be resolved before any audit-retention implementation |
 | S-02 | TDD archive: app role may INSERT/UPDATE platform role assignments | No — M1 has no platform role tables | **OPEN**; must be resolved before staff roles (O-06) / provisioning (O-13) |
 | S-04 | Empty tenant setting on pooled connections | M1 helper uses `nullif(..., '')`; **verified** by `RlsPoolLeakIT` (one physical connection, no leak, zero rows without context, no error) | Verified for the M1 schema only; remains OPEN for the archive |
-| S-06 | TDD archive: REPO_VALIDATING retry safeguard (S-27) not implemented | No — no queue/retry yet. Milestone 2's own transition CHECK allows only CREATE, T01 and T29, so no retry transition exists in this schema | **OPEN**; must be implemented with the queue/admin-retry milestone |
+| S-06 | TDD archive: REPO_VALIDATING retry safeguard (S-27) not implemented | Milestone 3 schema has **no admin-retry path at all**: no retry columns on `job_type`, no runtime role can write `job_type`, the transition CHECK has no retry transition, and the engine refuses a stored definition with T30 (`DefinitionVerifierTest`) | **OPEN** for the archive; no admin retry is built (O-06/O-13) |
 | S-03, S-05, S-07..S-12 | See planning record | — | OPEN |
 
 ## 6. Acceptance-criteria progress
+
+### Milestone 3
+
+No acceptance criterion is claimed complete. Evidence toward: AC-DOC-18 / AC-EXT-28 (new product routed to MANUAL_INTAKE
+with no job scheduled; the Business Reviewer resume/close part waits for O-06), AC-CORE-10 (crash yields one result:
+outbox crash-before-commit and job lease-loss recovery tests), AC-EXT-36 jobs clause (C-14: the worker sets the tenant
+context before every data access; cross-tenant claim/commit refused), AC-CORE-13 (engine-only routing transitions,
+refused by the database for a user actor), FR-WF-01/09, PRD R1-M1 (job queue and outbox).
 
 ### Milestone 2
 

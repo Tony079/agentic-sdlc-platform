@@ -46,6 +46,26 @@ function renderDetail() {
 }
 
 describe('RequirementDetailPage', () => {
+  it('explains manual intake, offers cancellation and no editing once routed', async () => {
+    mockFetch((url) =>
+      url.endsWith('/timeline') ? { status: 200, body: timeline } : { status: 200, body: detail({ state: 'MANUAL_INTAKE' }) },
+    );
+    renderDetail();
+    expect(await screen.findByRole('status')).toHaveTextContent('kept for manual intake');
+    expect(screen.getByRole('button', { name: 'Cancel requirement' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+  });
+
+  it('says a submitted requirement is being routed', async () => {
+    mockFetch((url) =>
+      url.endsWith('/timeline') ? { status: 200, body: timeline } : { status: 200, body: detail({ state: 'SUBMITTED' }) },
+    );
+    renderDetail();
+    expect(await screen.findByRole('status')).toHaveTextContent('routing the requirement');
+    expect(screen.getByRole('link', { name: 'Edit' })).toBeInTheDocument();
+  });
+
   it('shows key, state, content and actions for a draft', async () => {
     mockFetch((url) => (url.endsWith('/timeline') ? { status: 200, body: timeline } : { status: 200, body: detail() }));
     renderDetail();
