@@ -80,7 +80,36 @@ built or executed.
 - Symlinks, hard links, devices and FIFOs are skipped and listed with a reason.
 - Nothing is written to the file system from the archive: entries are only streamed and hashed.
 
-## 5. Open gates
+## 5. API (as built)
+
+| Endpoint | Caller | Result |
+|---|---|---|
+| `POST /api/v1/requirements/{id}/repository-link-requests {expiresInHours?}` | Requirement owner | 201 `{requestId, token, expiresAt}` (token once, `Cache-Control: no-store`); 404 if not the owner; 409 `LINK_NOT_ALLOWED_IN_STATE`; 422 for an expiry outside 1–168 hours |
+| `DELETE /api/v1/repository-link-requests/{requestId}` | Issuing owner | 204; 404 otherwise |
+| `GET /api/v1/requirements/{id}/repository-link` | Requirement owner | Pending request (id, expiry), authorised link (URL, status), validation (status, pinned SHA, branch, failure code, snapshot status, file count) |
+| `POST /api/v1/repository-link-requests/redeem {token, repositoryUrl}` | Client Approver | 201 `{linkId, status}`; 422 for URL syntax; **404 for every token failure** |
+| `GET /api/v1/staff/repository-links` | Staff with `REPOSITORY_REGISTER`, active tenant | AUTHORIZED links of the active tenant: link id, URL, project id, time. No requirement data |
+| `POST /api/v1/projects/{id}/repositories {linkId}` | Staff with MFA, assignment, `REPOSITORY_REGISTER` | 202 `{repositoryId, status}`; 403 without the capability or assignment; 404 for an unknown, used or other-tenant link or a wrong project; 409 `REPOSITORY_ALREADY_REGISTERED` / `REGISTRATION_NOT_ALLOWED_IN_STATE` |
+| `GET /api/v1/projects/{id}/repositories` | Tenant users; staff with an active assignment | Repository status, default branch, times. No credentials, no content |
+
+Configuration (worker only): `SDLC_GITHUB_ENABLED` (default `false`), `SDLC_GITHUB_APP_ID`,
+`SDLC_GITHUB_PRIVATE_KEY_FILE` (path to a mounted PEM file, PKCS#8 or GitHub's PKCS#1). With the integration off,
+REPO_VERIFY defers with `GITHUB_NOT_CONFIGURED` and nothing is contacted.
+
+## 6. Test evidence (fake GitHub only)
+
+`FakeGitHub` (test code) generates its RSA key at runtime, verifies App JWT signatures, issues and checks scoped
+tokens, records token requests and serves tarballs through a redirect to a second loopback host.
+- `GitHubBrokerTest`: token narrowing, refusal of wider grants, redirect host refusal, token not forwarded, HTTPS rule, rate-limit and 5xx classification, PKCS#1/PKCS#8 keys.
+- `SnapshotArchiveTest`: inventory, pax SHA check, unsafe paths, links and FIFOs, entry, size and ratio limits, corrupt input.
+- `IndexerTest`: Java symbols and mappings, XXE-safe pom parsing, Gradle coordinates.
+- `LinkRequestIT`: C-18.
+- `RepositoryIntegrationIT`: end to end, permission matrix, T07, T09, cross-tenant clash, deferral, database privileges.
+
+**Real GitHub has not been tested.** That needs a GitHub App, a test organisation with a test repository and a secret
+store for the key (owner/operator action).
+
+## 7. Open gates
 
 - **O-25:** snapshots are kept with no retention or deletion job; production retention is blocked.
 - **O-12 / C-13:** the development/test encrypted store only.

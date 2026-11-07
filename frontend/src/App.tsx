@@ -8,6 +8,9 @@ import { ProjectsPage } from './pages/ProjectsPage';
 import { RequirementDetailPage } from './pages/RequirementDetailPage';
 import { RequirementFormPage } from './pages/RequirementFormPage';
 import { RequirementsPage } from './pages/RequirementsPage';
+import { RedeemLinkPage } from './pages/RedeemLinkPage';
+import { StaffHomePage } from './pages/staff/StaffHomePage';
+import { StaffLoginPage } from './pages/staff/StaffLoginPage';
 
 /** Redirects to sign-in when there is no session. A convenience only: the API enforces authentication. */
 function RequireSession({ children }: { children: ReactNode }) {
@@ -22,6 +25,9 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Internal staff (separate login with TOTP; never a client role). */}
+      <Route path="/staff/login" element={<StaffLoginPage />} />
+      <Route path="/staff" element={<StaffHomePage />} />
       <Route
         element={
           <RequireSession>
@@ -35,6 +41,7 @@ export function App() {
         <Route path="/requirements/new" element={<RequirementFormPage />} />
         <Route path="/requirements/:id" element={<RequirementDetailPage />} />
         <Route path="/requirements/:id/edit" element={<RequirementFormPage />} />
+        <Route path="/repository-links/redeem" element={<RedeemLinkPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

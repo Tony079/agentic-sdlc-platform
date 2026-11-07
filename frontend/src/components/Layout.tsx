@@ -20,6 +20,12 @@ export function Layout() {
         <span className="brand">Agentic SDLC Platform</span>
         <nav aria-label="Main">
           <NavLink to="/projects">Projects</NavLink> <NavLink to="/requirements">Requirements</NavLink>
+          {me?.roles.includes('CLIENT_APPROVER') && (
+            <>
+              {' '}
+              <NavLink to="/repository-links/redeem">Link a repository</NavLink>
+            </>
+          )}
         </nav>
         {me && (
           <div className="session">

@@ -147,3 +147,56 @@ export interface DocumentList {
   items: DocumentItem[];
   limits: { maxFileBytes: number; maxFiles: number; maxTotalBytes: number };
 }
+
+// R1-M4: repository link requests (C-18), registration (C-01) and staff sessions (O-06, O-11).
+
+export interface IssuedLinkRequest {
+  requestId: string;
+  token: string;
+  expiresAt: string;
+}
+
+export interface RepositoryLinkStatus {
+  pendingRequest: { requestId: string; expiresAt: string } | null;
+  link: { linkId: string; repositoryUrl: string; status: 'AUTHORIZED' | 'REGISTERED'; authorizedAt: string } | null;
+  validation: {
+    status: 'PENDING_VALIDATION' | 'VALIDATED' | 'FAILED';
+    pinnedSha: string | null;
+    defaultBranch: string | null;
+    failureCode: string | null;
+    snapshotStatus: 'STORED' | 'INDEXED' | 'FAILED' | null;
+    fileCount: number | null;
+  } | null;
+}
+
+export interface RedeemedLink {
+  linkId: string;
+  status: string;
+}
+
+export interface StaffMe {
+  staffId: string;
+  email: string;
+  displayName: string;
+  activeTenant: { id: string; name: string } | null;
+  assignedTenants: { id: string; name: string }[];
+  capabilities: string[];
+}
+
+export interface PendingRepositoryLink {
+  linkId: string;
+  repositoryUrl: string;
+  projectId: string;
+  authorizedAt: string;
+}
+
+export interface RepositorySummary {
+  id: string;
+  owner: string;
+  name: string;
+  repositoryUrl: string;
+  status: 'PENDING_VERIFICATION' | 'VERIFIED' | 'UNAVAILABLE' | 'ACCESS_DENIED';
+  defaultBranch: string | null;
+  registeredAt: string;
+  verifiedAt: string | null;
+}
