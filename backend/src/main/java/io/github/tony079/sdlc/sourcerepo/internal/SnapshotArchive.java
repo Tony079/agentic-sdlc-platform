@@ -70,6 +70,15 @@ final class SnapshotArchive {
 
     static Inventory read(InputStream gzip, long compressedBytes, String expectedSha, Visitor visitor, Limits limits)
             throws IOException, SnapshotRejected {
+        return read(gzip, compressedBytes, expectedSha, visitor, limits, null);
+    }
+
+    /**
+     * As above; {@code contentFilter}, when given, selects the paths whose content (at most 1 MB) is handed to the
+     * visitor instead of the indexable types. Inventory classification is unchanged.
+     */
+    static Inventory read(InputStream gzip, long compressedBytes, String expectedSha, Visitor visitor, Limits limits,
+                          java.util.function.Predicate<String> contentFilter) throws IOException, SnapshotRejected {
         List<FileEntry> files = new ArrayList<>();
         int rejected = 0;
         int entries = 0;
@@ -108,7 +117,8 @@ final class SnapshotArchive {
                     continue;
                 }
                 String language = language(path);
-                boolean wanted = isIndexedType(path);
+                boolean indexedType = isIndexedType(path);
+                boolean wanted = contentFilter == null ? indexedType : contentFilter.test(path);
                 MessageDigest digest = sha256();
                 byte[] buffer = new byte[8192];
                 java.io.ByteArrayOutputStream kept = wanted ? new java.io.ByteArrayOutputStream() : null;
@@ -133,9 +143,9 @@ final class SnapshotArchive {
                     }
                 }
                 String sha = HexFormat.of().formatHex(digest.digest());
-                String skip = !wanted ? "NOT_INDEXED_TYPE" : size > MAX_INDEXED_FILE_BYTES ? "TOO_LARGE" : null;
+                String skip = !indexedType ? "NOT_INDEXED_TYPE" : size > MAX_INDEXED_FILE_BYTES ? "TOO_LARGE" : null;
                 files.add(new FileEntry(path, language, size, sha, skip == null, skip));
-                if (skip == null && visitor != null) {
+                if (wanted && kept != null && size <= MAX_INDEXED_FILE_BYTES && visitor != null) {
                     visitor.file(path, language, kept.toByteArray());
                 }
             }

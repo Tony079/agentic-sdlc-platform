@@ -35,7 +35,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * R1-M4 end to end against the fake GitHub (TEST ONLY: real GitHub is not verified). Client link (C-18, Q-A), staff
  * registration (C-01, O-06, O-11), REPO_VERIFY, REPO_VALIDATE (SHA pin, T06/T07), T09, snapshot and inventory.
- * Q-B Option A: never ANALYSING, never a BA job.
+ * Failure paths never reach analysis (no BA job); a validated, indexed repository leads to T11 (R1-M5).
  */
 class RepositoryIntegrationIT extends ApiIntegrationTest {
 
@@ -176,7 +176,7 @@ class RepositoryIntegrationIT extends ApiIntegrationTest {
     // --- tests ---------------------------------------------------------------------------------------------------
 
     @Test
-    void registeredVerifiedValidatedPinnedSnapshottedAndIndexedWithoutAnalysis() {
+    void registeredVerifiedValidatedPinnedSnapshottedIndexedAndThenAnalysisStarts() {
         Scenario scenario = linked(fakeRepo(true));
         Enrolled member = registrar("acme");
         ApiClient staff = staff(member, "acme");
@@ -199,8 +199,13 @@ class RepositoryIntegrationIT extends ApiIntegrationTest {
         submit(scenario);
         drive();
 
-        assertThat(state(scenario)).isEqualTo("AWAITING_DOCUMENTS");
-        assertNoAnalysis(scenario);
+        // R1-M4 ends with T06 (validated and pinned); R1-M5 then starts analysis (T11) once the snapshot is indexed.
+        assertThat(state(scenario)).isEqualTo("ANALYSING");
+        assertThat(admin.queryForList("""
+                SELECT t.transition FROM app.workflow_transition t JOIN app.workflow_instance i ON i.id = t.instance_id
+                WHERE i.requirement_id = ?::uuid ORDER BY t.seq
+                """, String.class, scenario.requirementId())).containsSubsequence("T02_ROUTE_REPOSITORY",
+                "T06_REPO_VALIDATED", "T11_START_ANALYSIS");
         assertThat(admin.queryForMap("SELECT status, github_repo_id, default_branch FROM app.repository WHERE id = ?::uuid",
                 repositoryId)).containsEntry("status", "VERIFIED").containsEntry("github_repo_id", scenario.repo().id())
                 .containsEntry("default_branch", "main");
@@ -377,7 +382,7 @@ class RepositoryIntegrationIT extends ApiIntegrationTest {
 
         register(staff(registrar("acme"), "acme"), scenario);
         drive();
-        assertThat(state(scenario)).isEqualTo("AWAITING_DOCUMENTS");
+        assertThat(state(scenario)).isEqualTo("ANALYSING");
     }
 
     @Test

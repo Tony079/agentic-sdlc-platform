@@ -1,6 +1,7 @@
 package io.github.tony079.sdlc.workflow.api;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,4 +51,27 @@ public interface WorkflowEngine {
 
     /** Engine only: T09 after the validation job is dead. Empty if the requirement is no longer REPO_VALIDATING. */
     Optional<WorkflowState> failRepositoryValidation(UUID requirementId);
+
+    /**
+     * Engine only, in the caller's transaction after {@link #lockState}: enters analysis with a frozen input set (T11 from
+     * AWAITING_DOCUMENTS, T15 from ANALYSING). Creates the BA_ANALYSIS stage execution with the input hash, enqueues the
+     * BA_ANALYSIS job (payload plus the stage id) and publishes AnalysisStarted. The caller has evaluated guard 9.4.
+     * Returns the stage execution id, or empty if the state allows neither transition.
+     */
+    Optional<UUID> startAnalysis(UUID requirementId, String inputHash, Map<String, Object> jobPayload);
+
+    /**
+     * Engine only: whether {@code stageExecutionId} is the latest BA_ANALYSIS execution of the requirement and is still
+     * live (not STALE, CANCELLED, FAILED or SUPERSEDED). Used by the commit step (Tx C).
+     */
+    boolean isCurrentAnalysis(UUID requirementId, UUID stageExecutionId);
+
+    /** Engine only, Tx C: T18 then T20; the stage SUCCEEDED; BrdVersionCreated and ReviewQueued. */
+    Optional<WorkflowState> completeAnalysis(UUID requirementId, UUID stageExecutionId, UUID brdVersionId);
+
+    /** Engine only: the execution's inputs changed (TDD 9.6): stage STALE, ExecutionStale, T14 unless restarted after. */
+    void markAnalysisStale(UUID requirementId, UUID stageExecutionId, boolean waitForInputs);
+
+    /** Engine only: T19 after the BA job is dead or fatal. Empty if the requirement is no longer ANALYSING. */
+    Optional<WorkflowState> failAnalysis(UUID requirementId);
 }

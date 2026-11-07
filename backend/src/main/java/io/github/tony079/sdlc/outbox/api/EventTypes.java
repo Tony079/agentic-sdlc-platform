@@ -21,6 +21,11 @@ public final class EventTypes {
     public static final String DOCUMENT_DECISION_REQUESTED = "DocumentDecisionRequested";
     public static final String WORKFLOW_FAILED = "WorkflowFailed";
     public static final String REPOSITORY_REGISTERED = "RepositoryRegistered";
+    public static final String REPOSITORY_SNAPSHOT_INDEXED = "RepositorySnapshotIndexed";
+    public static final String ANALYSIS_STARTED = "AnalysisStarted";
+    public static final String EXECUTION_STALE = "ExecutionStale";
+    public static final String BRD_VERSION_CREATED = "BrdVersionCreated";
+    public static final String REVIEW_QUEUED = "ReviewQueued";
 
     private static final Map<String, Integer> VERSIONS = Map.ofEntries(
             Map.entry(REQUIREMENT_SUBMITTED, 1),
@@ -35,7 +40,12 @@ public final class EventTypes {
             Map.entry(REPO_VALIDATED, 1),
             Map.entry(DOCUMENT_DECISION_REQUESTED, 1),
             Map.entry(WORKFLOW_FAILED, 1),
-            Map.entry(REPOSITORY_REGISTERED, 1));
+            Map.entry(REPOSITORY_REGISTERED, 1),
+            Map.entry(REPOSITORY_SNAPSHOT_INDEXED, 1),
+            Map.entry(ANALYSIS_STARTED, 1),
+            Map.entry(EXECUTION_STALE, 1),
+            Map.entry(BRD_VERSION_CREATED, 1),
+            Map.entry(REVIEW_QUEUED, 1));
 
     private EventTypes() {
     }

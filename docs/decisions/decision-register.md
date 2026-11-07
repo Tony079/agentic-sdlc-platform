@@ -313,3 +313,21 @@ GitHub App itself (an external prerequisite, not a decision).
 | D-M4R-14 | The installation token must carry only `contents: read` and `metadata: read`; a token with any wider grant is refused (`GITHUB_TOKEN_SCOPE`). The tarball redirect is followed once, only to an allowed host, **without** the token | Defence in depth even if the App is mis-configured with wider permissions | ACTIVE |
 | D-M4R-15 | The one-shot `provision` profile loads the application context like `migrate`; beans that need tenant tables, storage keys or the model gateway are excluded with `@Profile("!migrate & !provision")` | The provisioning login can read only staff tables and three tenant columns | ACTIVE |
 | D-M4R-16 | A repository snapshot that breaks a limit or the SHA check is recorded as a FAILED snapshot (job succeeds, audit `SNAPSHOT_FAILED`); the requirement state is not changed (it is already AWAITING_DOCUMENTS / AWAITING_DOCUMENT_DECISION). No retry path is offered (O-27) | Deterministic failures are not retried; workflow impact of a failed snapshot is for R1-M5 to decide | ACTIVE — open point for R1-M5 |
+
+## 11. Implementation decisions (R1-M5, branch `feature/r1-m5-m6-completion`)
+
+R1-M5 was authorised by the owner's completion instruction of 2026-11-07. Q-B Option A (no ANALYSING in R1-M4) is
+therefore superseded for R1-M5: validation still ends with T06/T07, and analysis starts afterwards through T11.
+
+| ID | Decision | Rationale / limit | Status |
+|---|---|---|---|
+| D-R5-01 | Analysis is entered by **T11** (AWAITING_DOCUMENTS → ANALYSING) after T06, not T08. Guard 9.4 additionally requires the pinned snapshot to be **INDEXED** (the BA input needs the inventory) | Follows D-M4R-04; T08 is unused. A FAILED snapshot keeps the requirement in AWAITING_DOCUMENTS (D-M4R-16 still open) | ACTIVE — flagged |
+| D-R5-02 | A document needing a decision (UNSUPPORTED_CONTENT, EXTRACTION_FAILED_FINAL, UPLOAD_FAILED) blocks the guard; REJECTED_INVALID / REJECTED_MALWARE are excluded and listed on the BRD version | No decision-recording path exists yet (T12/T13 not built): the safe default is to wait | ACTIVE — T12/T13 open |
+| D-R5-03 | No model tool calling: the gateway has no tool API (FR-LLM-01 gap). The BA agent uses **context assembly**: Phase A selects up to 15 relevant snapshot files (restricted to real snapshot paths), Phase B receives those files with line numbers plus the inventory and document chunks, all as untrusted data blocks | Same trust boundary (no model-chosen tool can run); tool calling remains a gap against TDD 12.5 | ACTIVE — gap recorded |
+| D-R5-04 | The worker reads `requirement_revision` and five identity columns of `requirement` (read-only) | TDD 12.3: the revision is the BA input. `SchemaSecurityIT` updated deliberately | ACTIVE |
+| D-R5-05 | Model failures: no provider configured (O-01) → the job **waits** (deferral, 15 min, no budget used); rate limit/timeout/unavailable → deferral; invalid/empty output → retryable (3 attempts) → dead → **T19**; budget cap → fatal `COST_CAP` → T19 (TDD 12.8) | Without a provider nothing leaves the platform and no requirement fails because of the open decision | ACTIVE |
+| D-R5-06 | New outbox event **`RepositorySnapshotIndexed`** (extension of the TDD 11.5 catalogue, like D-M4R-10) re-evaluates the guard | The guard needs the indexed snapshot | ACTIVE — flagged |
+| D-R5-07 | Support check is lexical only (quote present; a key term of the statement in the cited text); a failing support check FLAGS the item; no model-based entailment check | TDD 16.3 allows the lexical check alone | ACTIVE |
+| D-R5-08 | Staleness (9.6) is detected at the commit step (Tx C recomputes the input hash): T15 if the guard still holds, otherwise T14. A document change does not yet proactively cancel a running BA job | WF-S02 behaviour is met; proactive cancellation is a gap | ACTIVE — gap recorded |
+| D-R5-09 | A proposal that fails re-validation at Tx C is REJECTED_INVALID and leads to T19 | TDD 12.6 step 5 | ACTIVE |
+| D-R5-10 | Prompts `ba.phase-a@1` and `ba.phase-b@1` are classpath resources; their SHA-256 is registered in changeset 0020 | TDD 13.4 | ACTIVE |

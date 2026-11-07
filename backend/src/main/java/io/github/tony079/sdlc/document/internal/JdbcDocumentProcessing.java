@@ -46,6 +46,33 @@ class JdbcDocumentProcessing implements DocumentProcessing {
     }
 
     @Override
+    public java.util.List<AnalysisDocument> analysisDocuments(UUID requirementId) {
+        return jdbc.sql("""
+                SELECT v.document_id, v.id, v.file_name, v.state, e.extraction_no, e.output_sha256
+                FROM app.document_version v
+                LEFT JOIN LATERAL (SELECT x.extraction_no, x.output_sha256 FROM app.document_extraction x
+                                   WHERE x.version_id = v.id AND x.outcome = 'PROCESSED'
+                                   ORDER BY x.extraction_no DESC LIMIT 1) e ON true
+                WHERE v.requirement_id = :requirement AND v.state <> 'DELETED'
+                  AND v.version_no = (SELECT max(o.version_no) FROM app.document_version o WHERE o.document_id = v.document_id)
+                ORDER BY v.document_id
+                """).param("requirement", requirementId)
+                .query((rs, n) -> new AnalysisDocument(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class),
+                        rs.getString(3), rs.getString(4), (Integer) rs.getObject(5), rs.getString(6)))
+                .list();
+    }
+
+    @Override
+    public java.util.List<Chunk> chunks(UUID versionId, int extractionNo) {
+        return jdbc.sql("""
+                SELECT ordinal, label, page_no, text FROM app.document_chunk
+                WHERE version_id = :version AND extraction_no = :extraction ORDER BY ordinal
+                """).param("version", versionId).param("extraction", extractionNo)
+                .query((rs, n) -> new Chunk(rs.getInt(1), rs.getString(2), (Integer) rs.getObject(3), rs.getString(4)))
+                .list();
+    }
+
+    @Override
     public boolean needsDecision(UUID requirementId) {
         return jdbc.sql("""
                 SELECT count(*) FROM app.document_version v

@@ -173,6 +173,100 @@ class JdbcWorkflowEngine implements WorkflowEngine {
         return Optional.of(to);
     }
 
+    @Override
+    public Optional<UUID> startAnalysis(UUID requirementId, String inputHash, Map<String, Object> jobPayload) {
+        requireEngine();
+        Current current = lock(requirementId);
+        Transition transition;
+        if (current.state() == WorkflowState.AWAITING_DOCUMENTS) {
+            transition = Transition.T11_START_ANALYSIS;
+        } else if (current.state() == WorkflowState.ANALYSING) {
+            transition = Transition.T15_ANALYSIS_RESTART;
+        } else {
+            return Optional.empty();
+        }
+        applyLocked(requirementId, current, transition, null);
+        int attempt = jdbc.sql("""
+                SELECT coalesce(max(attempt_no), 0) + 1 FROM app.stage_execution
+                WHERE instance_id = :instance AND stage_key = 'BA_ANALYSIS'
+                """).param("instance", current.instanceId()).query(Integer.class).single();
+        UUID stage = jdbc.sql("""
+                INSERT INTO app.stage_execution (tenant_id, instance_id, stage_key, attempt_no, status, input_hash)
+                VALUES (:tenant, :instance, 'BA_ANALYSIS', :attempt, 'READY', :hash) RETURNING id
+                """).param("tenant", TenantContext.requireTenant()).param("instance", current.instanceId())
+                .param("attempt", attempt).param("hash", inputHash).query(UUID.class).single();
+        Map<String, Object> payload = new java.util.LinkedHashMap<>(jobPayload);
+        payload.put("requirementId", requirementId.toString());
+        payload.put("stageExecutionId", stage.toString());
+        jobs.enqueue(new JobRequest("BA_ANALYSIS", "ba-analysis:" + stage, AGGREGATE, requirementId, stage, payload, 100));
+        outbox.publish(AGGREGATE, requirementId, EventTypes.ANALYSIS_STARTED,
+                Map.of("requirementId", requirementId.toString(), "stageExecutionId", stage.toString()));
+        audit.record(AuditAction.ANALYSIS_STARTED, AGGREGATE, requirementId, AuditResult.SUCCESS);
+        return Optional.of(stage);
+    }
+
+    @Override
+    public boolean isCurrentAnalysis(UUID requirementId, UUID stageExecutionId) {
+        return Boolean.TRUE.equals(jdbc.sql("""
+                SELECT s.id = :stage AND s.status NOT IN ('STALE', 'CANCELLED', 'FAILED', 'SUPERSEDED')
+                FROM app.stage_execution s JOIN app.workflow_instance i ON i.id = s.instance_id
+                WHERE i.requirement_id = :requirement AND s.stage_key = 'BA_ANALYSIS'
+                ORDER BY s.attempt_no DESC LIMIT 1
+                """).param("stage", stageExecutionId).param("requirement", requirementId).query(Boolean.class)
+                .optional().orElse(false));
+    }
+
+    @Override
+    public Optional<WorkflowState> completeAnalysis(UUID requirementId, UUID stageExecutionId, UUID brdVersionId) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.ANALYSING) {
+            return Optional.empty();
+        }
+        applyLocked(requirementId, current, Transition.T18_BRD_DRAFTED, null);
+        jdbc.sql("""
+                UPDATE app.stage_execution SET status = 'SUCCEEDED', updated_at = clock_timestamp()
+                WHERE id = :stage AND status IN ('PENDING', 'BLOCKED', 'READY', 'RUNNING')
+                """).param("stage", stageExecutionId).update();
+        outbox.publish(AGGREGATE, requirementId, EventTypes.BRD_VERSION_CREATED,
+                Map.of("requirementId", requirementId.toString(), "brdVersionId", brdVersionId.toString()));
+        WorkflowState to = applyLocked(requirementId, lock(requirementId), Transition.T20_QUEUE_REVIEW, null);
+        outbox.publish(AGGREGATE, requirementId, EventTypes.REVIEW_QUEUED,
+                Map.of("requirementId", requirementId.toString(), "brdVersionId", brdVersionId.toString()));
+        audit.record(AuditAction.BRD_VERSION_CREATED, "BRD_VERSION", brdVersionId, AuditResult.SUCCESS);
+        return Optional.of(to);
+    }
+
+    @Override
+    public void markAnalysisStale(UUID requirementId, UUID stageExecutionId, boolean waitForInputs) {
+        requireEngine();
+        Current current = lock(requirementId);
+        jdbc.sql("""
+                UPDATE app.stage_execution SET status = 'STALE', updated_at = clock_timestamp()
+                WHERE id = :stage AND status NOT IN ('STALE', 'CANCELLED', 'SUPERSEDED')
+                """).param("stage", stageExecutionId).update();
+        outbox.publish(AGGREGATE, requirementId, EventTypes.EXECUTION_STALE,
+                Map.of("requirementId", requirementId.toString(), "stageExecutionId", stageExecutionId.toString()));
+        audit.record(AuditAction.ANALYSIS_STALE, "STAGE_EXECUTION", stageExecutionId, AuditResult.FAILED);
+        if (waitForInputs && current.state() == WorkflowState.ANALYSING) {
+            applyLocked(requirementId, current, Transition.T14_ANALYSIS_STALE_WAIT, null);
+        }
+    }
+
+    @Override
+    public Optional<WorkflowState> failAnalysis(UUID requirementId) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.ANALYSING) {
+            return Optional.empty();
+        }
+        WorkflowState to = applyLocked(requirementId, current, Transition.T19_ANALYSIS_FAILED, null);
+        outbox.publish(AGGREGATE, requirementId, EventTypes.WORKFLOW_FAILED,
+                Map.of("requirementId", requirementId.toString(), "code", "ANALYSIS_FAILED"));
+        audit.record(AuditAction.ANALYSIS_FAILED, AGGREGATE, requirementId, AuditResult.FAILED);
+        return Optional.of(to);
+    }
+
     private static void requireEngine() {
         if (TenantContext.currentActor().isPresent()) {
             throw new IllegalStateException("Engine transitions cannot run for a user");

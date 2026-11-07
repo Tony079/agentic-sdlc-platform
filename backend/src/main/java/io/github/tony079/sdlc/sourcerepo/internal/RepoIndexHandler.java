@@ -15,6 +15,7 @@ import java.util.concurrent.TimeoutException;
 import io.github.tony079.sdlc.audit.api.AuditWriter;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditAction;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditResult;
+import io.github.tony079.sdlc.outbox.api.EventTypes;
 import io.github.tony079.sdlc.queue.api.ClaimedJob;
 import io.github.tony079.sdlc.queue.api.JobFailure;
 import io.github.tony079.sdlc.queue.api.JobHandler;
@@ -49,15 +50,17 @@ class RepoIndexHandler implements JobHandler<RepoIndexHandler.Outcome> {
     private final WorkerRepository repositories;
     private final ObjectStore storage;
     private final AuditWriter audit;
+    private final io.github.tony079.sdlc.outbox.api.OutboxPublisher outbox;
     private final TransactionTemplate tx;
     private final Duration parseTimeout;
 
     RepoIndexHandler(WorkerRepository repositories, ObjectStore storage, AuditWriter audit,
-                     PlatformTransactionManager transactionManager,
+                     io.github.tony079.sdlc.outbox.api.OutboxPublisher outbox, PlatformTransactionManager transactionManager,
                      @Value("${sdlc.repository.index.parse-timeout:10s}") Duration parseTimeout) {
         this.repositories = repositories;
         this.storage = storage;
         this.audit = audit;
+        this.outbox = outbox;
         this.tx = new TransactionTemplate(transactionManager);
         this.tx.setReadOnly(true);
         this.parseTimeout = parseTimeout;
@@ -133,6 +136,10 @@ class RepoIndexHandler implements JobHandler<RepoIndexHandler.Outcome> {
         repositories.insertDependencies(job.tenantId(), outcome.snapshotId(), outcome.dependencies());
         repositories.markIndexed(outcome.snapshotId());
         audit.record(AuditAction.SNAPSHOT_INDEXED, "REPOSITORY_SNAPSHOT", outcome.snapshotId(), AuditResult.SUCCESS);
+        // Analysis may start once the pinned snapshot is indexed (guard 9.4 d, R1-M5).
+        outbox.publish("REQUIREMENT", job.aggregateId(), EventTypes.REPOSITORY_SNAPSHOT_INDEXED,
+                java.util.Map.of("requirementId", job.aggregateId().toString(),
+                        "snapshotId", outcome.snapshotId().toString()));
     }
 
     private static ExecutorService newParser() {

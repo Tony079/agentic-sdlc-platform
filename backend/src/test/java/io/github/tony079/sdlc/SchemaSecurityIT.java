@@ -32,7 +32,8 @@ class SchemaSecurityIT {
                 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
                 WHERE n.nspname = 'app' AND c.relkind = 'r' ORDER BY 1
                 """, String.class);
-        assertThat(tenantTables).containsExactly("app_user", "audit_event", "build_dependency", "code_symbol",
+        assertThat(tenantTables).containsExactly("analysis_input_set", "app_user", "audit_event", "ba_result_pending",
+                "brd", "brd_item", "brd_item_evidence", "brd_version", "build_dependency", "code_symbol",
                 "document", "document_chunk",
                 "document_extraction", "document_version",
                 "idempotency_record", "job", "job_attempt", "model_call_record",
@@ -197,10 +198,14 @@ class SchemaSecurityIT {
                     "SELECT has_any_column_privilege('sdlc_worker', ?, 'INSERT') OR has_any_column_privilege('sdlc_worker', ?, 'UPDATE')",
                     Boolean.class, name, name)).as("worker writes " + table).isFalse();
         }
-        for (String table : List.of("requirement", "requirement_revision", "app_user", "spring_session", "project")) {
+        for (String table : List.of("app_user", "spring_session", "project")) {
             assertThat(admin.queryForObject("SELECT has_any_column_privilege('sdlc_worker', ?, 'SELECT')", Boolean.class,
                     "app." + table)).as("worker reads " + table).isFalse();
         }
+        // R1-M5 (TDD 12.3): the BA agent analyses the requirement revision, so the worker reads it (read-only) and five
+        // identity columns of requirement; it still cannot write either (checked above).
+        assertThat(columns("sdlc_worker", "requirement", "SELECT"))
+                .containsExactly("created_by", "current_revision_no", "id", "project_id", "tenant_id");
         assertThat(columns("sdlc_worker", "tenant", "SELECT")).containsExactly("id", "status");
     }
 
@@ -225,7 +230,9 @@ class SchemaSecurityIT {
         }
         try (Connection worker = db.workerConnection(); Statement statement = worker.createStatement()) {
             statement.execute("SELECT set_config('app.tenant_id', '" + tenant + "', false)");
-            assertThatThrownBy(() -> statement.executeQuery("SELECT title FROM app.requirement_revision"))
+            assertThatThrownBy(() -> statement.executeQuery("SELECT * FROM app.app_user"))
+                    .hasMessageContaining("permission denied");
+            assertThatThrownBy(() -> statement.executeUpdate("UPDATE app.requirement_revision SET title = 'x'"))
                     .hasMessageContaining("permission denied");
             assertThatThrownBy(() -> statement.executeUpdate("DELETE FROM app.outbox_event"))
                     .hasMessageContaining("permission denied");

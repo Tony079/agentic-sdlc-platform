@@ -38,6 +38,12 @@ class JobDeadConsumer implements EventConsumer {
         if ("REPO_VALIDATE".equals(event.payload().get("jobType")) && "REQUIREMENT".equals(event.aggregateType())) {
             engine.failRepositoryValidation(event.aggregateId());
         }
+        // T19 (R1-M5): a dead BA job (analysis or commit) fails the workflow; no admin retry exists (O-27, T26 not built).
+        Object jobType = event.payload().get("jobType");
+        if (("BA_ANALYSIS".equals(jobType) || "BA_COMMIT_RESULT".equals(jobType))
+                && "REQUIREMENT".equals(event.aggregateType())) {
+            engine.failAnalysis(event.aggregateId());
+        }
         Object stage = event.payload().get("stageExecutionId");
         if (stage == null) {
             return;

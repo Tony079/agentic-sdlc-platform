@@ -17,6 +17,18 @@ public enum Transition {
     T07_REPO_VALIDATED_DOCUMENT_DECISION(true),
     /** T09: REPO_VALIDATING to FAILED, by the engine when the validation job is dead. No retry path (O-27). */
     T09_REPO_VALIDATION_FAILED(true),
+    /** T11: AWAITING_DOCUMENTS to ANALYSING, by the engine when guard 9.4 holds; freezes the input set. */
+    T11_START_ANALYSIS(true),
+    /** T14: ANALYSING to AWAITING_DOCUMENTS, by the engine: inputs changed and the guard no longer holds. */
+    T14_ANALYSIS_STALE_WAIT(true),
+    /** T15: ANALYSING to ANALYSING, by the engine: inputs changed, guard holds, new execution and input set. */
+    T15_ANALYSIS_RESTART(true),
+    /** T18: ANALYSING to BRD_DRAFTED, by the engine only through the commit step (Tx C). */
+    T18_BRD_DRAFTED(true),
+    /** T19: ANALYSING to FAILED, by the engine when the BA job is dead or fatal. */
+    T19_ANALYSIS_FAILED(true),
+    /** T20: BRD_DRAFTED to INTERNAL_REVIEW, by the engine once the BRD version is complete. */
+    T20_QUEUE_REVIEW(true),
     /** T29: a non-terminal state to CANCELLED, by the requirement's owner, with a reason. */
     T29_CANCEL(false);
 
