@@ -60,14 +60,17 @@ class LinkRequestService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final LinkRequestRepository links;
+    private final RegistrationRepository registrations;
     private final RequirementDirectory requirements;
     private final WorkflowEngine workflow;
     private final AuditWriter audit;
     private final SecurityEventRecorder securityEvents;
 
-    LinkRequestService(LinkRequestRepository links, RequirementDirectory requirements, WorkflowEngine workflow,
-                       AuditWriter audit, SecurityEventRecorder securityEvents) {
+    LinkRequestService(LinkRequestRepository links, RegistrationRepository registrations,
+                       RequirementDirectory requirements, WorkflowEngine workflow, AuditWriter audit,
+                       SecurityEventRecorder securityEvents) {
         this.links = links;
+        this.registrations = registrations;
         this.requirements = requirements;
         this.workflow = workflow;
         this.audit = audit;
@@ -80,7 +83,7 @@ class LinkRequestService {
     record Redeemed(UUID linkId, String status) {
     }
 
-    record LinkStatus(PendingRequest pendingRequest, CurrentLink link) {
+    record LinkStatus(PendingRequest pendingRequest, CurrentLink link, RegistrationRepository.Validation validation) {
     }
 
     record PendingRequest(UUID requestId, OffsetDateTime expiresAt) {
@@ -134,7 +137,7 @@ class LinkRequestService {
                 .map(r -> new PendingRequest(r.id(), r.expiresAt())).orElse(null);
         CurrentLink link = links.currentLink(requirementId)
                 .map(l -> new CurrentLink(l.id(), l.repositoryUrl(), l.status(), l.authorizedAt())).orElse(null);
-        return new LinkStatus(pending, link);
+        return new LinkStatus(pending, link, registrations.validation(requirementId).orElse(null));
     }
 
     /**

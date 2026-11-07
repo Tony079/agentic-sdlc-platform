@@ -92,6 +92,10 @@ class SecurityConfig {
                         // C-18: issue/revoke by the requirement owner, redeem by a Client Approver (checked in the service).
                         .requestMatchers("/api/v1/repository-link-requests/**")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
+                        // C-01: final registration by staff with REPOSITORY_REGISTER (checked per call); status for both.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/projects/*/repositories").hasRole("STAFF")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/projects/*/repositories")
+                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER", "STAFF")
                         .requestMatchers("/api/v1/projects", "/api/v1/projects/**",
                                         "/api/v1/requirements", "/api/v1/requirements/**")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")

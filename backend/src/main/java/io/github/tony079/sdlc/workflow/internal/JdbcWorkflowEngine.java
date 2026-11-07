@@ -136,6 +136,49 @@ class JdbcWorkflowEngine implements WorkflowEngine {
         return Optional.of(to);
     }
 
+    @Override
+    public Optional<WorkflowState> completeRepositoryValidation(UUID requirementId, UUID stageExecutionId,
+                                                                boolean documentDecisionNeeded) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.REPO_VALIDATING) {
+            return Optional.empty();
+        }
+        Transition transition = documentDecisionNeeded ? Transition.T07_REPO_VALIDATED_DOCUMENT_DECISION
+                : Transition.T06_REPO_VALIDATED;
+        WorkflowState to = applyLocked(requirementId, current, transition, null);
+        if (stageExecutionId != null) {
+            jdbc.sql("""
+                    UPDATE app.stage_execution SET status = 'SUCCEEDED', updated_at = clock_timestamp()
+                    WHERE id = :stage AND status IN ('PENDING', 'BLOCKED', 'READY', 'RUNNING')
+                    """).param("stage", stageExecutionId).update();
+        }
+        outbox.publish(AGGREGATE, requirementId, documentDecisionNeeded ? EventTypes.DOCUMENT_DECISION_REQUESTED
+                : EventTypes.REPO_VALIDATED, Map.of("requirementId", requirementId.toString()));
+        audit.record(AuditAction.REQUIREMENT_ROUTED, AGGREGATE, requirementId, AuditResult.SUCCESS);
+        return Optional.of(to);
+    }
+
+    @Override
+    public Optional<WorkflowState> failRepositoryValidation(UUID requirementId) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.REPO_VALIDATING) {
+            return Optional.empty();
+        }
+        WorkflowState to = applyLocked(requirementId, current, Transition.T09_REPO_VALIDATION_FAILED, null);
+        outbox.publish(AGGREGATE, requirementId, EventTypes.WORKFLOW_FAILED,
+                Map.of("requirementId", requirementId.toString(), "code", "REPO_VALIDATION_FAILED"));
+        audit.record(AuditAction.REPOSITORY_VALIDATION_FAILED, AGGREGATE, requirementId, AuditResult.FAILED);
+        return Optional.of(to);
+    }
+
+    private static void requireEngine() {
+        if (TenantContext.currentActor().isPresent()) {
+            throw new IllegalStateException("Engine transitions cannot run for a user");
+        }
+    }
+
     private Current lock(UUID requirementId) {
         // Lock the instance: concurrent transitions of one requirement are applied one after the other.
         return jdbc.sql("""

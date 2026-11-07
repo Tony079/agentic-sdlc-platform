@@ -1,6 +1,7 @@
 package io.github.tony079.sdlc.workflow.api;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -38,4 +39,15 @@ public interface WorkflowEngine {
     WorkflowState transition(UUID requirementId, Transition transition, String reason);
 
     List<TimelineEntry> timeline(UUID requirementId);
+
+    /**
+     * Engine only (worker, no user): the repository is validated and pinned. T07 when {@code documentDecisionNeeded},
+     * otherwise T06 (Q-B Option A: never T08, never ANALYSING, no BA job). Marks the validation stage SUCCEEDED.
+     * Returns empty, changing nothing, if the requirement is no longer REPO_VALIDATING (for example cancelled).
+     */
+    Optional<WorkflowState> completeRepositoryValidation(UUID requirementId, UUID stageExecutionId,
+                                                         boolean documentDecisionNeeded);
+
+    /** Engine only: T09 after the validation job is dead. Empty if the requirement is no longer REPO_VALIDATING. */
+    Optional<WorkflowState> failRepositoryValidation(UUID requirementId);
 }

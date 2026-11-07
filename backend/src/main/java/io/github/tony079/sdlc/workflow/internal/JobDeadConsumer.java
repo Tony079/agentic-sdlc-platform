@@ -8,17 +8,18 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
 /**
- * Engine reaction to a dead job (TDD 9.2, 10.6): the job's stage execution becomes FAILED. The workflow state is
- * not changed here; the workflow-level FAILED transitions (T09, T19) arrive with the stages that can fail
- * (repository validation, BA analysis), whose handlers are built in their own milestones.
+ * Engine reaction to a dead job (TDD 9.2, 10.6): the job's stage execution becomes FAILED, and a dead repository
+ * validation job moves the requirement to FAILED (T09, R1-M4). T19 (BA analysis) arrives with R1-M5.
  */
 @Component
 class JobDeadConsumer implements EventConsumer {
 
     private final JdbcClient jdbc;
+    private final JdbcWorkflowEngine engine;
 
-    JobDeadConsumer(JdbcClient jdbc) {
+    JobDeadConsumer(JdbcClient jdbc, JdbcWorkflowEngine engine) {
         this.jdbc = jdbc;
+        this.engine = engine;
     }
 
     @Override
@@ -33,6 +34,10 @@ class JobDeadConsumer implements EventConsumer {
 
     @Override
     public void handle(DomainEvent event) {
+        // T09 (R1-M4): a dead repository validation job fails the workflow. No retry path exists (O-27, no T30).
+        if ("REPO_VALIDATE".equals(event.payload().get("jobType")) && "REQUIREMENT".equals(event.aggregateType())) {
+            engine.failRepositoryValidation(event.aggregateId());
+        }
         Object stage = event.payload().get("stageExecutionId");
         if (stage == null) {
             return;

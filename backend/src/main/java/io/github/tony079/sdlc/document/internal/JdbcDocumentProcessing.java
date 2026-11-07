@@ -46,6 +46,16 @@ class JdbcDocumentProcessing implements DocumentProcessing {
     }
 
     @Override
+    public boolean needsDecision(UUID requirementId) {
+        return jdbc.sql("""
+                SELECT count(*) FROM app.document_version v
+                WHERE v.requirement_id = :requirement
+                  AND v.state IN ('UNSUPPORTED_CONTENT', 'EXTRACTION_FAILED_FINAL', 'UPLOAD_FAILED')
+                  AND v.version_no = (SELECT max(o.version_no) FROM app.document_version o WHERE o.document_id = v.document_id)
+                """).param("requirement", requirementId).query(Integer.class).single() > 0;
+    }
+
+    @Override
     public Optional<UUID> currentVersion(UUID documentId) {
         return jdbc.sql("""
                 SELECT id FROM app.document_version WHERE document_id = :document ORDER BY version_no DESC LIMIT 1

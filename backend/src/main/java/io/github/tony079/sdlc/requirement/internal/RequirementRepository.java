@@ -79,6 +79,11 @@ class RequirementRepository {
                 .update();
     }
 
+    Optional<UUID> projectOf(UUID id) {
+        return jdbc.sql("SELECT project_id FROM app.requirement WHERE id = :id").param("id", id).query(UUID.class)
+                .optional();
+    }
+
     Optional<Row> findOwned(UUID id, UUID owner) {
         return jdbc.sql("""
                 SELECT id, key, project_id, created_by, current_revision_no, version, created_at, updated_at

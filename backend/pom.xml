@@ -71,6 +71,20 @@
             <version>3.0.5</version>
         </dependency>
 
+        <!-- R1-M4 repository snapshots: streamed tar/gzip reading, never extracted to disk (D-M4R-08). Apache-2.0. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.27.1</version>
+        </dependency>
+        <!-- R1-M4 inventory: static Java parsing of client source; never compiled or executed (D-M4R-07). Apache-2.0
+             (dual LGPL/Apache; used under Apache-2.0). -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>3.26.4</version>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

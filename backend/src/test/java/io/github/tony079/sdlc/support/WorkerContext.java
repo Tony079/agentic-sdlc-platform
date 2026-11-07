@@ -40,6 +40,13 @@ public final class WorkerContext {
                             "--sdlc.model.model-id=fake-deterministic-1",
                             "--sdlc.model.retry-backoff=0s",
                             "--sdlc.model.timeout=5s",
+                            // GitHub broker against the in-process fake (TEST ONLY; loopback HTTP explicitly allowed).
+                            "--sdlc.github.enabled=true",
+                            "--sdlc.github.app-id=" + FakeGitHub.APP_ID,
+                            "--sdlc.github.private-key-file=" + FakeGitHub.get().privateKeyFile(),
+                            "--sdlc.github.api-base-url=" + FakeGitHub.get().apiBaseUrl(),
+                            "--sdlc.github.allowed-hosts=localhost,127.0.0.1",
+                            "--sdlc.github.allow-loopback-http=true",
                             "--logging.structured.format.console=");
         }
         return context;

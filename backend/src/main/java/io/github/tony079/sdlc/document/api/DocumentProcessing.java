@@ -20,6 +20,12 @@ public interface DocumentProcessing {
     Optional<UUID> currentVersion(UUID documentId);
 
     /**
+     * Whether a current attachment of the requirement needs a decision (TDD T07/T10): its current version is
+     * UNSUPPORTED_CONTENT, EXTRACTION_FAILED_FINAL or UPLOAD_FAILED.
+     */
+    boolean needsDecision(UUID requirementId);
+
+    /**
      * Records the processing outcome: READY_FOR_EXTRACTION to PROCESSED, UNSUPPORTED_CONTENT or
      * EXTRACTION_FAILED_FINAL. Locks the version first; returns false (and changes nothing) if it is no longer
      * READY_FOR_EXTRACTION. Publishes DocumentProcessed or DocumentFailed and writes the audit event.

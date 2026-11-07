@@ -81,6 +81,14 @@ public class JdbcJobStore implements JobQueue {
     }
 
     @Override
+    public boolean makeAvailable(String idempotencyKey) {
+        return jdbc.sql("""
+                UPDATE app.job SET available_at = clock_timestamp()
+                WHERE idempotency_key = :key AND status = 'QUEUED' AND available_at > clock_timestamp()
+                """).param("key", idempotencyKey).update() == 1;
+    }
+
+    @Override
     public int cancelForAggregate(UUID aggregateId) {
         jdbc.sql("""
                 UPDATE app.job_attempt a SET finished_at = clock_timestamp(), outcome = 'CANCELLED', error_code = 'CANCELLED'

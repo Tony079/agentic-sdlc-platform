@@ -12,6 +12,12 @@ public interface RequirementDirectory {
 
     Optional<OwnedRequirement> findOwned(UUID requirementId);
 
+    /**
+     * The project of a requirement of the current tenant, for internal checks only (repository registration). Ids only:
+     * no requirement content is returned, and it grants no visibility to the caller.
+     */
+    Optional<UUID> projectOf(UUID requirementId);
+
     record OwnedRequirement(UUID id, UUID projectId) {
     }
 }

@@ -16,4 +16,10 @@ public interface JobQueue {
      * one of them can no longer commit. Returns the number of jobs cancelled.
      */
     int cancelForAggregate(UUID aggregateId);
+
+    /**
+     * Makes a QUEUED job (by idempotency key) available now, for example a deferred job whose dependency became ready.
+     * Uses no retry budget; does nothing to a job that is leased or finished. Returns whether a job was woken.
+     */
+    boolean makeAvailable(String idempotencyKey);
 }

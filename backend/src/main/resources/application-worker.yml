@@ -23,3 +23,17 @@ sdlc:
       batch-size: 50
     jobs:
       concurrency: ${SDLC_WORKER_JOB_CONCURRENCY:2}
+  # GitHub App broker (TDD 14.2, D-M4R-02). Worker only: the API never holds GitHub credentials. Off by default; the
+  # GitHub App itself is an external prerequisite. The private key is a PEM file mounted from a secret store, never an
+  # inline value, never in Git, .env, Compose or CI logs.
+  github:
+    enabled: ${SDLC_GITHUB_ENABLED:false}
+    app-id: ${SDLC_GITHUB_APP_ID:}
+    private-key-file: ${SDLC_GITHUB_PRIVATE_KEY_FILE:}
+    api-base-url: https://api.github.com
+    allowed-hosts: api.github.com,codeload.github.com
+    allow-loopback-http: false
+    download-timeout: 10m
+  repository:
+    index:
+      parse-timeout: 10s

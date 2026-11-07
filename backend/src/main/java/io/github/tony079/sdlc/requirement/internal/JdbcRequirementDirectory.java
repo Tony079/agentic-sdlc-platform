@@ -25,4 +25,10 @@ class JdbcRequirementDirectory implements RequirementDirectory {
         UUID actor = TenantContext.currentActor().orElseThrow(() -> new IllegalStateException("No authenticated actor"));
         return requirements.findOwned(requirementId, actor).map(r -> new OwnedRequirement(r.id(), r.projectId()));
     }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<UUID> projectOf(UUID requirementId) {
+        return requirements.projectOf(requirementId);
+    }
 }
