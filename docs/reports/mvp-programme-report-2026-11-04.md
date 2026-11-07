@@ -19,7 +19,7 @@ Branch names are historical and are not renamed.
 | R1-M1 (part 2) | Milestone 3 | `claude/milestone-3-outbox-routing` | [#3](https://github.com/Tony079/agentic-sdlc-platform/pull/3) → #2 | Outbox, job queue, worker login, routing, definition R1-v1 | COMPLETED AND VERIFIED (CI green, not merged) | CI runs 11, 14 on `bf4318f` |
 | R1-M2 | Milestone 4 | `claude/milestone-4-documents` | [#4](https://github.com/Tony079/agentic-sdlc-platform/pull/4) → #3 | Upload, encrypted storage, validation, ClamAV, quarantine | COMPLETED AND VERIFIED (CI green incl. real ClamAV, not merged) | CI runs 12, 15 on `ab1ac05` |
 | R1-M3 | Milestone 5 | `claude/milestone-5-document-processing` | [#5](https://github.com/Tony079/agentic-sdlc-platform/pull/5) → #4 | Extraction, chunks, retries (gate O-15) | COMPLETED AND VERIFIED for synthetic documents; real documents BLOCKED BY OWNER DECISION (O-15) | CI runs 13, 16 on `7e98a34` |
-| R1-M5 (foundation) | Model gateway | `claude/model-gateway` (local, not pushed) | — | Provider-neutral gateway + fake provider | IMPLEMENTED, LOCAL TESTS PASSING (CI not run) | Local `mvn verify`: 175 tests |
+| R1-M5 (foundation) | Model gateway (+ SEC-M3-01 fix) | `claude/model-gateway` | [#6](https://github.com/Tony079/agentic-sdlc-platform/pull/6) → #5 | Provider-neutral gateway + deterministic fake provider | IMPLEMENTED, CI GREEN (not merged; no real provider, O-01) | CI runs 17, 18 on `50528e1`; 178 backend tests |
 | R1-M4 | — | — | — | Repository registration, snapshot, inventory | BLOCKED BY OWNER DECISION (C-01/O-05, C-18; O-06/O-13 if admin) | Readiness spec |
 | R1-M5 | — | — | — | Agent runtime, BA agent, BRD, evidence checker | BLOCKED BY OWNER DECISION (needs R1-M4; O-01 for real model; O-15 for real documents) | Readiness spec |
 | R1-M6 | — | — | — | Review, approvals, clarifications, client view, G1 | BLOCKED BY OWNER DECISION (O-06, O-11, O-13, S-02, O-32) | Readiness spec |
@@ -62,13 +62,22 @@ integration tests with the protocol-level clamd test double); scanner health ale
 - Findings: **SEC-M3-01** (generated default user/password logged; fixed on `claude/model-gateway`), SEC-REVIEW-1..3
   (extractor isolation → O-15; static storage key → O-12/C-13; ClamAV container defaults → O-03).
 
-### Model gateway (local branch `claude/model-gateway`)
+### Model gateway — PR #6 (updated 2026-11-07)
 
-See decision register section 7 (D-GW-01..10). Changeset `0016-model-gateway`; module `modelgateway`; tests
-`ModelGatewayIT` (14), `ModelProviderRegistryTest` (3), ArchUnit rule `modelGatewayCannotReachStateChangingModules`,
-`NoDefaultUserIT` (2). Full local suite on this branch: **175 tests, 0 failures** (PostgreSQL 16.15). No real provider
-(O-01); tool calling deferred to the R1-M5 agent runtime (D-GW-09).
-
+- Branch `claude/model-gateway`, pushed 2026-11-07 (normal push); [PR #6](https://github.com/Tony079/agentic-sdlc-platform/pull/6)
+  with base `claude/milestone-5-document-processing` (PR #5). Depends on #5; not merged. PRs #1–#5 unchanged.
+- Pre-publication review fixed GW-R1 (usage provenance: `usage_source`, NULL instead of 0 for unknown usage),
+  GW-R2 (bounded call executor) and GW-R3 (immutable prompt versions); see decision register D-GW-11..14.
+- Decisions D-GW-01..14 in the register. No real provider (O-01); budget values O-09; tool calling deferred to the
+  agent runtime (D-GW-09).
+- Local (PostgreSQL 16.15): 178 backend tests (46 unit, 132 integration), 0 failures; frontend lint, typecheck, 22 tests,
+  build; packaged api started with no generated-password log line and HTTP Basic → 401; gitleaks: no leaks.
+- CI on `50528e1` (runs 17 push, 18 pull_request): all four jobs green. Backend log: unit 46, integration 132, 0
+  failures (incl. `ModelGatewayIT` 17, `ModelProviderRegistryTest` 3, `ArchitectureTest` 5, `NoDefaultUserIT` 2,
+  `SchemaSecurityIT` 9), no "generated security password" line. Compose log: Milestones 1–5 "OK" markers, routing to
+  MANUAL_INTAKE, real ClamAV step, extraction to PROCESSED. Secret scan green.
+- Not verified anywhere: any real model provider (none exists); scanner-outage fail-closed in Compose (integration
+  tests only).
 
 ## G. Readiness verdict: **MVP PARTIALLY COMPLETE**
 

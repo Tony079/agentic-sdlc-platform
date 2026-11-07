@@ -17,7 +17,7 @@ TDD v1.0.4 into buildable work packages and names, for each part, the owner deci
 | Stage executions | `stage_execution` table (worker-written) | M3 |
 | Private storage | `ObjectStore` (encrypted, per-tenant keys) | M4, PR #4 |
 | Document text with positions | `document_chunk` (page or heading label, full-text index) | M5, PR #5 |
-| Model access | `ModelGateway` + `FakeModelProvider`, `model_registry`, `prompt_version`, `model_call_record` | `claude/model-gateway` (local) |
+| Model access | `ModelGateway` + `FakeModelProvider`, `model_registry`, `prompt_version` (immutable), `model_call_record` (with `usage_source`) | PR #6 |
 | Worker login / grants pattern | `sdlc_worker`, column-level grants, forced RLS | M3 onwards |
 
 Every new transition below requires three things in the **same reviewed change**:
