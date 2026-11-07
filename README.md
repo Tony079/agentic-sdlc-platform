@@ -39,7 +39,7 @@ for owner decision O-06.
 
 | Path | Contents |
 |---|---|
-| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `requirement`, `workflow`, `outbox`, `queue`, `document`, `storage`, `scanner`, `docprocessing`, `migration` |
+| `backend/` | Java 21, Spring Boot 4.1, Maven. Modules under `io.github.tony079.sdlc`: `common`, `tenancy`, `identity`, `audit`, `securitymonitoring`, `project`, `requirement`, `workflow`, `outbox`, `queue`, `document`, `storage`, `scanner`, `docprocessing`, `modelgateway`, `migration` |
 | `backend/src/main/resources/db/changelog/` | Liquibase schema (applied only by the `migrate` process) |
 | `db/bootstrap/` | Database roles and schemas, run once by the PostgreSQL superuser |
 | `frontend/` | React 19, TypeScript, Vite |

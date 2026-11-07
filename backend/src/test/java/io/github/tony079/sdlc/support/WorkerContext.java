@@ -36,6 +36,10 @@ public final class WorkerContext {
                             "--sdlc.scanner.clamd.timeout=5s",
                             "--sdlc.documents.extraction.enabled=true",
                             "--sdlc.documents.extraction.timeout=60s",
+                            "--sdlc.model.provider=fake",
+                            "--sdlc.model.model-id=fake-deterministic-1",
+                            "--sdlc.model.retry-backoff=0s",
+                            "--sdlc.model.timeout=5s",
                             "--logging.structured.format.console=");
         }
         return context;

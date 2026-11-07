@@ -2,6 +2,10 @@
 spring:
   application:
     name: sdlc-platform
+  autoconfigure:
+    # Users authenticate only through the tenant login endpoint; form login and HTTP Basic are disabled. Without this
+    # exclusion Spring Boot creates an unused in-memory user and prints its generated password to the log (SEC-M3-01).
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   datasource:
     url: ${SDLC_DB_URL:jdbc:postgresql://localhost:5432/sdlc}
     username: ${SDLC_DB_APP_USER:sdlc_app}
@@ -86,6 +90,21 @@ sdlc:
     # 32 random bytes, base64 (openssl rand -base64 32); without it the application does not start.
     root: ${SDLC_STORAGE_ROOT:/var/lib/sdlc/documents}
     encryption-key: ${SDLC_STORAGE_KEY:}
+  model:
+    # Model gateway (TDD 13). O-01 (provider selection) is OPEN: no provider is configured by default, so every model
+    # call fails with CONFIGURATION_ERROR and no data leaves the platform. "fake" (deterministic, no network) is for
+    # local development and tests only. Never accepted from a request.
+    provider: ${SDLC_MODEL_PROVIDER:none}
+    model-id: ${SDLC_MODEL_ID:}
+    timeout: 120s
+    max-transient-retries: 2
+    retry-backoff: 2s
+    # Upper bound of concurrent provider calls per process; when full, calls fail as PROVIDER_UNAVAILABLE (deferral).
+    max-concurrent-calls: 16
+    budget:
+      # FR-LLM-05 caps; values are owner decision O-09 (open). Empty = no cap.
+      tenant-monthly-usd: ${SDLC_MODEL_BUDGET_TENANT_MONTHLY_USD:}
+      requirement-usd: ${SDLC_MODEL_BUDGET_REQUIREMENT_USD:}
   scanner:
     clamd:
       host: ${SDLC_SCANNER_HOST:localhost}

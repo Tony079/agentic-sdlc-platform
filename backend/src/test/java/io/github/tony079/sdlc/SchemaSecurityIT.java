@@ -34,7 +34,7 @@ class SchemaSecurityIT {
                 """, String.class);
         assertThat(tenantTables).containsExactly("app_user", "audit_event", "document", "document_chunk",
                 "document_extraction", "document_version",
-                "idempotency_record", "job", "job_attempt",
+                "idempotency_record", "job", "job_attempt", "model_call_record",
                 "outbox_event", "processed_event", "project", "requirement", "requirement_key_counter",
                 "requirement_revision", "stage_execution", "workflow_instance", "workflow_transition");
 

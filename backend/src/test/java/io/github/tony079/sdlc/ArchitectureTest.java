@@ -80,6 +80,19 @@ class ArchitectureTest {
         }).check(CLASSES);
     }
 
+    /**
+     * The model gateway is a leaf: it cannot reach workflow, approvals, jobs, outbox, documents, storage, requirements
+     * or identity, so no model output can change state through it (PRD section 11, TDD 13).
+     */
+    @Test
+    void modelGatewayCannotReachStateChangingModules() {
+        noClasses().that().resideInAPackage(ROOT + ".modelgateway..")
+                .should().dependOnClassesThat().resideInAnyPackage(ROOT + ".workflow..", ROOT + ".queue..",
+                        ROOT + ".outbox..", ROOT + ".document..", ROOT + ".docprocessing..", ROOT + ".storage..",
+                        ROOT + ".requirement..", ROOT + ".identity..", ROOT + ".audit..", ROOT + ".project..")
+                .check(CLASSES);
+    }
+
     private static String module(JavaClass javaClass) {
         String name = javaClass.getPackageName();
         if (!name.startsWith(ROOT + ".")) {
