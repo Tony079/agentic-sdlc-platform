@@ -99,6 +99,8 @@ sdlc:
     timeout: 120s
     max-transient-retries: 2
     retry-backoff: 2s
+    # Upper bound of concurrent provider calls per process; when full, calls fail as PROVIDER_UNAVAILABLE (deferral).
+    max-concurrent-calls: 16
     budget:
       # FR-LLM-05 caps; values are owner decision O-09 (open). Empty = no cap.
       tenant-monthly-usd: ${SDLC_MODEL_BUDGET_TENANT_MONTHLY_USD:}

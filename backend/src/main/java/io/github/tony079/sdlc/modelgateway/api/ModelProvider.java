@@ -20,8 +20,28 @@ public interface ModelProvider {
                 String instructions, List<DataBlock> data, int maxOutputTokens, Duration timeout) {
     }
 
-    /** Raw text (expected to be JSON) and the provider-reported token counts. */
-    record Result(String text, int inputTokens, int outputTokens) {
+    /**
+     * Raw text (expected to be JSON) and the usage the provider returned with it.
+     *
+     * @param usage null when the provider returned no usage data; the gateway then records tokens and cost as unknown,
+     *              never as zero
+     */
+    record Result(String text, Usage usage) {
+    }
+
+    /**
+     * Token counts for one result.
+     *
+     * @param estimated true when the counts were computed locally rather than reported by the provider (the fake
+     *                  provider); recorded as ESTIMATED, never as a provider measurement
+     */
+    record Usage(int inputTokens, int outputTokens, boolean estimated) {
+
+        public Usage {
+            if (inputTokens < 0 || outputTokens < 0) {
+                throw new IllegalArgumentException("Token counts cannot be negative");
+            }
+        }
     }
 
     class Failure extends Exception {

@@ -31,6 +31,31 @@ CREATE TABLE app.prompt_version (
   PRIMARY KEY (prompt_id, version)
 );
 
+--changeset sdlc:0016-prompt-version-guard splitStatements:false
+-- A registered prompt version is immutable: only ACTIVE -> RETIRED is allowed, and RETIRED is final. A changed prompt
+-- text needs a new version (a new reviewed row), never an in-place edit. Invoker-rights, fixed search_path.
+CREATE FUNCTION app.prompt_version_guard() RETURNS trigger
+  LANGUAGE plpgsql SET search_path = pg_catalog, app AS $fn$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'prompt versions are never deleted' USING ERRCODE = 'P0001';
+  END IF;
+  IF NEW.prompt_id <> OLD.prompt_id OR NEW.version <> OLD.version OR NEW.agent <> OLD.agent
+     OR NEW.text_sha256 <> OLD.text_sha256 OR NEW.schema_version <> OLD.schema_version
+     OR NEW.created_at <> OLD.created_at THEN
+    RAISE EXCEPTION 'prompt version % v% is immutable; register a new version', OLD.prompt_id, OLD.version
+      USING ERRCODE = 'P0001';
+  END IF;
+  IF OLD.status = 'RETIRED' AND NEW.status <> 'RETIRED' THEN
+    RAISE EXCEPTION 'a retired prompt version cannot be reactivated' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+REVOKE ALL ON FUNCTION app.prompt_version_guard() FROM PUBLIC;
+CREATE TRIGGER prompt_version_guard BEFORE UPDATE OR DELETE ON app.prompt_version
+  FOR EACH ROW EXECUTE FUNCTION app.prompt_version_guard();
+
 --changeset sdlc:0016-model-call-record
 -- One row per gateway call (PRD FR-LLM-04, TDD 13.6): identifiers, counts, cost and latency only. Never prompt
 -- text, document content or model output.
@@ -47,9 +72,13 @@ CREATE TABLE app.model_call_record (
   outcome         text          NOT NULL CHECK (outcome IN ('SUCCEEDED', 'INVALID_OUTPUT', 'EMPTY_OUTPUT', 'TIMEOUT',
                                   'PROVIDER_UNAVAILABLE', 'RATE_LIMITED', 'PROVIDER_ERROR', 'BUDGET_EXCEEDED')),
   attempts        int           NOT NULL CHECK (attempts BETWEEN 0 AND 20),
-  input_tokens    int           NOT NULL CHECK (input_tokens >= 0),
-  output_tokens   int           NOT NULL CHECK (output_tokens >= 0),
-  cost_usd        numeric(14,6) NOT NULL CHECK (cost_usd >= 0),
+  -- Where the token counts come from. REPORTED: the provider's own counts. ESTIMATED: computed locally (the fake
+  -- provider), never presented as a provider measurement. UNAVAILABLE: a provider result without usage data; tokens
+  -- and cost stay NULL rather than 0. NONE: no successful provider result (failure or refusal before any call).
+  usage_source    text          NOT NULL CHECK (usage_source IN ('REPORTED', 'ESTIMATED', 'UNAVAILABLE', 'NONE')),
+  input_tokens    int           CHECK (input_tokens >= 0),
+  output_tokens   int           CHECK (output_tokens >= 0),
+  cost_usd        numeric(14,6) CHECK (cost_usd >= 0),
   latency_ms      bigint        NOT NULL CHECK (latency_ms >= 0),
   created_at      timestamptz   NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (id),
@@ -57,7 +86,9 @@ CREATE TABLE app.model_call_record (
   UNIQUE (request_id),
   FOREIGN KEY (provider, model_id) REFERENCES app.model_registry (provider, model_id),
   FOREIGN KEY (prompt_id, prompt_version) REFERENCES app.prompt_version (prompt_id, version),
-  FOREIGN KEY (tenant_id, requirement_id) REFERENCES app.requirement (tenant_id, id)
+  FOREIGN KEY (tenant_id, requirement_id) REFERENCES app.requirement (tenant_id, id),
+  CHECK ((usage_source IN ('REPORTED', 'ESTIMATED')) = (input_tokens IS NOT NULL AND output_tokens IS NOT NULL
+                                                        AND cost_usd IS NOT NULL))
 );
 CREATE INDEX model_call_record_tenant_time_ix ON app.model_call_record (tenant_id, created_at);
 CREATE INDEX model_call_record_requirement_ix ON app.model_call_record (tenant_id, requirement_id);

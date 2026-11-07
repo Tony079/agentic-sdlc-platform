@@ -14,18 +14,23 @@ import org.springframework.stereotype.Component;
 /**
  * Deterministic fake provider (PRD FR-LLM-09, TDD 13.1): no network, no randomness, no tools, no dependencies.
  * Behaviour comes from a script (consumed in order) or a canned reply per prompt id; otherwise it returns an empty
- * reply. Token counts are derived from text length (ceil(chars / 4)), so usage figures are reproducible.
+ * reply. Token counts are derived from text length (ceil(chars / 4)), so usage figures are reproducible; they are
+ * marked as estimated, never as provider measurements.
  * Selected only when {@code sdlc.model.provider=fake}; its registry entry has data class FAKE.
  */
 @Component
 public class FakeModelProvider implements ModelProvider {
 
     /** One scripted behaviour for the next call. */
-    public sealed interface Behaviour permits Reply, Fail, Hang {
+    public sealed interface Behaviour permits Reply, ReplyWithoutUsage, Fail, Hang {
     }
 
     /** Return this text (valid JSON, invalid JSON, empty: whatever the scenario needs). */
     public record Reply(String text) implements Behaviour {
+    }
+
+    /** Return this text without any usage data, like a provider that omits it. */
+    public record ReplyWithoutUsage(String text) implements Behaviour {
     }
 
     /** Fail with the given kind (timeout, unavailable, rate limit, error). */
@@ -72,7 +77,8 @@ public class FakeModelProvider implements ModelProvider {
             behaviour = new Reply(canned.getOrDefault(call.promptId(), ""));
         }
         return switch (behaviour) {
-            case Reply reply -> new Result(reply.text(), tokens(call), estimate(reply.text()));
+            case Reply reply -> new Result(reply.text(), new Usage(tokens(call), estimate(reply.text()), true));
+            case ReplyWithoutUsage reply -> new Result(reply.text(), null);
             case Fail fail -> throw new Failure(fail.kind());
             case Hang hang -> {
                 try {
@@ -81,7 +87,7 @@ public class FakeModelProvider implements ModelProvider {
                     Thread.currentThread().interrupt();
                     throw new Failure(Failure.Kind.TIMEOUT);
                 }
-                yield new Result("{}", tokens(call), 1);
+                yield new Result("{}", new Usage(tokens(call), 1, true));
             }
         };
     }

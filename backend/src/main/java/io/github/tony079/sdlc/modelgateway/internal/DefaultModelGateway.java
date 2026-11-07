@@ -6,9 +6,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -65,7 +66,7 @@ class DefaultModelGateway implements ModelGateway {
     private final MeterRegistry meters;
     private final TransactionTemplate tx;
     private final JsonMapper strictJson;
-    private final ExecutorService calls;
+    private final ThreadPoolExecutor calls;
     private final Duration defaultTimeout;
     private final int maxTransientRetries;
     private final Duration retryBackoff;
@@ -78,7 +79,8 @@ class DefaultModelGateway implements ModelGateway {
                         @Value("${sdlc.model.max-transient-retries:2}") int maxTransientRetries,
                         @Value("${sdlc.model.retry-backoff:2s}") Duration retryBackoff,
                         @Value("${sdlc.model.budget.tenant-monthly-usd:}") String tenantMonthlyCap,
-                        @Value("${sdlc.model.budget.requirement-usd:}") String requirementCap) {
+                        @Value("${sdlc.model.budget.requirement-usd:}") String requirementCap,
+                        @Value("${sdlc.model.max-concurrent-calls:16}") int maxConcurrentCalls) {
         this.registry = registry;
         this.store = store;
         this.validator = validator;
@@ -91,7 +93,13 @@ class DefaultModelGateway implements ModelGateway {
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                 .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
                 .build();
-        this.calls = Executors.newCachedThreadPool(Thread.ofPlatform().name("sdlc-model-call-", 0).daemon().factory());
+        // Bounded: a provider that ignores interruption after a timeout cannot make the gateway grow without limit.
+        // When every slot is busy a call is refused as PROVIDER_UNAVAILABLE (a transient failure for job deferral).
+        if (maxConcurrentCalls < 1 || maxConcurrentCalls > 256) {
+            throw new IllegalStateException("sdlc.model.max-concurrent-calls must be between 1 and 256");
+        }
+        this.calls = new ThreadPoolExecutor(0, maxConcurrentCalls, 60, TimeUnit.SECONDS, new SynchronousQueue<>(),
+                Thread.ofPlatform().name("sdlc-model-call-", 0).daemon().factory(), new ThreadPoolExecutor.AbortPolicy());
         this.defaultTimeout = defaultTimeout;
         if (maxTransientRetries < 0 || maxTransientRetries > 5) {
             throw new IllegalStateException("sdlc.model.max-transient-retries must be between 0 and 5");
@@ -153,8 +161,7 @@ class DefaultModelGateway implements ModelGateway {
                 attempts.finish(code.name());
                 throw new ModelException(code, requestId, null);
             }
-            attempts.inputTokens += Math.max(0, result.inputTokens());
-            attempts.outputTokens += Math.max(0, result.outputTokens());
+            attempts.add(result.usage());
             if (result.text() == null || result.text().isBlank()) {
                 if (!repaired) {
                     repaired = true;
@@ -194,7 +201,13 @@ class DefaultModelGateway implements ModelGateway {
 
     private ModelProvider.Result callWithTimeout(ModelProvider provider, ModelProvider.Call call, Duration timeout)
             throws Failure {
-        Future<ModelProvider.Result> future = calls.submit(() -> provider.complete(call));
+        Future<ModelProvider.Result> future;
+        try {
+            future = calls.submit(() -> provider.complete(call));
+        } catch (RejectedExecutionException e) {
+            log.warn("Model call refused: all {} call slots busy (request {})", calls.getMaximumPoolSize(), call.requestId());
+            throw new Failure(Failure.Kind.UNAVAILABLE);
+        }
         try {
             return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
@@ -234,6 +247,9 @@ class DefaultModelGateway implements ModelGateway {
         int count;
         int inputTokens;
         int outputTokens;
+        boolean anyResult;
+        boolean anyEstimated;
+        boolean anyWithoutUsage;
 
         Attempts(String provider, String modelId, ModelRequest<?> request, UUID requestId, String correlationId,
                  UUID tenant, ModelCallStore.Model model) {
@@ -246,21 +262,50 @@ class DefaultModelGateway implements ModelGateway {
             this.model = model;
         }
 
+        void add(ModelProvider.Usage usage) {
+            anyResult = true;
+            if (usage == null) {
+                anyWithoutUsage = true;
+                return;
+            }
+            anyEstimated |= usage.estimated();
+            inputTokens += usage.inputTokens();
+            outputTokens += usage.outputTokens();
+        }
+
+        ModelUsage.Source source() {
+            if (!anyResult) {
+                return ModelUsage.Source.NONE;
+            }
+            if (anyWithoutUsage) {
+                return ModelUsage.Source.UNAVAILABLE;
+            }
+            return anyEstimated ? ModelUsage.Source.ESTIMATED : ModelUsage.Source.REPORTED;
+        }
+
         ModelUsage finish(String outcome) {
             Duration latency = Duration.ofNanos(System.nanoTime() - started);
-            BigDecimal cost = model.cost(inputTokens, outputTokens);
+            ModelUsage.Source source = source();
+            boolean known = source == ModelUsage.Source.REPORTED || source == ModelUsage.Source.ESTIMATED;
+            Integer in = known ? inputTokens : null;
+            Integer out = known ? outputTokens : null;
+            BigDecimal cost = known ? model.cost(inputTokens, outputTokens) : null;
             tx.executeWithoutResult(s -> store.record(new ModelCallStore.Usage(requestId, correlationId, tenant,
                     request.requirementId(), provider, modelId, request.prompt().id(), request.prompt().version(), outcome,
-                    count, inputTokens, outputTokens, cost, latency.toMillis())));
+                    count, source.name(), in, out, cost, latency.toMillis())));
             meters.timer("sdlc.model.calls", "provider", provider, "model", modelId, "outcome", outcome).record(latency);
-            meters.counter("sdlc.model.tokens", "provider", provider, "direction", "input").increment(inputTokens);
-            meters.counter("sdlc.model.tokens", "provider", provider, "direction", "output").increment(outputTokens);
+            if (known) {
+                meters.counter("sdlc.model.tokens", "provider", provider, "direction", "input", "source", source.name())
+                        .increment(inputTokens);
+                meters.counter("sdlc.model.tokens", "provider", provider, "direction", "output", "source", source.name())
+                        .increment(outputTokens);
+            }
             // Ids and counts only: never prompt text, data or output.
             log.info("model.call request={} correlation={} provider={} model={} prompt={}@{} outcome={} attempts={} "
-                            + "tokensIn={} tokensOut={} costUsd={} latencyMs={}", requestId, correlationId, provider,
-                    modelId, request.prompt().id(), request.prompt().version(), outcome, count, inputTokens,
-                    outputTokens, cost, latency.toMillis());
-            return new ModelUsage(inputTokens, outputTokens, cost, latency, count);
+                            + "usage={} tokensIn={} tokensOut={} costUsd={} latencyMs={}", requestId, correlationId, provider,
+                    modelId, request.prompt().id(), request.prompt().version(), outcome, count, source, in, out, cost,
+                    latency.toMillis());
+            return new ModelUsage(source, in, out, cost, latency, count);
         }
     }
 

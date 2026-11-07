@@ -19,6 +19,7 @@ import io.github.tony079.sdlc.modelgateway.api.ModelProvider;
 import io.github.tony079.sdlc.modelgateway.api.ModelProvider.Failure.Kind;
 import io.github.tony079.sdlc.modelgateway.api.ModelRequest;
 import io.github.tony079.sdlc.modelgateway.api.ModelResponse;
+import io.github.tony079.sdlc.modelgateway.api.ModelUsage;
 import io.github.tony079.sdlc.modelgateway.api.PromptTemplate;
 import io.github.tony079.sdlc.modelgateway.internal.FakeModelProvider.Fail;
 import io.github.tony079.sdlc.modelgateway.internal.FakeModelProvider.Hang;
@@ -95,7 +96,7 @@ class ModelGatewayIT {
 
     private static Map<String, Object> record(UUID requestId) {
         return admin.queryForMap("""
-                SELECT tenant_id, outcome, attempts, input_tokens, output_tokens, cost_usd, latency_ms, provider, model_id,
+                SELECT tenant_id, outcome, attempts, usage_source, input_tokens, output_tokens, cost_usd, latency_ms, provider, model_id,
                        prompt_id, prompt_version, correlation_id FROM app.model_call_record WHERE request_id = ?
                 """, requestId);
     }
@@ -122,6 +123,7 @@ class ModelGatewayIT {
         assertThat(response.usage().attempts()).isEqualTo(1);
         // Deterministic token estimate of the fake provider: ceil(chars / 4).
         int expectedIn = (PROMPT.instructions().length() + "doc:1#1".length() + "Loans".length() + 3) / 4;
+        assertThat(response.usage().source()).isEqualTo(ModelUsage.Source.ESTIMATED);
         assertThat(response.usage().inputTokens()).isEqualTo(expectedIn);
         assertThat(response.usage().outputTokens()).isEqualTo((VALID.length() + 3) / 4);
         assertThat(response.usage().costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -129,6 +131,7 @@ class ModelGatewayIT {
 
         Map<String, Object> row = record(response.requestId());
         assertThat(row).containsEntry("tenant_id", tenant).containsEntry("outcome", "SUCCEEDED")
+                .containsEntry("usage_source", "ESTIMATED")
                 .containsEntry("attempts", 1).containsEntry("input_tokens", expectedIn)
                 .containsEntry("provider", "fake").containsEntry("prompt_id", "test.summary")
                 .containsEntry("prompt_version", 1);
@@ -136,7 +139,8 @@ class ModelGatewayIT {
         assertThat(admin.queryForList("""
                 SELECT column_name FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'model_call_record'
                   AND data_type = 'text' ORDER BY 1
-                """, String.class)).containsExactly("correlation_id", "model_id", "outcome", "prompt_id", "provider");
+                """, String.class)).containsExactly("correlation_id", "model_id", "outcome", "prompt_id", "provider",
+                "usage_source");
     }
 
     @Test
@@ -192,7 +196,8 @@ class ModelGatewayIT {
         assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(5));
         assertThat(e.code()).isEqualTo(Code.TIMEOUT);
         assertThat(e.code().transientFailure()).isTrue();
-        assertThat(record(e.requestId())).containsEntry("outcome", "TIMEOUT").containsEntry("attempts", 3);
+        assertThat(record(e.requestId())).containsEntry("outcome", "TIMEOUT").containsEntry("attempts", 3)
+                .containsEntry("usage_source", "NONE").containsEntry("input_tokens", null).containsEntry("cost_usd", null);
     }
 
     @Test
@@ -329,9 +334,81 @@ class ModelGatewayIT {
         }
     }
 
+    /** Missing provider usage is recorded as unknown (NULL), never as zero, and never labelled as reported. */
+    @Test
+    void missingUsageIsRecordedAsUnknownNotZero() {
+        fake.enqueue(new FakeModelProvider.ReplyWithoutUsage(VALID));
+        ModelResponse<Summary> response = asTenant(() -> gateway.generate(request(List.of())));
+        assertThat(response.usage().source()).isEqualTo(ModelUsage.Source.UNAVAILABLE);
+        assertThat(response.usage().inputTokens()).isNull();
+        assertThat(response.usage().costUsd()).isNull();
+        assertThat(record(response.requestId())).containsEntry("usage_source", "UNAVAILABLE")
+                .containsEntry("input_tokens", null).containsEntry("output_tokens", null).containsEntry("cost_usd", null);
+        // The database refuses a known usage source without counts (and counts without a known source).
+        assertThatThrownBy(() -> admin.update("UPDATE app.model_call_record SET usage_source = 'REPORTED' WHERE request_id = ?",
+                response.requestId())).hasMessageContaining("check constraint");
+    }
+
+    /** The call executor is bounded: when every slot is busy a call fails as a transient PROVIDER_UNAVAILABLE. */
+    @Test
+    void concurrentCallsAreBounded() throws Exception {
+        DefaultModelGateway single = new DefaultModelGateway(WorkerContext.bean(ModelProviderRegistry.class),
+                WorkerContext.bean(ModelCallStore.class), WorkerContext.bean(Validator.class),
+                WorkerContext.bean(MeterRegistry.class), WorkerContext.bean(PlatformTransactionManager.class),
+                Duration.ofSeconds(5), 2, Duration.ZERO, "", "", 1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            fake.enqueue(new Hang(Duration.ofSeconds(3)));
+            java.util.concurrent.Future<?> busy = pool.submit(() -> {
+                try {
+                    asTenant(() -> single.generate(new ModelRequest<>(PROMPT, List.of(), Summary.class, null, 512,
+                            Duration.ofSeconds(4))));
+                } catch (ModelException ignored) {
+                    // the hanging call's own outcome is not under test
+                }
+            });
+            for (int i = 0; i < 100 && fake.calls().isEmpty(); i++) {
+                Thread.sleep(20);
+            }
+            ModelException refused = failureOf(single);
+            assertThat(refused.code()).isEqualTo(Code.PROVIDER_UNAVAILABLE);
+            assertThat(refused.code().transientFailure()).isTrue();
+            assertThat(record(refused.requestId())).containsEntry("attempts", 3).containsEntry("usage_source", "NONE");
+            busy.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+            single.shutdown();
+        }
+    }
+
+    private static ModelException failureOf(DefaultModelGateway g) {
+        try {
+            asTenant(() -> g.generate(request(List.of())));
+        } catch (ModelException e) {
+            return e;
+        }
+        throw new AssertionError("expected a ModelException");
+    }
+
+    /** Registered prompt versions cannot be edited, deleted or reactivated, even by the superuser. */
+    @Test
+    void registeredPromptVersionsAreImmutable() {
+        admin.update("INSERT INTO app.prompt_version (prompt_id, version, agent, text_sha256, schema_version, status) "
+                + "VALUES ('test.immutable', 1, 'TEST_AGENT', repeat('a', 64), 1, 'ACTIVE') ON CONFLICT DO NOTHING");
+        assertThatThrownBy(() -> admin.update(
+                "UPDATE app.prompt_version SET text_sha256 = repeat('b', 64) WHERE prompt_id = 'test.immutable'"))
+                .hasMessageContaining("immutable");
+        assertThatThrownBy(() -> admin.update("DELETE FROM app.prompt_version WHERE prompt_id = 'test.immutable'"))
+                .hasMessageContaining("never deleted");
+        admin.update("UPDATE app.prompt_version SET status = 'RETIRED' WHERE prompt_id = 'test.immutable'");
+        assertThatThrownBy(() -> admin.update(
+                "UPDATE app.prompt_version SET status = 'ACTIVE' WHERE prompt_id = 'test.immutable'"))
+                .hasMessageContaining("cannot be reactivated");
+    }
+
     private static DefaultModelGateway gatewayWith(ModelProviderRegistry registry, String tenantCap, String requirementCap) {
         return new DefaultModelGateway(registry, WorkerContext.bean(ModelCallStore.class), WorkerContext.bean(Validator.class),
                 WorkerContext.bean(MeterRegistry.class), WorkerContext.bean(PlatformTransactionManager.class),
-                Duration.ofSeconds(5), 2, Duration.ZERO, tenantCap, requirementCap);
+                Duration.ofSeconds(5), 2, Duration.ZERO, tenantCap, requirementCap, 16);
     }
 }

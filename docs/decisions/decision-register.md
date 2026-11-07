@@ -4,7 +4,7 @@ Tracks owner decisions, PRD/TDD conflicts, security findings and implementation 
 **PRD v0.7 is the product authority; TDD v1.0.4 is the architecture reference. Neither is modified here.**
 Entries are only marked RESOLVED by a recorded owner decision or verified evidence.
 
-Last updated: 2026-11-05 (publication of Milestones 3–5, model gateway, readiness for R1-M4..M6).
+Last updated: 2026-11-07 (model gateway review fixes, PR #6).
 
 ## 1. Owner approvals recorded
 
@@ -228,16 +228,23 @@ FR-AUTH-01/03/04/06/13/17/18/20/21, FR-AUD-01/02/05/06 (foundation), FR-MON-01 (
 | D-GW-08 | Budget caps (tenant per month, per requirement) are configurable and empty by default | Values are **O-09** (open) | ACTIVE — values open |
 | D-GW-09 | Tool calling is **not** in the gateway yet; it belongs with the agent runtime's tool registry in R1-M5 (FR-LLM-01 partially met) | Avoids a speculative API | KNOWN GAP |
 | D-GW-10 | `FakeModelProvider` is deterministic (scripted or canned replies, token estimate ceil(chars/4), no network, no dependencies); `model_registry` CHECK ties provider `fake` to data class FAKE | FR-LLM-09 fake provider; the hosted adapter waits for O-01 | ACTIVE |
+| D-GW-11 | Usage provenance: each record carries `usage_source` (REPORTED, ESTIMATED, UNAVAILABLE, NONE). Tokens and cost are NULL unless the source is REPORTED or ESTIMATED (database CHECK). The fake provider's counts are ESTIMATED, never presented as provider measurements | Review finding GW-R1 | ACTIVE |
+| D-GW-12 | Provider calls run on a bounded executor (`sdlc.model.max-concurrent-calls`, default 16); when every slot is busy a call fails as PROVIDER_UNAVAILABLE (transient) | Review finding GW-R2 | ACTIVE |
+| D-GW-13 | Registered prompt versions are immutable in the database (trigger): no edit of id, version, agent, hash or schema version; no delete; ACTIVE → RETIRED only, RETIRED final | Review finding GW-R3 | ACTIVE |
+| D-GW-14 | Budget caps sum recorded `cost_usd`; calls with unknown usage (UNAVAILABLE) add nothing to the sums. Whether an unknown-cost call should count conservatively is part of **O-09** | Known limit | OPEN with O-09 |
 
 ### Findings during publication and verification
 
 | ID | Finding | Resolution | Status |
 |---|---|---|---|
 | V-CI-1 | First CI run of PRs #3–#5: Compose step "Worker routes ... (Milestone 3)" failed. Cause: the step expected REPO_VALIDATING, but the Milestone 2 smoke requirement is NEW_PRODUCT and was correctly routed to MANUAL_INTAKE (worker snapshot showed no pending events and no jobs). Reproduced locally with the packaged jar on a fresh database | Assertion corrected (commit `bf4318f`), merged forward into M4/M5 with merge commits (no rebase, no force-push). Later steps (real ClamAV, extraction) had not run in the first CI attempt because the job stopped at this step | RESOLVED — CI green on `bf4318f`, `ab1ac05`, `7e98a34` |
-| SEC-M3-01 | The API logged "Using generated security password": Spring Boot created an unused in-memory user (form login and HTTP Basic disabled, so not usable). Present since Milestone 1 | `UserDetailsServiceAutoConfiguration` excluded; `NoDefaultUserIT` guards it. Fixed on the new branch; PR #1 is unchanged | FIXED on `claude/model-gateway` (not yet on PR #1/#2 lineage) |
+| SEC-M3-01 | The API logged "Using generated security password": Spring Boot created an unused in-memory user (form login and HTTP Basic disabled, so not usable). Present since Milestone 1 | `UserDetailsServiceAutoConfiguration` excluded; `NoDefaultUserIT` guards it. Fixed on the new branch; PR #1 is unchanged | FIXED on `claude/model-gateway` / PR #6 (not on PR #1–#5 lineage) |
 | SEC-REVIEW-1 | Extractor subprocess runs as the worker's OS user inside the worker container: no separate container, no seccomp, network not blocked at OS level | Recorded under O-15 (extraction gate default off) | OPEN (O-15) |
 | SEC-REVIEW-2 | Storage encryption key (`SDLC_STORAGE_KEY`) is a single static master key from the environment; no rotation or KMS | Recorded under O-12/C-13 | OPEN (O-12/C-13) |
 | SEC-REVIEW-3 | `clamav/clamav:1.4` runs with the image defaults; not reviewed for least privilege; dev/CI scanner only | Production scanner is O-03 | OPEN (O-03) |
+| GW-R1 | Pre-publication review of the gateway: missing provider usage was recorded as 0 and the fake provider's estimated counts were indistinguishable from provider measurements | Fixed before first push: nullable tokens/cost and `usage_source` (D-GW-11); `missingUsageIsRecordedAsUnknownNotZero` | FIXED (changeset 0016 corrected in place: never pushed or applied outside test databases) |
+| GW-R2 | Pre-publication review: the provider-call executor was an unbounded cached pool; a provider ignoring interruption after a timeout leaks a thread per call | Bounded executor (D-GW-12); `concurrentCallsAreBounded` | FIXED |
+| GW-R3 | Pre-publication review: `prompt_version` rows could be edited in place (only the code-side hash check protected them) | Immutability trigger (D-GW-13); `registeredPromptVersionsAreImmutable` | FIXED |
 
 ## 8. Outstanding decisions — structured view (2026-11-05)
 

@@ -25,8 +25,8 @@ class ModelCallStore {
     }
 
     record Usage(UUID requestId, String correlationId, UUID tenantId, UUID requirementId, String provider, String modelId,
-                 String promptId, int promptVersion, String outcome, int attempts, int inputTokens, int outputTokens,
-                 BigDecimal costUsd, long latencyMs) {
+                 String promptId, int promptVersion, String outcome, int attempts, String usageSource,
+                 Integer inputTokens, Integer outputTokens, BigDecimal costUsd, long latencyMs) {
     }
 
     private final JdbcClient jdbc;
@@ -71,15 +71,17 @@ class ModelCallStore {
     void record(Usage usage) {
         jdbc.sql("""
                 INSERT INTO app.model_call_record (tenant_id, request_id, correlation_id, requirement_id, provider, model_id,
-                    prompt_id, prompt_version, outcome, attempts, input_tokens, output_tokens, cost_usd, latency_ms)
+                    prompt_id, prompt_version, outcome, attempts, usage_source, input_tokens, output_tokens, cost_usd,
+                    latency_ms)
                 VALUES (:tenant, :request, :correlation, :requirement, :provider, :model, :prompt, :version, :outcome,
-                        :attempts, :in, :out, :cost, :latency)
+                        :attempts, :source, :in, :out, :cost, :latency)
                 """)
                 .param("tenant", usage.tenantId()).param("request", usage.requestId())
                 .param("correlation", usage.correlationId()).param("requirement", usage.requirementId())
                 .param("provider", usage.provider()).param("model", usage.modelId())
                 .param("prompt", usage.promptId()).param("version", usage.promptVersion())
                 .param("outcome", usage.outcome()).param("attempts", usage.attempts())
+                .param("source", usage.usageSource())
                 .param("in", usage.inputTokens()).param("out", usage.outputTokens())
                 .param("cost", usage.costUsd()).param("latency", usage.latencyMs())
                 .update();
