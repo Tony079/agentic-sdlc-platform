@@ -31,6 +31,8 @@ public interface AuditWriter {
         // Milestone 4: attachments.
         DOCUMENT_UPLOADED, DOCUMENT_DOWNLOADED, DOCUMENT_REMOVED, DOCUMENT_SCANNED_CLEAN, DOCUMENT_REJECTED,
         // Milestone 5: processing.
-        DOCUMENT_PROCESSED, DOCUMENT_NOT_ANALYSABLE
+        DOCUMENT_PROCESSED, DOCUMENT_NOT_ANALYSABLE,
+        // R1-M4: C-18 link requests and client repository authorisation (Q-A).
+        REPOSITORY_LINK_REQUESTED, REPOSITORY_LINK_REQUEST_REVOKED, REPOSITORY_LINK_ATTACHED
     }
 }

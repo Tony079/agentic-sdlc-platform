@@ -89,6 +89,9 @@ class SecurityConfig {
                                 .hasAnyRole("STAFF_MFA_PENDING", "STAFF")
                         .requestMatchers("/api/v1/staff/auth/mfa/**").hasRole("STAFF_MFA_PENDING")
                         .requestMatchers("/api/v1/staff/**").hasRole("STAFF")
+                        // C-18: issue/revoke by the requirement owner, redeem by a Client Approver (checked in the service).
+                        .requestMatchers("/api/v1/repository-link-requests/**")
+                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
                         .requestMatchers("/api/v1/projects", "/api/v1/projects/**",
                                         "/api/v1/requirements", "/api/v1/requirements/**")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")

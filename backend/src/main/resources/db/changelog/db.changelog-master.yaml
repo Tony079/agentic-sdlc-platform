@@ -25,3 +25,5 @@ databaseChangeLog:
   - include: { file: changes/0016-model-gateway.sql, relativeToChangelogFile: true }
   # R1-M4: internal staff identities, capability grants, tenant assignments (owner decisions O-06, O-11, O-13, S-02).
   - include: { file: changes/0017-staff.sql, relativeToChangelogFile: true }
+  # R1-M4: C-18 one-time repository link requests and Client Approver repository authorisations (Q-A).
+  - include: { file: changes/0018-repository-link.sql, relativeToChangelogFile: true }
