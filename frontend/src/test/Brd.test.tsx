@@ -51,7 +51,7 @@ describe('StaffReviewPage', () => {
     document.cookie = 'XSRF-TOKEN=r1; path=/';
     const flagged = item({ itemKey: 'facts-2', statement: 'Billing encrypts invoices.', supportState: 'FLAGGED',
       evidence: [{ ...item({}).evidence[0], quote: 'class LoanController', supportPassed: false }] });
-    const calls = mockFetch((url, init) => {
+    const calls = mockFetch((_url, init) => {
       if (init.method === 'POST') return { status: 200, body: { state: 'INTERNAL_APPROVED' } };
       return {
         status: 200,
