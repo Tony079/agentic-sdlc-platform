@@ -8,5 +8,7 @@ public enum StaffCapability {
     /** May request or approve grants and assignments (two-person rule); gives no tenant or repository access. */
     STAFF_ADMIN,
     /** May perform final repository registration in an assigned active tenant (C-01/O-05). */
-    REPOSITORY_REGISTER
+    REPOSITORY_REGISTER,
+    /** R1-M6: reviews, approves, requests revision of or rejects BRD versions (TDD 19.3). */
+    BUSINESS_REVIEWER
 }

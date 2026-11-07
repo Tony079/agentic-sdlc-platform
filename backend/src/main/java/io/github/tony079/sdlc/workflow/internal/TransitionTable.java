@@ -32,6 +32,15 @@ final class TransitionTable {
             new Rule(Transition.T18_BRD_DRAFTED, WorkflowState.ANALYSING, WorkflowState.BRD_DRAFTED),
             new Rule(Transition.T19_ANALYSIS_FAILED, WorkflowState.ANALYSING, WorkflowState.FAILED),
             new Rule(Transition.T20_QUEUE_REVIEW, WorkflowState.BRD_DRAFTED, WorkflowState.INTERNAL_REVIEW),
+            // R1-M6 (TDD 9.3, 19).
+            new Rule(Transition.T21_APPROVE_INTERNAL, WorkflowState.INTERNAL_REVIEW, WorkflowState.INTERNAL_APPROVED),
+            new Rule(Transition.T22_REQUEST_REVISION, WorkflowState.INTERNAL_REVIEW, WorkflowState.REVISION_REQUESTED),
+            new Rule(Transition.T23_REJECT, WorkflowState.INTERNAL_REVIEW, WorkflowState.REJECTED),
+            new Rule(Transition.T24_REANALYSE_REVISION, WorkflowState.REVISION_REQUESTED, WorkflowState.ANALYSING),
+            new Rule(Transition.T25_RELEASE_TO_CLIENT, WorkflowState.INTERNAL_APPROVED, WorkflowState.SHARED_WITH_CLIENT),
+            new Rule(Transition.T27_CLIENT_CHANGES, WorkflowState.SHARED_WITH_CLIENT, WorkflowState.CLIENT_CHANGES_REQUESTED),
+            new Rule(Transition.T28_REANALYSE_CLIENT_CHANGES, WorkflowState.CLIENT_CHANGES_REQUESTED,
+                    WorkflowState.ANALYSING),
             // PRD section 6: CANCELLED is reachable from any non-terminal state; these are the states reachable so far.
             new Rule(Transition.T29_CANCEL, WorkflowState.DRAFT, WorkflowState.CANCELLED),
             new Rule(Transition.T29_CANCEL, WorkflowState.SUBMITTED, WorkflowState.CANCELLED),
@@ -42,7 +51,11 @@ final class TransitionTable {
             new Rule(Transition.T29_CANCEL, WorkflowState.FAILED, WorkflowState.CANCELLED),
             new Rule(Transition.T29_CANCEL, WorkflowState.ANALYSING, WorkflowState.CANCELLED),
             new Rule(Transition.T29_CANCEL, WorkflowState.BRD_DRAFTED, WorkflowState.CANCELLED),
-            new Rule(Transition.T29_CANCEL, WorkflowState.INTERNAL_REVIEW, WorkflowState.CANCELLED));
+            new Rule(Transition.T29_CANCEL, WorkflowState.INTERNAL_REVIEW, WorkflowState.CANCELLED),
+            new Rule(Transition.T29_CANCEL, WorkflowState.REVISION_REQUESTED, WorkflowState.CANCELLED),
+            new Rule(Transition.T29_CANCEL, WorkflowState.INTERNAL_APPROVED, WorkflowState.CANCELLED),
+            new Rule(Transition.T29_CANCEL, WorkflowState.SHARED_WITH_CLIENT, WorkflowState.CANCELLED),
+            new Rule(Transition.T29_CANCEL, WorkflowState.CLIENT_CHANGES_REQUESTED, WorkflowState.CANCELLED));
 
     private TransitionTable() {
     }

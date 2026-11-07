@@ -26,6 +26,12 @@ public final class EventTypes {
     public static final String EXECUTION_STALE = "ExecutionStale";
     public static final String BRD_VERSION_CREATED = "BrdVersionCreated";
     public static final String REVIEW_QUEUED = "ReviewQueued";
+    public static final String BRD_APPROVED_INTERNAL = "BrdApprovedInternal";
+    public static final String REVISION_REQUESTED = "RevisionRequested";
+    public static final String REQUIREMENT_REJECTED = "RequirementRejected";
+    public static final String BRD_RELEASED_TO_CLIENT = "BrdReleasedToClient";
+    public static final String CLIENT_CHANGES_REQUESTED = "ClientChangesRequested";
+    public static final String APPROVAL_INVALIDATED = "ApprovalInvalidated";
 
     private static final Map<String, Integer> VERSIONS = Map.ofEntries(
             Map.entry(REQUIREMENT_SUBMITTED, 1),
@@ -45,7 +51,13 @@ public final class EventTypes {
             Map.entry(ANALYSIS_STARTED, 1),
             Map.entry(EXECUTION_STALE, 1),
             Map.entry(BRD_VERSION_CREATED, 1),
-            Map.entry(REVIEW_QUEUED, 1));
+            Map.entry(REVIEW_QUEUED, 1),
+            Map.entry(BRD_APPROVED_INTERNAL, 1),
+            Map.entry(REVISION_REQUESTED, 1),
+            Map.entry(REQUIREMENT_REJECTED, 1),
+            Map.entry(BRD_RELEASED_TO_CLIENT, 1),
+            Map.entry(CLIENT_CHANGES_REQUESTED, 1),
+            Map.entry(APPROVAL_INVALIDATED, 1));
 
     private EventTypes() {
     }

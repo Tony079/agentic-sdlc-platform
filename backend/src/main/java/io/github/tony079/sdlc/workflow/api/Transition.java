@@ -29,6 +29,20 @@ public enum Transition {
     T19_ANALYSIS_FAILED(true),
     /** T20: BRD_DRAFTED to INTERNAL_REVIEW, by the engine once the BRD version is complete. */
     T20_QUEUE_REVIEW(true),
+    /** T21: INTERNAL_REVIEW to INTERNAL_APPROVED, by a Business Reviewer (staff), with approval T1. */
+    T21_APPROVE_INTERNAL(false),
+    /** T22: INTERNAL_REVIEW to REVISION_REQUESTED, by a Business Reviewer with correction notes. */
+    T22_REQUEST_REVISION(false),
+    /** T23: INTERNAL_REVIEW to REJECTED, by a Business Reviewer with a reason. */
+    T23_REJECT(false),
+    /** T24: REVISION_REQUESTED to ANALYSING, by the engine with a new input set including the notes. */
+    T24_REANALYSE_REVISION(true),
+    /** T25: INTERNAL_APPROVED to SHARED_WITH_CLIENT, by the engine (release T2, separate from T1). */
+    T25_RELEASE_TO_CLIENT(true),
+    /** T27: SHARED_WITH_CLIENT to CLIENT_CHANGES_REQUESTED, by the client (C-09 provisional: requirement owner). */
+    T27_CLIENT_CHANGES(false),
+    /** T28: CLIENT_CHANGES_REQUESTED to ANALYSING, by the engine with the client's request as input. */
+    T28_REANALYSE_CLIENT_CHANGES(true),
     /** T29: a non-terminal state to CANCELLED, by the requirement's owner, with a reason. */
     T29_CANCEL(false);
 

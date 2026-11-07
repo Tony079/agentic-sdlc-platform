@@ -89,14 +89,35 @@ class JdbcWorkflowEngine implements WorkflowEngine {
 
     @Override
     public WorkflowState transition(UUID requirementId, Transition transition, String reason) {
-        if (transition != Transition.T29_CANCEL) {
-            // T01 has its own command; T02/T03 are engine transitions that no user request can perform.
-            throw new IllegalArgumentException("Not a user transition: " + transition);
+        String actor = TenantContext.currentActorType();
+        String event = switch (transition) {
+            case T29_CANCEL -> "USER".equals(actor) ? EventTypes.REQUIREMENT_CANCELLED : null;
+            case T21_APPROVE_INTERNAL -> "STAFF".equals(actor) ? EventTypes.BRD_APPROVED_INTERNAL : null;
+            case T22_REQUEST_REVISION -> "STAFF".equals(actor) ? EventTypes.REVISION_REQUESTED : null;
+            case T23_REJECT -> "STAFF".equals(actor) ? EventTypes.REQUIREMENT_REJECTED : null;
+            case T27_CLIENT_CHANGES -> "USER".equals(actor) ? EventTypes.CLIENT_CHANGES_REQUESTED : null;
+            // T01 has its own command; engine transitions can never be requested by a user or staff member.
+            default -> null;
+        };
+        if (event == null) {
+            throw new IllegalArgumentException("Not a transition this actor may request: " + transition);
         }
         WorkflowState to = apply(requirementId, transition, reason);
-        outbox.publish(AGGREGATE, requirementId, EventTypes.REQUIREMENT_CANCELLED,
-                Map.of("requirementId", requirementId.toString()));
+        outbox.publish(AGGREGATE, requirementId, event, Map.of("requirementId", requirementId.toString()));
         return to;
+    }
+
+    @Override
+    public Optional<WorkflowState> release(UUID requirementId) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.INTERNAL_APPROVED) {
+            return Optional.empty();
+        }
+        WorkflowState to = applyLocked(requirementId, current, Transition.T25_RELEASE_TO_CLIENT, null);
+        outbox.publish(AGGREGATE, requirementId, EventTypes.BRD_RELEASED_TO_CLIENT,
+                Map.of("requirementId", requirementId.toString()));
+        return Optional.of(to);
     }
 
     /**
@@ -178,11 +199,14 @@ class JdbcWorkflowEngine implements WorkflowEngine {
         requireEngine();
         Current current = lock(requirementId);
         Transition transition;
-        if (current.state() == WorkflowState.AWAITING_DOCUMENTS) {
-            transition = Transition.T11_START_ANALYSIS;
-        } else if (current.state() == WorkflowState.ANALYSING) {
-            transition = Transition.T15_ANALYSIS_RESTART;
-        } else {
+        transition = switch (current.state()) {
+            case AWAITING_DOCUMENTS -> Transition.T11_START_ANALYSIS;
+            case ANALYSING -> Transition.T15_ANALYSIS_RESTART;
+            case REVISION_REQUESTED -> Transition.T24_REANALYSE_REVISION;
+            case CLIENT_CHANGES_REQUESTED -> Transition.T28_REANALYSE_CLIENT_CHANGES;
+            default -> null;
+        };
+        if (transition == null) {
             return Optional.empty();
         }
         applyLocked(requirementId, current, transition, null);
@@ -341,7 +365,8 @@ class JdbcWorkflowEngine implements WorkflowEngine {
                 .list();
     }
 
+    /** USER (client), STAFF (Business Reviewer) or SYSTEM (engine), from the authenticated principal only. */
     private static String actorType() {
-        return TenantContext.currentActor().isPresent() ? "USER" : "SYSTEM";
+        return TenantContext.currentActorType();
     }
 }

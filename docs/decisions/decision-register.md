@@ -331,3 +331,17 @@ therefore superseded for R1-M5: validation still ends with T06/T07, and analysis
 | D-R5-08 | Staleness (9.6) is detected at the commit step (Tx C recomputes the input hash): T15 if the guard still holds, otherwise T14. A document change does not yet proactively cancel a running BA job | WF-S02 behaviour is met; proactive cancellation is a gap | ACTIVE — gap recorded |
 | D-R5-09 | A proposal that fails re-validation at Tx C is REJECTED_INVALID and leads to T19 | TDD 12.6 step 5 | ACTIVE |
 | D-R5-10 | Prompts `ba.phase-a@1` and `ba.phase-b@1` are classpath resources; their SHA-256 is registered in changeset 0020 | TDD 13.4 | ACTIVE |
+
+## 12. Implementation decisions (R1-M6 core, branch `feature/r1-m5-m6-completion`)
+
+| ID | Decision | Rationale / limit | Status |
+|---|---|---|---|
+| D-R6-01 | The Business Reviewer is the staff capability **`BUSINESS_REVIEWER`**, granted through the two-person provisioning path, plus an active tenant assignment (same model as `REPOSITORY_REGISTER`) | Applies the approved O-06/O-13/S-02 staff model to the PRD role; no broad admin role | ACTIVE |
+| D-R6-02 | Staff review endpoints are under `/api/v1/staff/...` (`reviews`, `brd-versions/{id}`, `.../flags/{itemKey}/acknowledge`, `.../approve`, `.../request-revision`, `.../reject`); the client BRD is `GET /api/v1/requirements/{id}/brd` | Keeps the staff session separate from client sessions; paths differ from TDD 20.8 (`/brd-versions/{id}`), semantics are the same | ACTIVE — API path deviation |
+| D-R6-03 | Release mode **AUTOMATIC** (O-16 provisional default, TDD 19.5): the worker performs T25 after BrdApprovedInternal, re-checking current version, VALID approval and unchanged inputs; a failed re-check invalidates the approval, marks the version STALE and leaves the requirement in INTERNAL_APPROVED (owner may cancel) | TDD 19.5; manual release (O-16) not built | ACTIVE |
+| D-R6-04 | Flag acknowledgement per item before approval (O-08 provisional default, TDD 16.7) | TDD default | ACTIVE |
+| D-R6-05 | Four-eyes: a reviewer who authored correction notes (T22) for the version's input set cannot approve that version (API 403 and database trigger). Requirement submitters are client users and cannot hold the staff capability, so client self-approval is impossible by construction | TDD 16.6, 19.1 | ACTIVE |
+| D-R6-06 | **C-09 provisional:** T27 (client change request) is made by the **requirement owner**, because under C-18 only the owner can see the requirement and its BRD | TDD says Client Approver; C-09 is open | ACTIVE — PO decision needed (C-09) |
+| D-R6-07 | Client view: owner only, RELEASED versions only; evidence references (path, lines, commit, file name, chunk label) without quotes (AC-EXT-29). Reviewers see quotes | TDD 16.4, 19.5 | ACTIVE |
+| D-R6-08 | In-app notifications: BRD_RELEASED to the requirement owner; list and mark-read endpoints. No staff notifications (the review queue serves) and no clarification notifications | AC-EXT-40 partial | ACTIVE — partial |
+| D-R6-09 | **Not built in this branch:** clarification lifecycle (TDD 17, T16/T17, C-05), document decisions (T12/T13), critical-finding records (16.11.6), version comparison (16.8, O-22), BRD export (16.9), manual release, admin retry T26 (O-27), admin access grants (O-32), T04/T05 manual-intake resume | Time-boxed; each is recorded as a gap in the verification matrix | OPEN — gaps |

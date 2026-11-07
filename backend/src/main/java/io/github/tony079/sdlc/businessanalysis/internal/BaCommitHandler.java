@@ -185,6 +185,7 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
             return;
         }
         UUID brd = repository.brdFor(job.tenantId(), requirementId);
+        repository.invalidateApprovalsOfOpenVersions(requirementId);
         repository.supersedeOpenVersions(requirementId);
         String excluded = excludedDocuments(set.documentsJson());
         UUID version = repository.insertVersion(job.tenantId(), brd, requirementId, pending,

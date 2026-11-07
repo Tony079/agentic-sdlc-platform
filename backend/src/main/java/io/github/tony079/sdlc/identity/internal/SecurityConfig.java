@@ -99,6 +99,9 @@ class SecurityConfig {
                         .requestMatchers("/api/v1/projects", "/api/v1/projects/**",
                                         "/api/v1/requirements", "/api/v1/requirements/**")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
+                        // In-app notifications of client users (AC-EXT-40).
+                        .requestMatchers("/api/v1/notifications", "/api/v1/notifications/**")
+                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
                         .requestMatchers("/api/v1/me", "/api/v1/auth/logout")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
                         .anyRequest().denyAll())

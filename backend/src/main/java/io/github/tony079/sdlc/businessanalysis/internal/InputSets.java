@@ -51,11 +51,22 @@ class InputSets {
     private final RequirementInputs requirements;
     private final RepositoryInputs repositories;
     private final DocumentProcessing documents;
+    private final org.springframework.jdbc.core.simple.JdbcClient jdbc;
 
-    InputSets(RequirementInputs requirements, RepositoryInputs repositories, DocumentProcessing documents) {
+    InputSets(RequirementInputs requirements, RepositoryInputs repositories, DocumentProcessing documents,
+              org.springframework.jdbc.core.simple.JdbcClient jdbc) {
         this.requirements = requirements;
         this.repositories = repositories;
         this.documents = documents;
+        this.jdbc = jdbc;
+    }
+
+    /** The jsonb text form of the corrections, exactly as stored, so that hashes recomputed later match. */
+    String normaliseCorrections(String correctionsJson) {
+        if (correctionsJson == null || correctionsJson.isBlank()) {
+            return "[]";
+        }
+        return jdbc.sql("SELECT CAST(:c AS jsonb)::text").param("c", correctionsJson).query(String.class).single();
     }
 
     /** The input set if guard 9.4 holds now; empty otherwise. */
@@ -79,7 +90,7 @@ class InputSets {
                     processed ? doc.extractionNo() : null, processed ? doc.outputSha256() : null, processed));
         }
         entries.sort(Comparator.comparing(e -> e.versionId().toString()));
-        String corrections = correctionsJson == null ? "[]" : correctionsJson;
+        String corrections = normaliseCorrections(correctionsJson);
         return Optional.of(new Draft(requirementId, revision.get(), repository.get(), List.copyOf(entries), corrections,
                 hash(revision.get(), repository.get(), entries, corrections)));
     }

@@ -31,3 +31,5 @@ databaseChangeLog:
   - include: { file: changes/0019-repository.sql, relativeToChangelogFile: true }
   # R1-M5: frozen analysis input sets, pending BA results, BRD versions with verified evidence, T11/T14/T15/T18/T19/T20.
   - include: { file: changes/0020-analysis-brd.sql, relativeToChangelogFile: true }
+  # R1-M6: Business Reviewer capability, approval T1, flag acknowledgement, release T2, client changes, notifications.
+  - include: { file: changes/0021-review-release.sql, relativeToChangelogFile: true }

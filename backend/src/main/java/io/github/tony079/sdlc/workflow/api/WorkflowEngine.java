@@ -72,6 +72,9 @@ public interface WorkflowEngine {
     /** Engine only: the execution's inputs changed (TDD 9.6): stage STALE, ExecutionStale, T14 unless restarted after. */
     void markAnalysisStale(UUID requirementId, UUID stageExecutionId, boolean waitForInputs);
 
+    /** Engine only: T25 release to the client (T2, separate from approval T1). Empty unless INTERNAL_APPROVED. */
+    Optional<WorkflowState> release(UUID requirementId);
+
     /** Engine only: T19 after the BA job is dead or fatal. Empty if the requirement is no longer ANALYSING. */
     Optional<WorkflowState> failAnalysis(UUID requirementId);
 }

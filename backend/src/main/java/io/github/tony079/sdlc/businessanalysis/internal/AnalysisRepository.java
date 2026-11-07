@@ -105,6 +105,16 @@ class AnalysisRepository {
                 .query(UUID.class).single();
     }
 
+    /** TDD 19.4: a new BRD version invalidates the approvals of the versions it supersedes. */
+    void invalidateApprovalsOfOpenVersions(UUID requirementId) {
+        jdbc.sql("""
+                UPDATE app.approval SET status = 'INVALIDATED', invalidated_by_event = 'BrdVersionCreated',
+                       invalidated_at = clock_timestamp()
+                WHERE status = 'VALID' AND brd_version_id IN (SELECT id FROM app.brd_version WHERE requirement_id = :r
+                      AND status IN ('IN_REVIEW', 'APPROVED_INTERNAL', 'RELEASED'))
+                """).param("r", requirementId).update();
+    }
+
     void supersedeOpenVersions(UUID requirementId) {
         jdbc.sql("""
                 UPDATE app.brd_version SET status = 'SUPERSEDED', status_at = clock_timestamp()
