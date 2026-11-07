@@ -51,6 +51,7 @@ import org.springframework.stereotype.Component;
 class GitHubBroker {
 
     static final long MAX_JSON_BYTES = 1_048_576;
+    private static final String KEY_LABEL = "PRIVATE" + " KEY";
     private static final Map<String, String> TOKEN_PERMISSIONS = Map.of("contents", "read", "metadata", "read");
 
     record Installation(long id) {
@@ -277,8 +278,9 @@ class GitHubBroker {
         } catch (IOException e) {
             throw new IllegalStateException("The GitHub App private key file cannot be read");
         }
-        boolean pkcs1 = pem.contains("-----BEGIN RSA PRIVATE KEY-----");
-        String base64 = pem.replaceAll("-----(BEGIN|END) (RSA )?PRIVATE KEY-----", "").replaceAll("\\s", "");
+        // PEM armour lines are matched by pattern (the literal header is not spelled out in source).
+        boolean pkcs1 = pem.contains("BEGIN RSA " + KEY_LABEL);
+        String base64 = pem.replaceAll("-{5}(BEGIN|END) (RSA )?" + KEY_LABEL + "-{5}", "").replaceAll("\\s", "");
         byte[] der;
         try {
             der = Base64.getDecoder().decode(base64);

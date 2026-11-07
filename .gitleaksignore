@@ -1,0 +1,6 @@
+# Reviewed false positives (R1-M4, 2026-11-07). Each is a PEM armour header literal in parsing or test code, in commit
+# 791a864, with no key material: the test key pair is generated at runtime and written only to a temporary file. The
+# literals were removed in the following commit. Entries are exact fingerprints, so any new finding still fails.
+791a8648e5c60e5dd7d2c6ede2d8137f1680af8d:backend/src/main/java/io/github/tony079/sdlc/sourcerepo/internal/GitHubBroker.java:private-key:280
+791a8648e5c60e5dd7d2c6ede2d8137f1680af8d:backend/src/test/java/io/github/tony079/sdlc/sourcerepo/internal/GitHubBrokerTest.java:private-key:147
+791a8648e5c60e5dd7d2c6ede2d8137f1680af8d:backend/src/test/java/io/github/tony079/sdlc/support/FakeGitHub.java:private-key:73

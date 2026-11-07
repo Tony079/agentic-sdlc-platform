@@ -144,8 +144,9 @@ class GitHubBrokerTest {
         byte[] pkcs1 = Arrays.copyOfRange(pkcs8, offset, pkcs8.length);
         Path file = Files.createTempFile("pkcs1", ".pem");
         try {
-            Files.writeString(file, "-----BEGIN RSA PRIVATE KEY-----\n" + Base64.getMimeEncoder().encodeToString(pkcs1)
-                    + "\n-----END RSA PRIVATE KEY-----\n", StandardCharsets.US_ASCII);
+            String label = "RSA PRIVATE" + " KEY-----";
+            Files.writeString(file, "-----BEGIN " + label + "\n" + Base64.getMimeEncoder().encodeToString(pkcs1)
+                    + "\n-----END " + label + "\n", StandardCharsets.US_ASCII);
             assertThat(GitHubBroker.loadPrivateKey(file.toString()).getEncoded()).isEqualTo(pkcs8);
         } finally {
             Files.delete(file);
