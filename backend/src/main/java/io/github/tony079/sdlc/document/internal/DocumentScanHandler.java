@@ -51,7 +51,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * without using its retry budget and the version stays QUARANTINED (fail closed, PRD FR-STO-12, AC-DOC-04).
  */
 @Component
-@Profile("!migrate")
+@Profile("!migrate & !provision")
 @ConditionalOnProperty(name = "sdlc.worker.enabled", havingValue = "true")
 class DocumentScanHandler implements JobHandler<DocumentScanHandler.Outcome> {
 

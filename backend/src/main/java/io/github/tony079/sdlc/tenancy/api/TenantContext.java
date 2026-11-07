@@ -29,12 +29,17 @@ public final class TenantContext {
         if (explicit != null) {
             return Optional.of(explicit);
         }
-        return principal().map(TenantScopedPrincipal::tenantId);
+        return principal().flatMap(p -> Optional.ofNullable(p.tenantId()));
     }
 
     /** User id of the authenticated principal, if any. */
     public static Optional<UUID> currentActor() {
         return principal().map(TenantScopedPrincipal::userId);
+    }
+
+    /** Audit actor type of the authenticated principal (USER or STAFF), or SYSTEM without one. */
+    public static String currentActorType() {
+        return principal().map(TenantScopedPrincipal::actorType).orElse("SYSTEM");
     }
 
     /** The current tenant, or an exception if none is set. Use where a missing tenant is a programming error. */

@@ -17,6 +17,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -25,6 +26,7 @@ import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * HTTP security for the API. Authorisation order (TDD 20.1): authenticated, role allowed for the endpoint,
@@ -61,8 +63,12 @@ class SecurityConfig {
 
     @Bean
     SecurityFilterChain apiSecurity(HttpSecurity http, SecurityContextRepository contextRepository,
-                                    CsrfTokenRepository csrfTokenRepository) throws Exception {
+                                    CsrfTokenRepository csrfTokenRepository, StaffRepository staffRepository,
+                                    PlatformTransactionManager transactionManager) throws Exception {
         http
+                // Staff sessions are re-validated against the database on every request (O-06).
+                .addFilterAfter(new StaffSessionFilter(staffRepository, contextRepository, transactionManager),
+                        SecurityContextHolderFilter.class)
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokenRepository)
                         // Plain handler: the SPA echoes the cookie value in the header.
@@ -77,10 +83,17 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        // Internal staff (O-06, O-11): password first, then TOTP; nothing else before MFA.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/staff/auth/login").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/staff/auth/logout")
+                                .hasAnyRole("STAFF_MFA_PENDING", "STAFF")
+                        .requestMatchers("/api/v1/staff/auth/mfa/**").hasRole("STAFF_MFA_PENDING")
+                        .requestMatchers("/api/v1/staff/**").hasRole("STAFF")
                         .requestMatchers("/api/v1/projects", "/api/v1/projects/**",
                                         "/api/v1/requirements", "/api/v1/requirements/**")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
-                        .requestMatchers("/api/v1/me", "/api/v1/auth/logout").authenticated()
+                        .requestMatchers("/api/v1/me", "/api/v1/auth/logout")
+                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, e) ->
@@ -102,7 +115,7 @@ class SecurityConfig {
     }
 
     /** Writes the error envelope. All values are fixed strings or a validated correlation id. */
-    private static void writeError(HttpServletResponse response, int status, String code, String message)
+    static void writeError(HttpServletResponse response, int status, String code, String message)
             throws IOException {
         String correlation = CorrelationId.current().filter(CorrelationId::isValid).orElse(null);
         response.setStatus(status);

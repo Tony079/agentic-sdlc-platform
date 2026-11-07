@@ -23,6 +23,12 @@ public interface SecurityEventRecorder {
          */
         RESOURCE_NOT_FOUND,
         /** The malware scanner reported a threat in an uploaded file (PRD 6C.1 rule 3, AC-EXT-33). */
-        MALWARE_DETECTED
+        MALWARE_DETECTED,
+        /** A staff MFA code was wrong or replayed (owner decision O-11). */
+        MFA_FAILED,
+        /** A staff operation was refused: inactive staff, missing assignment or capability (O-06, C-01). */
+        STAFF_ACCESS_DENIED,
+        /** A repository link request token was unknown, expired, used, revoked or presented by a wrong caller (C-18). */
+        LINK_REQUEST_REJECTED
     }
 }

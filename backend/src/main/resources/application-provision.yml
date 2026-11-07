@@ -1,0 +1,17 @@
+# One-shot staff provisioning process (owner decisions O-13, S-02). Connects as sdlc_provisioner, the only login that
+# may create staff or write capability grants and tenant assignments. Serves no HTTP, runs one command, then exits.
+# Never used by the API, the worker or agents; its password is supplied only to this process.
+spring:
+  main:
+    web-application-type: none
+    banner-mode: off
+  datasource:
+    username: ${SDLC_DB_PROVISIONER_USER:sdlc_provisioner}
+    password: ${SDLC_DB_PROVISIONER_PASSWORD:}
+    hikari:
+      maximum-pool-size: 2
+
+sdlc:
+  provisioning:
+    # development or test enables bootstrap-admins; any other value (including empty) refuses it (O-13).
+    environment: ${SDLC_PROVISIONING_ENVIRONMENT:}

@@ -23,3 +23,5 @@ databaseChangeLog:
   - include: { file: changes/0015-document-extraction.sql, relativeToChangelogFile: true }
   # Model gateway (PRD R1-M5 foundation): model registry, versioned prompts, per-call usage records.
   - include: { file: changes/0016-model-gateway.sql, relativeToChangelogFile: true }
+  # R1-M4: internal staff identities, capability grants, tenant assignments (owner decisions O-06, O-11, O-13, S-02).
+  - include: { file: changes/0017-staff.sql, relativeToChangelogFile: true }

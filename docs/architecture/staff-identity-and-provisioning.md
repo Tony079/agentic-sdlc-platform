@@ -44,7 +44,11 @@ an operator. The API, the worker and agents never hold its credentials.
    Attempts are throttled per staff account. Codes and secrets never appear in logs, audit or responses (except the
    one-time enrolment response).
 
-Staff never reach the client requirement or document APIs; those stay limited to `CLIENT_USER` / `CLIENT_APPROVER`.
+6. `GET /api/v1/staff/me` returns the staff member, active tenant, assigned tenants and capabilities (no secrets).
+   `POST /api/v1/staff/auth/logout` ends a staff session (pre-MFA or full).
+
+Staff never reach the client requirement or document APIs, or `/api/v1/me`; those stay limited to `CLIENT_USER` /
+`CLIENT_APPROVER`.
 
 ## 4. Active tenant (O-06)
 
@@ -72,9 +76,18 @@ This gives a two-person control even though an operator runs the command.
 test, `bootstrap-admins` is refused, so no administrator, and therefore no grant, can exist in production until the
 ceremony is built and approved.
 
+**Running a command (local Compose):**
+
+```bash
+docker compose run --rm -T provision create-staff --email=a@example.test --display-name="A" < password.txt
+```
+
+The new member then logs in to the API within the enrolment window (default 72 hours) and enrols an authenticator.
+Administrators pass their current codes as `--<role>-code=` arguments (D-M4R-09).
+
 ## 6. Audit events (platform_audit_event, content-free)
 
-- **Authentication:** `STAFF_LOGIN` (success or denied), `STAFF_MFA_ENROLLED`, `STAFF_MFA_VERIFIED`, `STAFF_MFA_FAILED`, `STAFF_ACTIVE_TENANT_SET` (success or denied).
+- **Authentication:** `STAFF_LOGIN` (success or denied), `STAFF_LOGOUT`, `STAFF_MFA_ENROLLED`, `STAFF_MFA_VERIFIED`, `STAFF_MFA_FAILED`, `STAFF_ACTIVE_TENANT_SET` (success or denied).
 - **Grants and assignments:** `STAFF_CAPABILITY_GRANTED` / `_REVOKED`, `STAFF_TENANT_ASSIGNED` / `_REVOKED`.
 - **Staff lifecycle:** `STAFF_CREATED`, `STAFF_DISABLED`, `STAFF_MFA_RESET`, `STAFF_BOOTSTRAP`.
 

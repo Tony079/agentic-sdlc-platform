@@ -24,6 +24,7 @@ public abstract class ApiIntegrationTest {
         registry.add("sdlc.security.login-throttle.max-failures-per-client", () -> "1000");
         registry.add("sdlc.storage.root", TestStorage.ROOT::toString);
         registry.add("sdlc.storage.encryption-key", () -> TestStorage.KEY);
+        registry.add("sdlc.staff.mfa-key", () -> TestDatabase.MFA_KEY);
     }
 
     protected ApiClient client() {

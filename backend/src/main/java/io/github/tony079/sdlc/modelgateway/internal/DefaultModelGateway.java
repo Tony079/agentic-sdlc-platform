@@ -52,7 +52,7 @@ import tools.jackson.databind.json.JsonMapper;
  * The per-attempt timeout is enforced here, even if a provider ignores it.
  */
 @Component
-@Profile("!migrate")
+@Profile("!migrate & !provision")
 class DefaultModelGateway implements ModelGateway {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultModelGateway.class);

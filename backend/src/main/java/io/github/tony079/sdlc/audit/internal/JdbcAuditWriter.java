@@ -40,7 +40,7 @@ class JdbcAuditWriter implements AuditWriter {
                 VALUES (:tenant, :actorType, :actor, :action, :resourceType, :resourceId, :result, :correlation)
                 """)
                 .param("tenant", TenantContext.requireTenant())
-                .param("actorType", actor == null ? "SYSTEM" : "USER")
+                .param("actorType", actor == null ? "SYSTEM" : TenantContext.currentActorType())
                 .param("actor", actor)
                 .param("action", action.name())
                 .param("resourceType", resourceType)

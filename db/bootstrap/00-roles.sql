@@ -21,6 +21,11 @@ BEGIN
     -- its own narrow grants (Liquibase 0013) are the only rights that differ.
     CREATE ROLE sdlc_worker LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sdlc_provisioner') THEN
+    -- Privileged administrative path for staff identities, capability grants and tenant assignments (S-02).
+    -- Used only by the one-shot "provision" process; never by the API or worker. No RLS bypass, not an owner.
+    CREATE ROLE sdlc_provisioner LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
 END
 $roles$;
 

@@ -47,7 +47,7 @@ import org.springframework.stereotype.Component;
  *   <li>Writes go to a temporary file and are moved into place atomically; partial objects never become visible.</li>
  * </ul>
  */
-@Profile("!migrate")
+@Profile("!migrate & !provision")
 @Component
 class EncryptedFileObjectStore implements ObjectStore {
 

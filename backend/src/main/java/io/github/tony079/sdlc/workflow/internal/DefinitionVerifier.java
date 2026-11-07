@@ -23,7 +23,7 @@ import tools.jackson.databind.json.JsonMapper;
  * an engine rule the definition does not contain, stops the process before any request is served.
  */
 @Component
-@Profile("!migrate")
+@Profile("!migrate & !provision")
 class DefinitionVerifier implements SmartInitializingSingleton {
 
     private static final TypeReference<List<Map<String, String>>> RULES = new TypeReference<>() {

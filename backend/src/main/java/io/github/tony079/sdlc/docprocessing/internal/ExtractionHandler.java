@@ -50,7 +50,7 @@ import tools.jackson.databind.json.JsonMapper;
  * requirement's workflow state (FR-DPR-10).
  */
 @Component
-@Profile("!migrate")
+@Profile("!migrate & !provision")
 @ConditionalOnProperty(name = "sdlc.worker.enabled", havingValue = "true")
 class ExtractionHandler implements JobHandler<ExtractionHandler.Result> {
 

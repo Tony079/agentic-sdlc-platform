@@ -9,7 +9,8 @@ import org.springframework.core.env.Profiles;
  * Agentic SDLC Platform (modular monolith).
  *
  * <p>Started normally it serves the API. Started with the {@code migrate} profile it applies database
- * migrations (and optional development seed data) as the migrator login, then exits.
+ * migrations (and optional development seed data) as the migrator login, then exits. Started with the {@code provision}
+ * profile it runs one staff provisioning command as the provisioning login, then exits.
  */
 @SpringBootApplication
 public class SdlcPlatformApplication {
@@ -17,7 +18,7 @@ public class SdlcPlatformApplication {
     public static void main(String[] args) {
         disableLiquibaseAnalytics();
         ConfigurableApplicationContext context = SpringApplication.run(SdlcPlatformApplication.class, args);
-        if (context.getEnvironment().acceptsProfiles(Profiles.of("migrate"))) {
+        if (context.getEnvironment().acceptsProfiles(Profiles.of("migrate | provision"))) {
             System.exit(SpringApplication.exit(context));
         }
     }

@@ -24,7 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /** Requirement attachments (PRD 7A.1). The tenant and user come only from the session. */
-@Profile("!migrate")
+@Profile("!migrate & !provision")
 @RestController
 @RequestMapping("/api/v1/requirements/{requirementId}/documents")
 class DocumentController {

@@ -48,7 +48,7 @@ import org.springframework.web.multipart.MultipartFile;
  * workflow lock, records the version as QUARANTINED and writes DocumentUploaded to the outbox. Validation of the real
  * content and the malware scan run in the worker; nothing is analysed or downloadable before a clean scan.
  */
-@Profile("!migrate")
+@Profile("!migrate & !provision")
 @Service
 class DocumentService {
 

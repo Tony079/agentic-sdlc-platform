@@ -41,6 +41,9 @@ public final class TestDatabase {
     private final String appPassword = randomSecret();
     private final String migratorPassword = randomSecret();
     private final String workerPassword = randomSecret();
+    private final String provisionerPassword = randomSecret();
+    /** Staff MFA encryption key for the test run (random, never committed). */
+    public static final String MFA_KEY = java.util.Base64.getEncoder().encodeToString(randomBytes(32));
 
     private TestDatabase(String adminBaseUrl, String adminUser, String adminPassword) {
         this.adminBaseUrl = adminBaseUrl;
@@ -92,6 +95,19 @@ public final class TestDatabase {
         return DriverManager.getConnection(appUrl(), workerUser(), workerPassword);
     }
 
+    public String provisionerUser() {
+        return "sdlc_provisioner";
+    }
+
+    public String provisionerPassword() {
+        return provisionerPassword;
+    }
+
+    /** Opens a raw connection as sdlc_provisioner (for provisioning and privilege tests). */
+    public Connection provisionerConnection() throws SQLException {
+        return DriverManager.getConnection(appUrl(), provisionerUser(), provisionerPassword);
+    }
+
     /** Opens a raw connection as sdlc_app (for privilege tests). */
     public Connection appConnection() throws SQLException {
         return DriverManager.getConnection(appUrl(), appUser(), appPassword);
@@ -114,6 +130,7 @@ public final class TestDatabase {
             statement.execute("ALTER ROLE sdlc_migrator PASSWORD '" + migratorPassword + "'");
             statement.execute("ALTER ROLE sdlc_app PASSWORD '" + appPassword + "'");
             statement.execute("ALTER ROLE sdlc_worker PASSWORD '" + workerPassword + "'");
+            statement.execute("ALTER ROLE sdlc_provisioner PASSWORD '" + provisionerPassword + "'");
         } catch (SQLException | IOException e) {
             throw new IllegalStateException("Bootstrap (roles) failed", e);
         }
@@ -142,8 +159,12 @@ public final class TestDatabase {
     }
 
     private static String randomSecret() {
-        byte[] bytes = new byte[24];
+        return HexFormat.of().formatHex(randomBytes(24));
+    }
+
+    private static byte[] randomBytes(int length) {
+        byte[] bytes = new byte[length];
         new SecureRandom().nextBytes(bytes);
-        return HexFormat.of().formatHex(bytes);
+        return bytes;
     }
 }

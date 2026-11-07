@@ -18,6 +18,7 @@ services:
       SDLC_DB_MIGRATOR_PASSWORD: ${SDLC_DB_MIGRATOR_PASSWORD:?set SDLC_DB_MIGRATOR_PASSWORD in .env}
       SDLC_DB_APP_PASSWORD: ${SDLC_DB_APP_PASSWORD:?set SDLC_DB_APP_PASSWORD in .env}
       SDLC_DB_WORKER_PASSWORD: ${SDLC_DB_WORKER_PASSWORD:?set SDLC_DB_WORKER_PASSWORD in .env}
+      SDLC_DB_PROVISIONER_PASSWORD: ${SDLC_DB_PROVISIONER_PASSWORD:?set SDLC_DB_PROVISIONER_PASSWORD in .env}
       SDLC_BOOTSTRAP_DIR: /sdlc-bootstrap
     volumes:
       - ./db/bootstrap:/sdlc-bootstrap:ro
@@ -54,12 +55,33 @@ services:
       # Local HTTP only. Must be true (the default) behind TLS.
       SDLC_COOKIE_SECURE: "false"
       SDLC_STORAGE_KEY: ${SDLC_STORAGE_KEY:?set SDLC_STORAGE_KEY in .env}
+      SDLC_MFA_KEY: ${SDLC_MFA_KEY:?set SDLC_MFA_KEY in .env}
     volumes:
       - doc-store:/var/lib/sdlc/documents
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+
+  # One-shot staff provisioning (O-13, S-02), started only on demand, e.g.
+  #   docker compose run --rm -T provision create-staff --email=a@example.test --display-name=A < password.txt
+  # The only service holding the sdlc_provisioner password. Never started by "docker compose up".
+  provision:
+    image: sdlc-platform-backend:local
+    profiles: ["tools"]
+    command: ["--spring.profiles.active=provision"]
+    environment:
+      SDLC_DB_URL: jdbc:postgresql://db:5432/sdlc
+      SDLC_DB_PROVISIONER_PASSWORD: ${SDLC_DB_PROVISIONER_PASSWORD}
+      SDLC_MFA_KEY: ${SDLC_MFA_KEY}
+      # Local development stack only: enables bootstrap-admins (refused in any other environment).
+      SDLC_PROVISIONING_ENVIRONMENT: development
+      SDLC_LOG_FORMAT: ""
+    stdin_open: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
 
   # Background worker (Milestone 3): transactional outbox dispatcher and job queue, as login sdlc_worker.
   # Same image, no HTTP port. Healthy while its poll loop keeps the liveness file fresh.
