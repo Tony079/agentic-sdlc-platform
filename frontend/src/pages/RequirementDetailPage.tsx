@@ -11,6 +11,7 @@ import type {
 } from '../api/types';
 import { fieldMessage } from '../components/RequirementForm';
 import { DocumentsPanel } from '../components/DocumentsPanel';
+import { BrdPanel } from '../components/BrdPanel';
 import { RepositoryLinkPanel } from '../components/RepositoryLinkPanel';
 
 const CONTENT_LABELS: [keyof RequirementContent, string][] = [
@@ -52,6 +53,8 @@ const STATE_NOTES: Partial<Record<RequirementState, string>> = {
 /** States in which the owner may cancel (PRD section 6: any non-terminal state; these are the ones reachable so far). */
 const CANCELLABLE: RequirementState[] = [
   'DRAFT', 'SUBMITTED', 'MANUAL_INTAKE', 'REPO_VALIDATING', 'AWAITING_DOCUMENTS', 'AWAITING_DOCUMENT_DECISION', 'FAILED',
+  'ANALYSING', 'BRD_DRAFTED', 'INTERNAL_REVIEW', 'REVISION_REQUESTED', 'INTERNAL_APPROVED', 'SHARED_WITH_CLIENT',
+  'CLIENT_CHANGES_REQUESTED',
 ];
 
 function errorMessage(error: unknown): string {
@@ -198,6 +201,8 @@ export function RequirementDetailPage() {
       )}
 
       <ContentView content={detail.content} />
+
+      <BrdPanel requirementId={detail.id} requirementState={detail.state} />
 
       <RepositoryLinkPanel requirementId={detail.id} requirementState={detail.state} />
 

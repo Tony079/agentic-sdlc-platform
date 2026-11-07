@@ -4,7 +4,10 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { ProjectList, RequirementPage, RequirementState } from '../api/types';
 
-const FILTER_STATES: RequirementState[] = ['DRAFT', 'SUBMITTED', 'REPO_VALIDATING', 'MANUAL_INTAKE', 'CANCELLED'];
+const FILTER_STATES: RequirementState[] = [
+  'DRAFT', 'SUBMITTED', 'REPO_VALIDATING', 'MANUAL_INTAKE', 'AWAITING_DOCUMENTS', 'ANALYSING', 'INTERNAL_REVIEW',
+  'SHARED_WITH_CLIENT', 'FAILED', 'REJECTED', 'CANCELLED',
+];
 
 export function RequirementsPage() {
   const [state, setState] = useState('');

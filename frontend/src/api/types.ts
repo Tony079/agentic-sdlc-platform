@@ -200,3 +200,81 @@ export interface RepositorySummary {
   registeredAt: string;
   verifiedAt: string | null;
 }
+
+// R1-M5/M6: BRD versions, review, client view, notifications.
+
+export interface BrdEvidence {
+  type: 'REPOSITORY' | 'DOCUMENT';
+  path: string | null;
+  startLine: number | null;
+  endLine: number | null;
+  commitSha: string | null;
+  documentVersionId: string | null;
+  fileName: string | null;
+  chunk: number | null;
+  chunkLabel: string | null;
+  quote: string | null;
+  supportPassed: boolean | null;
+}
+
+export interface BrdItem {
+  itemKey: string;
+  ordinal: number;
+  kind: 'FACT' | 'ASSUMPTION' | 'RECOMMENDATION' | 'QUESTION';
+  proposedKind: string;
+  section: string;
+  statement: string;
+  risk: string | null;
+  component: string | null;
+  supportState: 'VERIFIED' | 'FLAGGED' | 'UNSUPPORTED';
+  rejectedCitations: number;
+  acknowledged: boolean;
+  evidence: BrdEvidence[];
+}
+
+export interface BrdVersion {
+  id: string;
+  requirementId: string;
+  versionNo: number;
+  status: string;
+  contentHash: string;
+  inputHash: string;
+  understanding: string | null;
+  excludedDocuments: string;
+  modelProvider: string;
+  modelId: string;
+  createdAt: string;
+  items: BrdItem[];
+}
+
+export interface ClientBrd {
+  requirementId: string;
+  state: string;
+  version: BrdVersion;
+}
+
+export interface ReviewQueueEntry {
+  requirementId: string;
+  requirementKey: string;
+  title: string;
+  brdVersionId: string;
+  versionNo: number;
+  flagged: number;
+  unacknowledged: number;
+  createdAt: string;
+}
+
+export interface ReviewDetail {
+  requirementKey: string;
+  requirement: RequirementContent;
+  state: string;
+  version: BrdVersion;
+}
+
+export interface NotificationItem {
+  id: string;
+  kind: string;
+  requirementId: string | null;
+  createdAt: string;
+  readAt: string | null;
+}

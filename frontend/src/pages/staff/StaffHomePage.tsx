@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
-import type { PendingRepositoryLink, StaffMe } from '../../api/types';
+import type { PendingRepositoryLink, ReviewQueueEntry, StaffMe } from '../../api/types';
+import { Link } from 'react-router-dom';
 
 const REGISTER_ERRORS: Record<string, string> = {
   REPOSITORY_ALREADY_REGISTERED: 'A repository is already registered for that requirement.',
@@ -39,6 +40,13 @@ export function StaffHomePage() {
     queryKey: ['staff-links', me.data?.activeTenant?.id],
     queryFn: () => api.get<PendingRepositoryLink[]>('/api/v1/staff/repository-links'),
     enabled: canRegister,
+  });
+
+  const canReview = !!me.data?.activeTenant && me.data.capabilities.includes('BUSINESS_REVIEWER');
+  const reviews = useQuery({
+    queryKey: ['staff-reviews', me.data?.activeTenant?.id],
+    queryFn: () => api.get<ReviewQueueEntry[]>('/api/v1/staff/reviews'),
+    enabled: canReview,
   });
 
   if (me.isPending) {
@@ -115,6 +123,23 @@ export function StaffHomePage() {
                 <button type="button" disabled={busy} onClick={() => void register(link)}>
                   Register
                 </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {canReview && (
+        <>
+          <h2>BRDs awaiting review</h2>
+          {reviews.data?.length === 0 && <p>Nothing is waiting for review.</p>}
+          <ul>
+            {reviews.data?.map((r) => (
+              <li key={r.brdVersionId}>
+                <Link to={`/staff/reviews/${r.brdVersionId}`}>
+                  {r.requirementKey}: {r.title}
+                </Link>{' '}
+                · version {r.versionNo}
+                {r.unacknowledged > 0 && ` · ${r.unacknowledged} flag(s) to acknowledge`}
               </li>
             ))}
           </ul>
