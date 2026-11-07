@@ -31,6 +31,13 @@ The engine refuses to start if these disagree.
 
 ## 1. R1-M4 — Repository registration, snapshot and Phase A inventory
 
+> **Update 2026-11-07.** The Product Owner decided C-01/O-05 (internal staff with the `REPOSITORY_REGISTER`
+> capability), C-18 (Option 1 link request, the `requirement.repository_link.attach` capability), Q-A (Option B),
+> Q-B (Option A: T06/T07 only) and the staff model O-06, O-11, O-13, S-02 (decision register section 9).
+> Implementation: `feature/r1-m4-repository-registration`. Designs: `staff-identity-and-provisioning.md` and
+> `repository-integration.md`. Still open: O-25, O-27/S-06, O-12/C-13 and the GitHub App itself (external). The option
+> tables below are kept for history.
+
 PRD: AC-CORE-02, FR-REPO-01..08 (FR-REPO-05: never executed or built), J2. TDD: 14.1–14.9, 9.3 T02/T06–T09, 10.10 (O-27).
 
 ### 1.1 Blocking decisions
