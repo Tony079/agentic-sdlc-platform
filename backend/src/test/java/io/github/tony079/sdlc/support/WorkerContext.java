@@ -36,6 +36,9 @@ public final class WorkerContext {
                             "--sdlc.scanner.clamd.timeout=5s",
                             "--sdlc.documents.extraction.enabled=true",
                             "--sdlc.documents.extraction.timeout=60s",
+                            // O-15: every test extraction runs in the required namespace sandbox.
+                            "--sdlc.documents.extraction.sandbox=unshare-net",
+                            "--sdlc.documents.extraction.sandbox-required=true",
                             "--sdlc.model.provider=fake",
                             "--sdlc.model.model-id=fake-deterministic-1",
                             "--sdlc.model.retry-backoff=0s",

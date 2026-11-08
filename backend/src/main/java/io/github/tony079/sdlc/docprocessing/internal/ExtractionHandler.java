@@ -120,6 +120,10 @@ class ExtractionHandler implements JobHandler<ExtractionHandler.Result> {
                 }
             }
             Path outTmp = dir.resolve("out.tmp");
+            if (!launcher.sandboxAvailable() && launcher.sandboxRequired()) {
+                // O-15 fail closed: never extract without the required isolation; wait (no retry budget used).
+                throw JobFailure.dependencyUnavailable("EXTRACTION_SANDBOX_UNAVAILABLE", java.time.Duration.ofMinutes(15));
+            }
             ExtractorLauncher.Status status = launcher.run(file, input.type(), outTmp, dir);
             switch (status) {
                 case TIMED_OUT -> throw JobFailure.retryable("EXTRACTOR_TIMEOUT", null);
