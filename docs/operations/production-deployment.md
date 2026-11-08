@@ -9,15 +9,15 @@
 | O-01 | No model provider is decided. Analysis waits indefinitely with provider `none` |
 | O-03 | The production scanner is not decided |
 | O-15 | The extractor isolation spike is not accepted. Extraction must stay off for real client documents |
-| O-25, O-02, O-04, O-23 | No retention or deletion jobs |
+| O-25, O-02, O-04, O-23 | The retention process exists (`retention-and-deletion.md`), but its durations are PRD development defaults, not approved values. Backup expiry (FR-RET-06) is not configured |
 | O-32 | No admin access-grant path |
 | GitHub App | Must be created and installed. Real GitHub has not been tested |
-| CI | Not run on the R1-M4/M5/M6 branches. The Compose runtime was not started in this environment |
+| CI | Not run on the R1-M4/M5/M6 or MVP-completion branches (not pushed). The Compose runtime was not started in this environment |
 
 ## Procedure (for a pre-production environment once the gates allow it)
 1. **Provision PostgreSQL 16:**
    - Run `db/bootstrap/00-roles.sql` and `01-database.sql` as the superuser. `init.sh` does the same in Compose.
-   - Set the login passwords: `sdlc_migrator`, `sdlc_app`, `sdlc_worker`, `sdlc_provisioner`.
+   - Set the login passwords: `sdlc_migrator`, `sdlc_app`, `sdlc_worker`, `sdlc_provisioner`, `sdlc_retention`.
 2. **Migrate.** Run the image with `--spring.profiles.active=migrate` and `SDLC_DB_MIGRATOR_PASSWORD`. It exits 0 on success. Migrations are forward-only (Liquibase); never edit an applied changeset.
 3. **Start the API:**
    - Supply `SDLC_DB_URL`, `SDLC_DB_APP_PASSWORD`, `SDLC_STORAGE_KEY` and `SDLC_MFA_KEY`.
@@ -29,6 +29,7 @@
    - Health is shown by the liveness file (`SDLC_WORKER_LIVENESS_FILE`, refreshed every poll).
 5. **Web.** The nginx image serves the SPA and proxies `/api`.
 6. **Staff.** Run the `provision` process with `SDLC_DB_PROVISIONER_PASSWORD`, only when an operator needs it, and never as a long-running service.
+7. **Retention.** Schedule `retention apply` daily, with `SDLC_DB_RETENTION_PASSWORD`, the storage root and the storage key. Only this process holds that password (`retention-and-deletion.md`).
 
 ## Rollback
 - **Application:** redeploy the previous image. Additive schema changes are compatible with the previous version only if they were designed to be. Check the changeset notes.

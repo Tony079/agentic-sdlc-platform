@@ -1,4 +1,6 @@
-# Verification Matrix (PRD v0.7 acceptance criteria)
+# Verification Matrix (PRD v0.7 acceptance criteria) — SUPERSEDED
+
+> Superseded on 2026-11-08 by `docs/testing/mvp-acceptance-criteria-matrix.md`. Kept as the 2026-11-07 record.
 
 Branch `feature/r1-m5-m6-completion` (local). Evidence = automated tests executed on 2026-11-07 against PostgreSQL 16,
 the real worker process, an in-process fake GitHub server and the deterministic fake model provider.
