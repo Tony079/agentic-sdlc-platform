@@ -131,17 +131,18 @@ class SecurityAlertingIT {
         // A tenant soft deletion alerts once; an identical repeat is deduplicated (count 2, one delivery per channel).
         event("TENANT_SOFT_DELETED", "staff-1", "tenant-x");
         event("TENANT_SOFT_DELETED", "staff-1", "tenant-x");
-        // Nine failed logins: below the threshold of ten. The tenth raises one alert.
-        for (int i = 0; i < 9; i++) {
-            event("LOGIN_FAILED", null, "org:acme");
+        // Four MFA failures of one staff member: below the threshold of five. The fifth raises one alert.
+        String staff = "staff-" + UUID.randomUUID();
+        for (int i = 0; i < 4; i++) {
+            event("MFA_FAILED", staff, "org:acme");
         }
         assertThat(alerting.evaluate()).isEqualTo(1);
-        event("LOGIN_FAILED", null, "org:acme");
+        event("MFA_FAILED", staff, "org:acme");
         assertThat(alerting.evaluate()).isEqualTo(1);
         assertThat(admin.queryForObject("SELECT event_count FROM app.security_alert WHERE rule = 'TENANT_SOFT_DELETED'",
                 Integer.class)).isEqualTo(2);
         assertThat(admin.queryForList("SELECT rule FROM app.security_alert ORDER BY rule", String.class))
-                .containsExactly("REPEATED_AUTH_FAILURES", "TENANT_SOFT_DELETED");
+                .containsExactly("REPEATED_MFA_FAILURES", "TENANT_SOFT_DELETED");
         assertThat(admin.queryForObject("SELECT count(*) FROM app.security_alert_delivery", Integer.class)).isEqualTo(4);
 
         assertThat(alerting.deliver()).isEqualTo(4);
@@ -155,7 +156,7 @@ class SecurityAlertingIT {
         var payload = new JsonMapper().readTree(bodies.get(0));
         assertThat(payload.propertyNames()).containsExactlyInAnyOrder("alertId", "rule", "eventType", "severity",
                 "firstEventAt", "lastEventAt", "eventCount", "correlationId", "environment");
-        assertThat(String.join("", bodies) + String.join("", mails)).doesNotContain("staff-1").doesNotContain("org:acme")
+        assertThat(String.join("", bodies) + String.join("", mails)).doesNotContain("staff-1").doesNotContain(staff).doesNotContain("org:acme")
                 .doesNotContain(SECRET).doesNotContain("smtp-password");
         assertThat(mails.get(0)).contains("Subject: [SDLC security]");
         // Delivered once: a second run sends nothing.

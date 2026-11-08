@@ -153,7 +153,9 @@ class ClarificationIT extends ApiIntegrationTest {
 
     @Test
     void aNonBlockingQuestionDoesNotStopTheRun() {
-        fake.enqueue(new Reply(PHASE_A), new Reply(withClarification(false, "BUSINESS_REVIEWER")));
+        // Canned per prompt (not a FIFO script), so a job of another requirement in the shared tenant cannot take it.
+        fake.cannedReply("ba.phase-a", PHASE_A);
+        fake.cannedReply("ba.phase-b", withClarification(false, "BUSINESS_REVIEWER"));
         AnalysisScenario s = scenario(null);
         s.submit();
         s.drive();
