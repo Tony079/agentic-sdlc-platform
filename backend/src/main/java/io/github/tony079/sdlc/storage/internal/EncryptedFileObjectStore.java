@@ -28,6 +28,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
+import io.github.tony079.sdlc.storage.api.KeyManagement;
 import io.github.tony079.sdlc.storage.api.ObjectStore;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -45,13 +46,19 @@ import org.springframework.stereotype.Component;
  *       key by HMAC-SHA256, a random per-object nonce prefix, and the object key, chunk index and a final-chunk
  *       flag as associated data, so chunks cannot be reordered, swapped between objects or tenants, or truncated.</li>
  *   <li>Writes go to a temporary file and are moved into place atomically; partial objects never become visible.</li>
+ *   <li>Envelope encryption (O-12/C-13, format SDE2): each new object has a random data key wrapped by the
+ *       {@link KeyManagement} service; objects written in the earlier SDE1 format stay readable.</li>
+ *   <li>Tenant-scoped ownership: inside a tenant context an object of another tenant cannot be opened or deleted.</li>
  * </ul>
+ * The local key management is refused when {@code sdlc.storage.kms.provider} is not {@code local}: no managed KMS
+ * adapter exists yet, so production storage cannot start (fail closed) until O-12 names the provider.
  */
 @Profile("!migrate & !provision")
 @Component
 class EncryptedFileObjectStore implements ObjectStore {
 
     private static final byte[] MAGIC = "SDE1".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[] MAGIC_V2 = "SDE2".getBytes(StandardCharsets.US_ASCII);
     private static final int CHUNK = 64 * 1024;
     private static final int TAG_BITS = 128;
     private static final Pattern KEY = Pattern.compile("^[0-9a-f-]{36}/[0-9a-f-]{36}$");
@@ -59,9 +66,17 @@ class EncryptedFileObjectStore implements ObjectStore {
     private final Path root;
     private final byte[] masterKey;
     private final SecureRandom random = new SecureRandom();
+    private final KeyManagement kms;
 
     EncryptedFileObjectStore(@Value("${sdlc.storage.root}") Path root,
                              @Value("${sdlc.storage.encryption-key}") String encodedKey) throws IOException {
+        this(root, encodedKey, "local");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    EncryptedFileObjectStore(@Value("${sdlc.storage.root}") Path root,
+                             @Value("${sdlc.storage.encryption-key}") String encodedKey,
+                             @Value("${sdlc.storage.kms.provider:local}") String kmsProvider) throws IOException {
         byte[] key;
         try {
             key = Base64.getDecoder().decode(encodedKey.strip());
@@ -72,6 +87,11 @@ class EncryptedFileObjectStore implements ObjectStore {
             throw new IllegalStateException("sdlc.storage.encryption-key must be 32 bytes (base64), e.g. openssl rand -base64 32");
         }
         this.masterKey = key;
+        if (!"local".equals(kmsProvider)) {
+            throw new IllegalStateException("sdlc.storage.kms.provider=" + kmsProvider
+                    + " has no adapter: a managed KMS is not implemented yet (O-12); refusing to start");
+        }
+        this.kms = new LocalKeyManagement(key);
         this.root = root.toAbsolutePath().normalize();
         Files.createDirectories(this.root);
     }
@@ -88,8 +108,15 @@ class EncryptedFileObjectStore implements ObjectStore {
             long size = 0;
             byte[] nonce = new byte[12];
             random.nextBytes(nonce);
+            KeyManagement.DataKey dataKey = kms.newDataKey(tenantId, key);
+            byte[] chunkKey = dataKey.plaintext();
             try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(temp)))) {
-                out.write(MAGIC);
+                out.write(MAGIC_V2);
+                byte[] keyId = dataKey.keyId().getBytes(StandardCharsets.US_ASCII);
+                out.writeShort(keyId.length);
+                out.write(keyId);
+                out.writeShort(dataKey.wrapped().length);
+                out.write(dataKey.wrapped());
                 out.write(nonce);
                 byte[] buffer = new byte[CHUNK];
                 byte[] pending = null;
@@ -103,12 +130,12 @@ class EncryptedFileObjectStore implements ObjectStore {
                     }
                     sha256.update(buffer, 0, read);
                     if (pending != null) {
-                        writeChunk(out, tenantId, key, nonce, index++, pending, pendingLength, false);
+                        writeChunk(out, chunkKey, key, nonce, index++, pending, pendingLength, false);
                     }
                     pending = Arrays.copyOf(buffer, read);
                     pendingLength = read;
                 }
-                writeChunk(out, tenantId, key, nonce, index, pending == null ? new byte[0] : pending, pendingLength, true);
+                writeChunk(out, chunkKey, key, nonce, index, pending == null ? new byte[0] : pending, pendingLength, true);
             }
             try {
                 Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
@@ -124,20 +151,45 @@ class EncryptedFileObjectStore implements ObjectStore {
     @Override
     public InputStream open(String key) throws IOException {
         Path path = resolve(key);
+        requireOwnTenant(key);
         DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(path)));
-        byte[] magic = in.readNBytes(4);
-        byte[] nonce = in.readNBytes(12);
-        if (!Arrays.equals(magic, MAGIC) || nonce.length != 12) {
-            in.close();
-            throw new IOException("Not an encrypted object");
-        }
         UUID tenant = UUID.fromString(key.substring(0, 36));
-        return new DecryptingStream(in, tenant, key, nonce);
+        try {
+            byte[] magic = in.readNBytes(4);
+            byte[] chunkKey;
+            if (Arrays.equals(magic, MAGIC_V2)) {
+                String keyId = new String(in.readNBytes(in.readUnsignedShort()), StandardCharsets.US_ASCII);
+                byte[] wrapped = in.readNBytes(in.readUnsignedShort());
+                chunkKey = kms.unwrap(keyId, wrapped, tenant, key);
+            } else if (Arrays.equals(magic, MAGIC)) {
+                chunkKey = tenantKey(tenant);
+            } else {
+                throw new IOException("Not an encrypted object");
+            }
+            byte[] nonce = in.readNBytes(12);
+            if (nonce.length != 12) {
+                throw new IOException("Not an encrypted object");
+            }
+            return new DecryptingStream(in, chunkKey, key, nonce);
+        } catch (IOException | GeneralSecurityException | RuntimeException e) {
+            in.close();
+            throw e instanceof IOException io ? io : new IOException("Object integrity check failed", e);
+        }
     }
 
     @Override
     public void delete(String key) throws IOException {
-        Files.deleteIfExists(resolve(key));
+        Path path = resolve(key);
+        requireOwnTenant(key);
+        Files.deleteIfExists(path);
+    }
+
+    /** Inside a tenant context only that tenant's objects are reachable (no disclosure of which check failed). */
+    private static void requireOwnTenant(String key) throws IOException {
+        var tenant = io.github.tony079.sdlc.tenancy.api.TenantContext.currentTenant();
+        if (tenant.isPresent() && !key.startsWith(tenant.get().toString() + "/")) {
+            throw new java.io.FileNotFoundException("Object not found");
+        }
     }
 
     private Path resolve(String key) {
@@ -151,21 +203,21 @@ class EncryptedFileObjectStore implements ObjectStore {
         return path;
     }
 
-    private void writeChunk(DataOutputStream out, UUID tenant, String key, byte[] nonce, long index, byte[] data,
+    private void writeChunk(DataOutputStream out, byte[] chunkKey, String key, byte[] nonce, long index, byte[] data,
                             int length, boolean last) throws IOException {
-        byte[] sealed = crypt(Cipher.ENCRYPT_MODE, tenant, key, nonce, index, last, data, length);
+        byte[] sealed = crypt(Cipher.ENCRYPT_MODE, chunkKey, key, nonce, index, last, data, length);
         out.writeInt(sealed.length);
         out.writeByte(last ? 1 : 0);
         out.write(sealed);
     }
 
-    private byte[] crypt(int mode, UUID tenant, String key, byte[] nonce, long index, boolean last, byte[] data,
+    private byte[] crypt(int mode, byte[] chunkKey, String key, byte[] nonce, long index, boolean last, byte[] data,
                          int length) throws IOException {
         try {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             byte[] chunkNonce = nonce.clone();
             ByteBuffer.wrap(chunkNonce, 4, 8).putLong(ByteBuffer.wrap(nonce, 4, 8).getLong() ^ index);
-            cipher.init(mode, new SecretKeySpec(tenantKey(tenant), "AES"), new GCMParameterSpec(TAG_BITS, chunkNonce));
+            cipher.init(mode, new SecretKeySpec(chunkKey, "AES"), new GCMParameterSpec(TAG_BITS, chunkNonce));
             cipher.updateAAD(associatedData(key, index, last));
             return cipher.doFinal(data, 0, length);
         } catch (GeneralSecurityException e) {
@@ -203,7 +255,7 @@ class EncryptedFileObjectStore implements ObjectStore {
     /** Decrypts chunk by chunk; fails on tampering, reordering or truncation (missing final chunk). */
     private final class DecryptingStream extends InputStream {
         private final DataInputStream in;
-        private final UUID tenant;
+        private final byte[] chunkKey;
         private final String key;
         private final byte[] nonce;
         private byte[] current = new byte[0];
@@ -211,9 +263,9 @@ class EncryptedFileObjectStore implements ObjectStore {
         private long index;
         private boolean finished;
 
-        DecryptingStream(DataInputStream in, UUID tenant, String key, byte[] nonce) {
+        DecryptingStream(DataInputStream in, byte[] chunkKey, String key, byte[] nonce) {
             this.in = in;
-            this.tenant = tenant;
+            this.chunkKey = chunkKey;
             this.key = key;
             this.nonce = nonce;
         }
@@ -238,7 +290,7 @@ class EncryptedFileObjectStore implements ObjectStore {
                 if (sealed.length != length) {
                     throw new IOException("Object is truncated");
                 }
-                current = crypt(Cipher.DECRYPT_MODE, tenant, key, nonce, index++, last, sealed, sealed.length);
+                current = crypt(Cipher.DECRYPT_MODE, chunkKey, key, nonce, index++, last, sealed, sealed.length);
                 position = 0;
                 finished = last;
                 if (last && in.read() != -1) {
