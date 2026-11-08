@@ -1,0 +1,46 @@
+{
+  "version": "ba-benchmark-v1",
+  "note": "Synthetic, representative tasks for the O-01 provider comparison. Expected facts are the ground truth a correct BRD must contain; each is matched when every keyword appears in one statement (case-insensitive).",
+  "tasks": [
+    {
+      "id": "loan-repayment-metadata",
+      "requirement": "Title: Add repayment metadata\nBusiness objective: Improve reconciliation accuracy.\nDescription: Every loan repayment must carry the payment channel and an external reference.\nAcceptance criteria: Channel and reference are visible on the repayment API.",
+      "files": {
+        "src/main/java/com/acme/LoanController.java": "package com.acme;\n@RestController\n@RequestMapping(\"/loans\")\nclass LoanController {\n    @GetMapping(\"/{id}/repayments\")\n    List<Repayment> repayments(@PathVariable long id) { return service.repayments(id); }\n}\n",
+        "src/main/java/com/acme/Repayment.java": "package com.acme;\nrecord Repayment(long id, long loanId, BigDecimal amount, LocalDate bookedOn) {\n}\n",
+        "pom.xml": "<project><dependencies><dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency></dependencies></project>\n"
+      },
+      "expectedFacts": [
+        {"keywords": ["repayment", "/loans"]},
+        {"keywords": ["repayment", "amount"]},
+        {"keywords": ["postgresql"]}
+      ],
+      "unsupportedKeywords": ["channel"]
+    },
+    {
+      "id": "customer-address-change",
+      "requirement": "Title: Customer address history\nBusiness objective: Meet the audit requirement for address changes.\nDescription: Keep every previous customer address with the date it changed.\nAcceptance criteria: The address history endpoint lists previous addresses newest first.",
+      "files": {
+        "src/main/java/com/acme/CustomerController.java": "package com.acme;\n@RestController\n@RequestMapping(\"/customers\")\nclass CustomerController {\n    @PutMapping(\"/{id}/address\")\n    void changeAddress(@PathVariable long id, @RequestBody Address address) { service.change(id, address); }\n}\n",
+        "src/main/java/com/acme/Customer.java": "package com.acme;\n@Entity\nclass Customer {\n    @Id long id;\n    @Embedded Address address;\n}\n"
+      },
+      "expectedFacts": [
+        {"keywords": ["address", "/customers"]},
+        {"keywords": ["customer", "address", "embedded"]}
+      ],
+      "unsupportedKeywords": ["history"]
+    },
+    {
+      "id": "invoice-pdf-export",
+      "requirement": "Title: Invoice PDF export\nBusiness objective: Clients download invoices without contacting support.\nDescription: Provide a PDF of each invoice.\nAcceptance criteria: The invoice page offers a PDF download.",
+      "files": {
+        "src/main/java/com/acme/InvoiceController.java": "package com.acme;\n@RestController\n@RequestMapping(\"/invoices\")\nclass InvoiceController {\n    @GetMapping(\"/{id}\")\n    Invoice get(@PathVariable long id) { return invoices.find(id); }\n}\n",
+        "build.gradle": "dependencies {\n    implementation 'org.springframework.boot:spring-boot-starter-web'\n}\n"
+      },
+      "expectedFacts": [
+        {"keywords": ["invoice", "/invoices"]}
+      ],
+      "unsupportedKeywords": ["pdf"]
+    }
+  ]
+}
