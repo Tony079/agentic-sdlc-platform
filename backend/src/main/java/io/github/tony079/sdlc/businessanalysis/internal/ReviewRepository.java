@@ -210,6 +210,20 @@ class ReviewRepository {
                 """).param("e", event).param("v", versionId).update();
     }
 
+    /** Cancellation or rejection: versions in review or internally approved are WITHDRAWN, their approvals invalid. */
+    int withdrawOpenVersions(UUID requirementId) {
+        jdbc.sql("""
+                UPDATE app.approval SET status = 'INVALIDATED', invalidated_by_event = 'RequirementCancelled',
+                       invalidated_at = clock_timestamp()
+                WHERE status = 'VALID' AND brd_version_id IN (SELECT id FROM app.brd_version WHERE requirement_id = :r
+                      AND status IN ('IN_REVIEW', 'APPROVED_INTERNAL'))
+                """).param("r", requirementId).update();
+        return jdbc.sql("""
+                UPDATE app.brd_version SET status = 'WITHDRAWN', status_at = clock_timestamp()
+                WHERE requirement_id = :r AND status IN ('IN_REVIEW', 'APPROVED_INTERNAL')
+                """).param("r", requirementId).update();
+    }
+
     void setVersionStatus(UUID versionId, String status) {
         jdbc.sql("UPDATE app.brd_version SET status = :s, status_at = clock_timestamp() WHERE id = :v")
                 .param("s", status).param("v", versionId).update();

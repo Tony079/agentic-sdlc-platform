@@ -95,6 +95,7 @@ class JdbcWorkflowEngine implements WorkflowEngine {
             case T21_APPROVE_INTERNAL -> "STAFF".equals(actor) ? EventTypes.BRD_APPROVED_INTERNAL : null;
             case T22_REQUEST_REVISION -> "STAFF".equals(actor) ? EventTypes.REVISION_REQUESTED : null;
             case T23_REJECT -> "STAFF".equals(actor) ? EventTypes.REQUIREMENT_REJECTED : null;
+            case T05_CLOSE_MANUAL_INTAKE -> "STAFF".equals(actor) ? EventTypes.REQUIREMENT_CANCELLED : null;
             case T27_CLIENT_CHANGES -> "USER".equals(actor) ? EventTypes.CLIENT_CHANGES_REQUESTED : null;
             // T01 has its own command; engine transitions can never be requested by a user or staff member.
             default -> null;
@@ -188,16 +189,7 @@ class JdbcWorkflowEngine implements WorkflowEngine {
                 : Transition.T03_ROUTE_MANUAL_INTAKE;
         WorkflowState to = applyLocked(requirementId, current, transition, null);
         if (transition == Transition.T02_ROUTE_REPOSITORY) {
-            UUID stage = jdbc.sql("""
-                    INSERT INTO app.stage_execution (tenant_id, instance_id, stage_key, attempt_no, status)
-                    VALUES (:tenant, :instance, 'REPO_VALIDATION', 1, 'READY') RETURNING id
-                    """)
-                    .param("tenant", TenantContext.requireTenant()).param("instance", current.instanceId())
-                    .query(UUID.class).single();
-            jobs.enqueue(new JobRequest("REPO_VALIDATE", "repo-validate:" + requirementId + ":1", AGGREGATE,
-                    requirementId, stage, Map.of("requirementId", requirementId.toString()), 100));
-            outbox.publish(AGGREGATE, requirementId, EventTypes.REPO_VALIDATION_STARTED,
-                    Map.of("requirementId", requirementId.toString(), "stageExecutionId", stage.toString()));
+            startRepositoryValidation(requirementId, current.instanceId());
         } else {
             // PRD 0.4: no extraction, repository validation or BA job is scheduled in MANUAL_INTAKE. The Business
             // Reviewer notification (TDD T03) waits for staff accounts (O-06).
@@ -206,6 +198,52 @@ class JdbcWorkflowEngine implements WorkflowEngine {
         }
         audit.record(AuditAction.REQUIREMENT_ROUTED, AGGREGATE, requirementId, AuditResult.SUCCESS);
         return Optional.of(to);
+    }
+
+    private void startRepositoryValidation(UUID requirementId, UUID instanceId) {
+        int attempt = jdbc.sql("""
+                SELECT coalesce(max(attempt_no), 0) + 1 FROM app.stage_execution
+                WHERE instance_id = :instance AND stage_key = 'REPO_VALIDATION'
+                """).param("instance", instanceId).query(Integer.class).single();
+        UUID stage = jdbc.sql("""
+                INSERT INTO app.stage_execution (tenant_id, instance_id, stage_key, attempt_no, status)
+                VALUES (:tenant, :instance, 'REPO_VALIDATION', :attempt, 'READY') RETURNING id
+                """)
+                .param("tenant", TenantContext.requireTenant()).param("instance", instanceId).param("attempt", attempt)
+                .query(UUID.class).single();
+        jobs.enqueue(new JobRequest("REPO_VALIDATE", "repo-validate:" + requirementId + ":" + attempt, AGGREGATE,
+                requirementId, stage, Map.of("requirementId", requirementId.toString()), 100));
+        outbox.publish(AGGREGATE, requirementId, EventTypes.REPO_VALIDATION_STARTED,
+                Map.of("requirementId", requirementId.toString(), "stageExecutionId", stage.toString()));
+    }
+
+    @Override
+    public WorkflowState resumeManualIntake(UUID requirementId, String reason) {
+        if (!"STAFF".equals(TenantContext.currentActorType()) || TenantContext.currentActor().isEmpty()) {
+            throw new IllegalStateException("T04 is performed by a Business Reviewer only");
+        }
+        Current current = lock(requirementId);
+        WorkflowState to = applyLocked(requirementId, current, Transition.T04_RESUME_MANUAL_INTAKE, reason);
+        // The API cannot touch the job queue (Q-M3-3): the worker schedules validation on ManualIntakeResumed.
+        outbox.publish(AGGREGATE, requirementId, EventTypes.MANUAL_INTAKE_RESUMED,
+                Map.of("requirementId", requirementId.toString()));
+        return to;
+    }
+
+    /**
+     * Engine (worker), on ManualIntakeResumed: schedules repository validation as T02 does. Idempotent: does nothing
+     * unless the requirement is REPO_VALIDATING without an unfinished validation stage.
+     */
+    void scheduleValidationAfterResume(UUID requirementId) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.REPO_VALIDATING || jdbc.sql("""
+                SELECT count(*) FROM app.stage_execution WHERE instance_id = :i AND stage_key = 'REPO_VALIDATION'
+                AND status IN ('PENDING', 'BLOCKED', 'READY', 'RUNNING')
+                """).param("i", current.instanceId()).query(Integer.class).single() > 0) {
+            return;
+        }
+        startRepositoryValidation(requirementId, current.instanceId());
     }
 
     @Override

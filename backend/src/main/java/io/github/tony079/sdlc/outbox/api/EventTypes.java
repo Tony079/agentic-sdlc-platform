@@ -11,6 +11,7 @@ public final class EventTypes {
     public static final String REQUIREMENT_SUBMITTED = "RequirementSubmitted";
     public static final String REPO_VALIDATION_STARTED = "RepoValidationStarted";
     public static final String MANUAL_INTAKE_ENTERED = "ManualIntakeEntered";
+    public static final String MANUAL_INTAKE_RESUMED = "ManualIntakeResumed";
     public static final String REQUIREMENT_CANCELLED = "RequirementCancelled";
     public static final String JOB_DEAD = "JobDead";
     public static final String DOCUMENT_UPLOADED = "DocumentUploaded";
@@ -40,6 +41,7 @@ public final class EventTypes {
             Map.entry(REQUIREMENT_SUBMITTED, 1),
             Map.entry(REPO_VALIDATION_STARTED, 1),
             Map.entry(MANUAL_INTAKE_ENTERED, 1),
+            Map.entry(MANUAL_INTAKE_RESUMED, 1),
             Map.entry(REQUIREMENT_CANCELLED, 1),
             Map.entry(JOB_DEAD, 1),
             Map.entry(DOCUMENT_UPLOADED, 1),

@@ -40,7 +40,7 @@ class SchemaSecurityIT {
                 "idempotency_record", "job", "job_attempt", "model_call_record", "notification",
                 "outbox_event", "processed_event", "project", "project_repository", "repository",
                 "repository_file", "repository_link_request", "repository_snapshot", "requirement",
-                "requirement_key_counter", "requirement_repository", "requirement_repository_link", "requirement_revision", "retention_policy", "stage_execution",
+                "requirement_closure", "requirement_key_counter", "requirement_repository", "requirement_repository_link", "requirement_revision", "retention_policy", "stage_execution",
                 "workflow_instance", "workflow_transition");
 
         for (String table : tenantTables) {

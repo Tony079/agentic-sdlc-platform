@@ -14,6 +14,7 @@ import io.github.tony079.sdlc.outbox.api.DomainEvent;
 import io.github.tony079.sdlc.outbox.api.EventConsumer;
 import io.github.tony079.sdlc.outbox.api.EventTypes;
 import io.github.tony079.sdlc.queue.api.JobQueue;
+import io.github.tony079.sdlc.tenancy.api.TenantContext;
 import io.github.tony079.sdlc.workflow.api.WorkflowEngine;
 import io.github.tony079.sdlc.workflow.api.WorkflowState;
 import tools.jackson.databind.JsonNode;
@@ -41,7 +42,8 @@ import org.springframework.stereotype.Component;
 class InputChangeConsumers implements EventConsumer {
 
     private static final Set<String> EVENTS = Set.of(EventTypes.CLARIFICATION_ANSWERED, EventTypes.DOCUMENT_FAILED,
-            EventTypes.DOCUMENT_DECISION_RECORDED, EventTypes.DOCUMENT_UPLOADED, EventTypes.REQUIREMENT_CANCELLED);
+            EventTypes.DOCUMENT_DECISION_RECORDED, EventTypes.DOCUMENT_UPLOADED, EventTypes.REQUIREMENT_CANCELLED,
+            EventTypes.REQUIREMENT_REJECTED);
 
     private final ClarificationRepository clarifications;
     private final ReviewRepository reviews;
@@ -99,9 +101,23 @@ class InputChangeConsumers implements EventConsumer {
                 }
             }
             case EventTypes.DOCUMENT_UPLOADED -> documentAdded(requirementId);
-            case EventTypes.REQUIREMENT_CANCELLED -> {
+            case EventTypes.REQUIREMENT_CANCELLED, EventTypes.REQUIREMENT_REJECTED -> {
                 if (clarifications.withdrawOpen(requirementId) > 0) {
                     audit.record(AuditAction.CLARIFICATION_WITHDRAWN, "REQUIREMENT", requirementId, AuditResult.SUCCESS);
+                }
+                // C-07: a requirement closed by a Business Reviewer (T05) is reported to its owner (in-app only).
+                if (EventTypes.REQUIREMENT_CANCELLED.equals(event.eventType()) && "T05_CLOSE_MANUAL_INTAKE".equals(
+                        jdbc.sql("""
+                                SELECT t.transition FROM app.workflow_transition t
+                                JOIN app.workflow_instance i ON i.id = t.instance_id AND t.seq = i.last_seq
+                                WHERE i.requirement_id = :r
+                                """).param("r", requirementId).query(String.class).optional().orElse(null))) {
+                    reviews.notify(TenantContext.requireTenant(), reviews.requirementOwner(requirementId),
+                            "REQUIREMENT_CLOSED", requirementId);
+                }
+                // O-25 closure: open review work is terminated so the requirement can close. Released versions stay.
+                if (reviews.withdrawOpenVersions(requirementId) > 0) {
+                    audit.record(AuditAction.BRD_WITHDRAWN_ON_CANCEL, "REQUIREMENT", requirementId, AuditResult.SUCCESS);
                 }
             }
             default -> { }

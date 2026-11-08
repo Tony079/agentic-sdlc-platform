@@ -28,11 +28,15 @@ class RoutingConsumer implements EventConsumer {
 
     @Override
     public boolean accepts(String eventType) {
-        return EventTypes.REQUIREMENT_SUBMITTED.equals(eventType);
+        return EventTypes.REQUIREMENT_SUBMITTED.equals(eventType) || EventTypes.MANUAL_INTAKE_RESUMED.equals(eventType);
     }
 
     @Override
     public void handle(DomainEvent event) {
+        if (EventTypes.MANUAL_INTAKE_RESUMED.equals(event.eventType())) {
+            engine.scheduleValidationAfterResume(event.uuid("requirementId"));
+            return;
+        }
         Route route;
         try {
             route = Route.valueOf(event.text("route"));

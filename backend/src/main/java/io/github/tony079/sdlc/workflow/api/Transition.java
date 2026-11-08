@@ -11,6 +11,13 @@ public enum Transition {
     T02_ROUTE_REPOSITORY(true),
     /** T03: SUBMITTED to MANUAL_INTAKE, by the engine on RequirementSubmitted, kind NEW_PRODUCT. */
     T03_ROUTE_MANUAL_INTAKE(true),
+    /**
+     * T04: MANUAL_INTAKE to REPO_VALIDATING, by a Business Reviewer (C-06/C-07, owner decision 2026-11-08). Needs an
+     * authorised repository link; creates the converted revision (FR-REQ-11) and schedules repository validation.
+     */
+    T04_RESUME_MANUAL_INTAKE(false),
+    /** T05: MANUAL_INTAKE to CANCELLED, by a Business Reviewer, with a reason. Publishes RequirementCancelled. */
+    T05_CLOSE_MANUAL_INTAKE(false),
     /** T06: REPO_VALIDATING to AWAITING_DOCUMENTS, by the engine once the repository is validated and pinned. */
     T06_REPO_VALIDATED(true),
     /** T07: REPO_VALIDATING to AWAITING_DOCUMENT_DECISION, by the engine, when an attachment needs a decision. */

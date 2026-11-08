@@ -60,14 +60,20 @@ class RequirementRepository {
     }
 
     void insertRevision(UUID tenantId, UUID requirementId, int revisionNo, RequirementFields fields, UUID createdBy) {
+        insertRevision(tenantId, requirementId, revisionNo, fields, createdBy, null);
+    }
+
+    /** {@code convertedByStaff}: the Business Reviewer who converted a manual-intake requirement (T04), else null. */
+    void insertRevision(UUID tenantId, UUID requirementId, int revisionNo, RequirementFields fields, UUID createdBy,
+                        UUID convertedByStaff) {
         jdbc.sql("""
                 INSERT INTO app.requirement_revision (tenant_id, requirement_id, revision_no, kind, title, description,
                     business_objective, expected_outcomes, acceptance_criteria, repository_url, constraints,
-                    integrations, content_hash, created_by)
+                    integrations, content_hash, created_by, converted_by_staff)
                 VALUES (:tenant, :requirement, :revisionNo, :kind, :title, :description, :businessObjective,
                     :expectedOutcomes, :acceptanceCriteria, :repositoryUrl, :constraints, :integrations,
-                    :contentHash, :createdBy)
-                """)
+                    :contentHash, :createdBy, :staff)
+                """).param("staff", convertedByStaff)
                 .param("tenant", tenantId).param("requirement", requirementId).param("revisionNo", revisionNo)
                 .param("kind", fields.kind()).param("title", fields.title()).param("description", fields.description())
                 .param("businessObjective", fields.businessObjective())
@@ -82,6 +88,45 @@ class RequirementRepository {
     Optional<UUID> projectOf(UUID id) {
         return jdbc.sql("SELECT project_id FROM app.requirement WHERE id = :id").param("id", id).query(UUID.class)
                 .optional();
+    }
+
+    /** Any requirement of the current tenant (RLS); for staff paths that are authorised by capability. */
+    Optional<Row> find(UUID id) {
+        return jdbc.sql("""
+                SELECT id, key, project_id, created_by, current_revision_no, version, created_at, updated_at
+                FROM app.requirement WHERE id = :id
+                """)
+                .param("id", id)
+                .query(RequirementRepository::row)
+                .optional();
+    }
+
+    /** C-06: the latest repository link the Client Approver authorised (or staff registered), if any. */
+    Optional<String> authorisedRepositoryUrl(UUID requirementId) {
+        return jdbc.sql("""
+                SELECT repository_url FROM app.requirement_repository_link
+                WHERE requirement_id = :r AND status IN ('AUTHORIZED', 'REGISTERED')
+                ORDER BY authorized_at DESC LIMIT 1
+                """).param("r", requirementId).query(String.class).optional();
+    }
+
+    record ManualIntakeEntry(UUID id, String key, String title, int currentRevisionNo, OffsetDateTime enteredAt,
+                             boolean repositoryLinkAuthorised) {
+    }
+
+    List<ManualIntakeEntry> manualIntake() {
+        return jdbc.sql("""
+                SELECT r.id, r.key, v.title, r.current_revision_no, t.occurred_at,
+                       EXISTS (SELECT 1 FROM app.requirement_repository_link l WHERE l.requirement_id = r.id
+                               AND l.status IN ('AUTHORIZED', 'REGISTERED')) AS linked
+                FROM app.requirement r
+                JOIN app.requirement_revision v ON v.requirement_id = r.id AND v.revision_no = r.current_revision_no
+                JOIN app.workflow_instance i ON i.requirement_id = r.id
+                JOIN app.workflow_transition t ON t.instance_id = i.id AND t.seq = i.last_seq
+                WHERE i.projected_state = 'MANUAL_INTAKE'
+                ORDER BY t.occurred_at
+                """).query((rs, n) -> new ManualIntakeEntry(rs.getObject(1, UUID.class), rs.getString(2),
+                rs.getString(3), rs.getInt(4), rs.getObject(5, OffsetDateTime.class), rs.getBoolean(6))).list();
     }
 
     Optional<Row> findOwned(UUID id, UUID owner) {

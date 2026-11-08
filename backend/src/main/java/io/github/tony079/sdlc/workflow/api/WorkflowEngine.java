@@ -42,6 +42,13 @@ public interface WorkflowEngine {
     List<TimelineEntry> timeline(UUID requirementId);
 
     /**
+     * T04 by a Business Reviewer (staff actor only): MANUAL_INTAKE to REPO_VALIDATING with a reason. Creates the
+     * repository-validation stage and REPO_VALIDATE job exactly as routing T02 does, and publishes ManualIntakeResumed.
+     * The caller has checked the capability, the authorised repository link and the current revision.
+     */
+    WorkflowState resumeManualIntake(UUID requirementId, String reason);
+
+    /**
      * Engine only (worker, no user): the repository is validated and pinned. T07 when {@code documentDecisionNeeded},
      * otherwise T06 (Q-B Option A: never T08, never ANALYSING, no BA job). Marks the validation stage SUCCEEDED.
      * Returns empty, changing nothing, if the requirement is no longer REPO_VALIDATING (for example cancelled).

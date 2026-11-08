@@ -20,6 +20,8 @@ final class TransitionTable {
             new Rule(Transition.T01_SUBMIT, WorkflowState.DRAFT, WorkflowState.SUBMITTED),
             new Rule(Transition.T02_ROUTE_REPOSITORY, WorkflowState.SUBMITTED, WorkflowState.REPO_VALIDATING),
             new Rule(Transition.T03_ROUTE_MANUAL_INTAKE, WorkflowState.SUBMITTED, WorkflowState.MANUAL_INTAKE),
+            new Rule(Transition.T04_RESUME_MANUAL_INTAKE, WorkflowState.MANUAL_INTAKE, WorkflowState.REPO_VALIDATING),
+            new Rule(Transition.T05_CLOSE_MANUAL_INTAKE, WorkflowState.MANUAL_INTAKE, WorkflowState.CANCELLED),
             // R1-M4, Q-B Option A: T06/T07 only; no T08 (ANALYSING is R1-M5). T09 has no way back (O-27, no T30).
             new Rule(Transition.T06_REPO_VALIDATED, WorkflowState.REPO_VALIDATING, WorkflowState.AWAITING_DOCUMENTS),
             new Rule(Transition.T07_REPO_VALIDATED_DOCUMENT_DECISION, WorkflowState.REPO_VALIDATING,
