@@ -33,9 +33,11 @@ class ReviewController {
     private final ClientBrdService client;
     private final ReleaseService releases;
     private final OperatorRetryService retries;
+    private final ChangeRequestService changeRequests;
 
     ReviewController(ReviewService reviews, ClientBrdService client, ReleaseService releases,
-                     OperatorRetryService retries) {
+                     OperatorRetryService retries, ChangeRequestService changeRequests) {
+        this.changeRequests = changeRequests;
         this.reviews = reviews;
         this.client = client;
         this.releases = releases;
@@ -114,7 +116,8 @@ class ReviewController {
 
     @PostMapping("/api/v1/requirements/{id}/client-changes")
     Map<String, String> clientChanges(@PathVariable UUID id, @Valid @RequestBody ChangeRequest body) {
-        return Map.of("state", client.requestChanges(id, body.text()).name());
+        return Map.of("changeRequestId", client.requestChanges(id, body.text(), changeRequests).toString(),
+                "status", "SUBMITTED");
     }
 
     @GetMapping("/api/v1/notifications")

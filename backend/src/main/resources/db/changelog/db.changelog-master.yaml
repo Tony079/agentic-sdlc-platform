@@ -47,3 +47,5 @@ databaseChangeLog:
   - include: { file: changes/0027-retry-release-scan-flags.sql, relativeToChangelogFile: true }
   # C-17 (2026-11-08): security alert rules, deduplication, rate limit, email/webhook delivery.
   - include: { file: changes/0028-security-alerting.sql, relativeToChangelogFile: true }
+  # C-09/C-16 (2026-11-08): change requests, approved scope versions, prioritised scope diff.
+  - include: { file: changes/0029-change-requests.sql, relativeToChangelogFile: true }

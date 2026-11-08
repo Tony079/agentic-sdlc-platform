@@ -1,6 +1,7 @@
 package io.github.tony079.sdlc.businessanalysis.internal;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -57,21 +58,18 @@ class ClientBrdService {
         return new ClientBrd(requirementId, workflow.state(requirementId).name(), reviews.view(version.id(), false));
     }
 
+    /**
+     * C-09: a client change on a shared BRD is a formal change request; it changes nothing until assessed, reviewed and
+     * accepted by a Client Approver ({@link ChangeRequestService}). Kept for the existing endpoint: the text becomes the
+     * requested change with no field edits.
+     */
     @Transactional
-    public WorkflowState requestChanges(UUID requirementId, String text) {
+    public UUID requestChanges(UUID requirementId, String text, ChangeRequestService changeRequests) {
         if (text == null || text.strip().length() < 10 || text.length() > 5000) {
             throw ApiException.validation(List.of(new FieldError("text", "LENGTH")));
         }
         owned(requirementId);
-        if (workflow.lockState(requirementId) != WorkflowState.SHARED_WITH_CLIENT) {
-            throw ApiException.conflict("ILLEGAL_TRANSITION", "Changes can be requested only on a shared BRD.");
-        }
-        VersionRow version = reviews.latestWithStatus(requirementId, Set.of("RELEASED")).orElseThrow(ApiException::notFound);
-        reviews.insertClientChange(TenantContext.requireTenant(), requirementId, version.id(), text.strip(),
-                TenantContext.currentActor().orElseThrow());
-        WorkflowState to = workflow.transition(requirementId, Transition.T27_CLIENT_CHANGES, null);
-        audit.record(AuditAction.CLIENT_CHANGES_REQUESTED, "REQUIREMENT", requirementId, AuditResult.SUCCESS);
-        return to;
+        return changeRequests.submit(requirementId, text, text, "Not specified by the client.", Map.of()).id();
     }
 
     @Transactional(readOnly = true)

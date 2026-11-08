@@ -32,9 +32,9 @@ class SchemaSecurityIT {
                 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
                 WHERE n.nspname = 'app' AND c.relkind = 'r' ORDER BY 1
                 """, String.class);
-        assertThat(tenantTables).containsExactly("admin_retry_request", "analysis_input_set", "app_user", "approval", "audit_event",
+        assertThat(tenantTables).containsExactly("admin_retry_request", "analysis_input_set", "app_user", "approval", "approved_scope_version", "audit_event",
                 "ba_result_pending", "brd", "brd_flag_ack", "brd_item", "brd_item_evidence", "brd_version",
-                "build_dependency", "clarification", "clarification_message", "client_change_request", "code_symbol",
+                "build_dependency", "change_request", "change_request_diff", "clarification", "clarification_message", "client_change_request", "code_symbol",
                 "document", "document_chunk", "document_decision",
                 "document_extraction", "document_version",
                 "idempotency_record", "job", "job_attempt", "model_call_record", "notification",

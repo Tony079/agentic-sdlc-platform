@@ -240,10 +240,69 @@ class ReviewIT extends ApiIntegrationTest {
         String notificationId = notifications.body().path(0).path("id").asString();
         assertThat(s.alice.post("/api/v1/notifications/" + notificationId + "/read", null).status()).isEqualTo(204);
 
+        // C-09: a formal change request. Submission alone changes nothing.
+        ApiClient aaron = loggedIn("acme", "aaron@acme.test");
+        Response change = s.alice.post("/api/v1/requirements/" + s.requirementId + "/change-requests", Map.of(
+                "requestedChange", "Please also cover refunds of repayments.",
+                "justification", "Refunds are booked against repayments today.",
+                "expectedImpact", "Small extension of the repayment API.",
+                "proposed", Map.of("acceptanceCriteria", "Metadata visible on the repayment and refund APIs.",
+                        "constraints", "Refund data must be encrypted at rest.")));
+        assertThat(change.status()).as(change.body().toString()).isEqualTo(201);
+        String cr = change.body().path("id").asString();
+        assertThat(s.state()).isEqualTo("SHARED_WITH_CLIENT");
+        // C-16: structured diff with priorities against the released scope (baseline v1).
+        assertThat(change.body().path("baselineVersion").asInt()).isEqualTo(1);
+        Map<String, String> priorities = new java.util.HashMap<>();
+        change.body().path("diff").forEach(d -> priorities.put(d.path("field").asString(),
+                d.path("area").asString() + "/" + d.path("changeType").asString() + "/" + d.path("priority").asString()));
+        assertThat(priorities).containsEntry("acceptanceCriteria", "ACCEPTANCE_CRITERIA/MODIFICATION/HIGH")
+                .containsEntry("constraints", "SECURITY/MODIFICATION/CRITICAL").hasSize(2);
+        // The Client Approver sees nothing before review; cannot decide early; the owner cannot decide.
+        assertThat(aaron.get("/api/v1/change-requests").body().valueStream()
+                .noneMatch(n -> n.path("id").asString().equals(cr))).isTrue();
+        assertThat(s.alice.post("/api/v1/change-requests/" + cr + "/decision", Map.of("decision", "ACCEPT")).status())
+                .isEqualTo(403);
+        // Business Analyst assessment, priority adjustment with justification, review by a different person.
+        Enrolled analystMember = StaffFixtures.createEnrolled(StaffFixtures.uniqueEmail("analyst"), AnalysisScenario.PASSWORD);
+        StaffFixtures.assign(analystMember.email(), "acme");
+        StaffFixtures.grant(analystMember.email(), StaffCapability.BUSINESS_ANALYST);
+        StaffFixtures.grant(analystMember.email(), StaffCapability.BUSINESS_REVIEWER);
+        ApiClient analyst = AnalysisScenario.staffSession(client(), analystMember, "acme", 0);
+        assertThat(reviewer.post("/api/v1/staff/change-requests/" + cr + "/assessment", Map.of(
+                "scopeAssessment", "Adds refunds to the repayment scope.", "effortEstimate", "3 days",
+                "timelineImpact", "One sprint", "technicalImpact", "New endpoint")).status()).isEqualTo(403);
+        assertThat(analyst.post("/api/v1/staff/change-requests/" + cr + "/assessment", Map.of(
+                "scopeAssessment", "Adds refunds to the repayment scope.", "effortEstimate", "3 days",
+                "timelineImpact", "One sprint", "technicalImpact", "New endpoint on the loan service.")).status())
+                .isEqualTo(200);
+        assertThat(analyst.post("/api/v1/staff/change-requests/" + cr + "/diff/acceptanceCriteria/priority",
+                Map.of("priority", "MEDIUM", "reason", "")).status()).isEqualTo(422);
+        Response adjusted = analyst.post("/api/v1/staff/change-requests/" + cr + "/diff/acceptanceCriteria/priority",
+                Map.of("priority", "MEDIUM", "reason", "Wording only; same behaviour for refunds."));
+        assertThat(adjusted.body().toString()).contains("Wording only");
+        assertThat(analyst.post("/api/v1/staff/change-requests/" + cr + "/review", Map.of("decision", "APPROVE"))
+                .errorCode()).isEqualTo("SEPARATION_OF_DUTIES");
+        assertThat(reviewer.post("/api/v1/staff/change-requests/" + cr + "/review", Map.of("decision", "APPROVE"))
+                .status()).isEqualTo(200);
+        // The Client Approver sees the change request (not the requirement) and accepts it.
+        assertThat(aaron.get("/api/v1/change-requests").body().valueStream()
+                .anyMatch(n -> n.path("id").asString().equals(cr))).isTrue();
+        assertThat(aaron.get("/api/v1/requirements/" + s.requirementId).status()).isEqualTo(404);
+        Response accepted = aaron.post("/api/v1/change-requests/" + cr + "/decision",
+                Map.of("decision", "ACCEPT", "note", "Agreed with finance."));
+        assertThat(accepted.status()).as(accepted.body().toString()).isEqualTo(200);
+        assertThat(accepted.body().path("status").asString()).isEqualTo("ACCEPTED");
+        assertThat(admin.queryForList("""
+                SELECT version_no || ':' || source FROM app.approved_scope_version WHERE requirement_id = ?::uuid
+                ORDER BY version_no""", String.class, UUID.fromString(s.requirementId)))
+                .containsExactly("1:RELEASED_BASELINE", "2:CHANGE_REQUEST");
+        assertThat(admin.queryForObject("""
+                SELECT acceptance_criteria FROM app.requirement_revision WHERE requirement_id = ?::uuid
+                ORDER BY revision_no DESC LIMIT 1""", String.class, UUID.fromString(s.requirementId)))
+                .contains("refund");
+        assertThat(s.state()).isEqualTo("CLIENT_CHANGES_REQUESTED");
         // T27 then T28: a new analysis that produces v2; v1 is superseded and its approval invalidated.
-        Response change = s.alice.post("/api/v1/requirements/" + s.requirementId + "/client-changes",
-                Map.of("text", "Please also cover refunds of repayments."));
-        assertThat(change.body().path("state").asString()).isEqualTo("CLIENT_CHANGES_REQUESTED");
         s.drive();
         assertThat(s.state()).isEqualTo("INTERNAL_REVIEW");
         assertThat(openVersion(s).get("version_no")).isEqualTo(2);
