@@ -29,6 +29,20 @@ public interface SecurityEventRecorder {
         /** A staff operation was refused: inactive staff, missing assignment or capability (O-06, C-01). */
         STAFF_ACCESS_DENIED,
         /** A repository link request token was unknown, expired, used, revoked or presented by a wrong caller (C-18). */
-        LINK_REQUEST_REJECTED
+        LINK_REQUEST_REJECTED,
+        /** A tenant deletion or restoration was requested, verified, approved (executed) or rejected (O-25). */
+        TENANT_DELETION_REQUESTED,
+        TENANT_SOFT_DELETED,
+        TENANT_RESTORED,
+        /** A staff capability, assignment, MFA reset or status change was made (C-17). */
+        PRIVILEGE_CHANGED,
+        /** Administrator bootstrap ceremony activity: opened, approved, completed, refused (O-13, C-17). */
+        ADMIN_BOOTSTRAP,
+        /** GitHub App credential or installation-token failure (C-17). */
+        GITHUB_CREDENTIAL_FAILURE,
+        /** A feature flag was changed (O-08); acknowledgement is tracked separately. */
+        FEATURE_FLAG_CHANGED,
+        /** A release approval was refused because a mandatory gate failed (O-16). */
+        RELEASE_GATE_FAILED
     }
 }

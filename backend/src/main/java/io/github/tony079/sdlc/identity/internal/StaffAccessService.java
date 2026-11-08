@@ -43,6 +43,27 @@ class StaffAccessService implements StaffAccess {
         return check(capability);
     }
 
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public UUID requireCapabilityForTenant(StaffCapability capability, UUID tenantId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof StaffPrincipal principal)) {
+            throw deny(null, "NOT_STAFF");
+        }
+        UUID staffId = principal.staffId();
+        Optional<StaffRecord> record = staff.findById(staffId);
+        if (record.isEmpty() || !record.get().active() || record.get().mfaEnrolledAt() == null) {
+            throw deny(staffId, "STAFF_INACTIVE");
+        }
+        if (tenantId == null || !staff.assignedAnyStatus(staffId, tenantId)) {
+            throw deny(staffId, "NO_ASSIGNMENT");
+        }
+        if (!staff.hasCapability(staffId, capability)) {
+            throw deny(staffId, "MISSING_" + capability.name());
+        }
+        return staffId;
+    }
+
     private StaffContext check(StaffCapability capability) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof StaffPrincipal principal)) {

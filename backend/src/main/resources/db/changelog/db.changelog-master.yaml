@@ -39,3 +39,5 @@ databaseChangeLog:
   - include: { file: changes/0023-retention.sql, relativeToChangelogFile: true }
   # Owner decisions 2026-11-08: dedicated staff capabilities, T04/T05 manual-intake resume/close, closure record (O-25).
   - include: { file: changes/0024-manual-intake-closure-capabilities.sql, relativeToChangelogFile: true }
+  # O-25 (2026-11-08): two-person tenant soft deletion and restoration; retention classes.
+  - include: { file: changes/0025-tenant-lifecycle-retention.sql, relativeToChangelogFile: true }

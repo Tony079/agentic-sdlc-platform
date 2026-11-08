@@ -16,6 +16,13 @@ public interface StaffAccess {
     /** As {@link #requireActiveTenant()}, and the capability must be held. */
     StaffContext requireCapability(StaffCapability capability);
 
+    /**
+     * For operations on a named tenant regardless of its status (tenant soft deletion and restoration, O-25): the
+     * caller must be an active staff member with MFA, hold {@code capability} and have an unrevoked assignment to
+     * {@code tenantId}. The session's active tenant is not used. Returns the staff id.
+     */
+    UUID requireCapabilityForTenant(StaffCapability capability, UUID tenantId);
+
     record StaffContext(UUID staffId, UUID tenantId) {
     }
 }

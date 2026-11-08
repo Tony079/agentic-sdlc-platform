@@ -64,11 +64,14 @@ class SecurityConfig {
     @Bean
     SecurityFilterChain apiSecurity(HttpSecurity http, SecurityContextRepository contextRepository,
                                     CsrfTokenRepository csrfTokenRepository, StaffRepository staffRepository,
-                                    PlatformTransactionManager transactionManager) throws Exception {
+                                    PlatformTransactionManager transactionManager,
+                                    org.springframework.jdbc.core.simple.JdbcClient jdbcClient) throws Exception {
         http
                 // Staff sessions are re-validated against the database on every request (O-06).
                 .addFilterAfter(new StaffSessionFilter(staffRepository, contextRepository, transactionManager),
                         SecurityContextHolderFilter.class)
+                // O-25: a client session of a tenant that is no longer ACTIVE (soft-deleted) ends at its next request.
+                .addFilterAfter(new TenantStatusFilter(jdbcClient, transactionManager), StaffSessionFilter.class)
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokenRepository)
                         // Plain handler: the SPA echoes the cookie value in the header.
@@ -103,6 +106,11 @@ class SecurityConfig {
                         .requestMatchers("/api/v1/clarifications", "/api/v1/clarifications/**")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
                         .requestMatchers("/api/v1/notifications", "/api/v1/notifications/**")
+                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
+                        // O-25: only a Client Approver may request the organisation's deletion (re-checked per call).
+                        .requestMatchers("/api/v1/tenant/**").hasRole("CLIENT_APPROVER")
+                        // C-09: change requests (submitter, approver decision; re-checked per call).
+                        .requestMatchers("/api/v1/change-requests", "/api/v1/change-requests/**")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
                         .requestMatchers("/api/v1/me", "/api/v1/auth/logout")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")

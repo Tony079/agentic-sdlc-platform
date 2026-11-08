@@ -16,29 +16,29 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The controlled retention and deletion process (PRD FR-RET-01..16, S-01), run only in the one-shot {@code retention}
- * process as {@code sdlc_retention}. Works tenant by tenant under RLS.
+ * The controlled retention process (PRD FR-RET, S-01; owner decision O-25 of 2026-11-08), run only in the one-shot
+ * {@code retention} process as {@code sdlc_retention}. Works tenant by tenant under RLS.
  * <ul>
- *   <li>Closure (FR-RET-16): a requirement is closed when its current state is SHARED_WITH_CLIENT (Release 1
- *       completion), REJECTED or CANCELLED; the closure time is the transition into that state.</li>
- *   <li>Repository snapshots and indexes (FR-RET-11), documents with their versions, extracted text and chunks
- *       (FR-RET-12), BRDs with evidence (FR-RET-13): deleted after the configured days from closure; derived data goes
- *       with its source (FR-RET-08). Evidence references of approved BRDs stay as records until the BRD period ends
- *       (FR-RET-10).</li>
- *   <li>Audit metadata (FR-RET-14): rows older than the audit period are deleted only here.</li>
- *   <li>Every deletion is audited without content (FR-RET-04).</li>
+ *   <li>Closure: only requirements with an immutable {@code requirement_closure} row (CANCELLED or REJECTED with all
+ *       work resolved) are eligible; the clock is {@code closed_at}. A requirement that is not closed is never touched,
+ *       and the clock never resets (the closure row cannot change).</li>
+ *   <li>Defaults (O-25): repository snapshots and indexes, and extracted document text (temporary extraction
+ *       artifacts) 30 days; uploaded originals and BRDs with evidence (business artifacts of a closed requirement)
+ *       365 days; audit 365 days after the event. Abandoned workspaces: 24 h sweep in the worker (PRD FR-RET-15).</li>
+ *   <li>Soft-deleted tenants are skipped: soft deletion freezes the tenant's data; physical erasure is a separate,
+ *       not implemented operation (O-25). Only ACTIVE and SUSPENDED tenants are processed.</li>
+ *   <li>Every deletion is audited without content (FR-RET-04). No duration is hard-coded (FR-RET-07).</li>
  * </ul>
- * No duration is hard-coded (FR-RET-07): defaults come from configuration, overrides from retention_policy.
  */
 class RetentionService {
 
     private static final Logger log = LoggerFactory.getLogger(RetentionService.class);
-    static final List<String> CLASSES = List.of("SNAPSHOT", "DOCUMENT", "BRD", "AUDIT");
+    static final List<String> CLASSES = List.of("SNAPSHOT", "EXTRACTED_TEXT", "DOCUMENT", "BRD", "AUDIT");
 
-    record Result(int snapshots, int documents, int brdVersions, int auditRows) {
+    record Result(int snapshots, int extractedTexts, int documents, int brdVersions, int auditRows) {
         Result plus(Result other) {
-            return new Result(snapshots + other.snapshots, documents + other.documents, brdVersions + other.brdVersions,
-                    auditRows + other.auditRows);
+            return new Result(snapshots + other.snapshots, extractedTexts + other.extractedTexts,
+                    documents + other.documents, brdVersions + other.brdVersions, auditRows + other.auditRows);
         }
     }
 
@@ -66,30 +66,11 @@ class RetentionService {
     Result applyAll() {
         List<UUID> tenants = tx.execute(s -> jdbc.sql("SELECT id FROM app.tenant WHERE status IN ('ACTIVE', 'SUSPENDED')")
                 .query(UUID.class).list());
-        Result total = new Result(0, 0, 0, 0);
+        Result total = new Result(0, 0, 0, 0, 0);
         for (UUID tenant : tenants) {
-            total = total.plus(TenantContext.callAs(tenant, () -> apply(tenant, false)));
+            total = total.plus(TenantContext.callAs(tenant, () -> apply(tenant)));
         }
         return total;
-    }
-
-    /** FR-RET-02: deletes a tenant's snapshots, documents and BRD content now, regardless of age, then closes it. */
-    Result deleteTenantData(String slug) {
-        UUID tenant = tx.execute(s -> jdbc.sql("SELECT id FROM app.tenant WHERE slug = :s").param("s", slug)
-                .query(UUID.class).optional().orElse(null));
-        if (tenant == null) {
-            throw new IllegalArgumentException("unknown tenant");
-        }
-        return TenantContext.callAs(tenant, () -> {
-            tx.executeWithoutResult(s -> jdbc.sql("UPDATE app.tenant SET status = 'CLOSING' WHERE id = :t")
-                    .param("t", tenant).update());
-            Result result = apply(tenant, true);
-            tx.executeWithoutResult(s -> {
-                jdbc.sql("UPDATE app.tenant SET status = 'CLOSED' WHERE id = :t").param("t", tenant).update();
-                audit(tenant, "TENANT_DATA_DELETED", "TENANT", tenant);
-            });
-            return result;
-        });
     }
 
     void setPolicy(String slug, String dataClass, int days) {
@@ -113,27 +94,23 @@ class RetentionService {
                 .query(Integer.class).optional().orElse(defaults.get(dataClass));
     }
 
-    /** Requirements closed before {@code days} ago (all requirements when {@code everything}). */
-    private List<UUID> closed(int days, boolean everything) {
-        if (everything) {
-            return jdbc.sql("SELECT id FROM app.requirement").query(UUID.class).list();
-        }
+    /** Requirements whose recorded closure is older than {@code days} (O-25 closure definition). */
+    private List<UUID> closed(int days) {
         return jdbc.sql("""
-                SELECT i.requirement_id FROM app.workflow_instance i
-                JOIN app.workflow_transition t ON t.instance_id = i.id AND t.seq = i.last_seq
-                WHERE i.projected_state IN ('SHARED_WITH_CLIENT', 'REJECTED', 'CANCELLED')
-                  AND t.occurred_at < clock_timestamp() - make_interval(days => :d)
+                SELECT requirement_id FROM app.requirement_closure
+                WHERE closed_at < clock_timestamp() - make_interval(days => :d)
                 """).param("d", days).query(UUID.class).list();
     }
 
-    private Result apply(UUID tenant, boolean everything) {
+    private Result apply(UUID tenant) {
         int snapshots = 0;
+        int texts = 0;
         int documents = 0;
         int versions = 0;
         int audits = 0;
         // Snapshots and derived indexes.
         List<Map<String, Object>> snaps = tx.execute(s -> {
-            List<UUID> reqs = closed(days("SNAPSHOT"), everything);
+            List<UUID> reqs = closed(days("SNAPSHOT"));
             if (reqs.isEmpty()) {
                 return List.<Map<String, Object>>of();
             }
@@ -155,9 +132,27 @@ class RetentionService {
             });
             snapshots++;
         }
-        // Documents, their versions, extracted text and chunks.
+        // Extracted text (temporary extraction artifact): chunks of every version of a closed requirement.
+        List<UUID> textVersions = tx.execute(s -> {
+            List<UUID> reqs = closed(days("EXTRACTED_TEXT"));
+            if (reqs.isEmpty()) {
+                return List.<UUID>of();
+            }
+            return jdbc.sql("""
+                    SELECT DISTINCT c.version_id FROM app.document_chunk c
+                    JOIN app.document_version v ON v.id = c.version_id WHERE v.requirement_id IN (:r)
+                    """).param("r", reqs).query(UUID.class).list();
+        });
+        for (UUID version : textVersions) {
+            tx.executeWithoutResult(s -> {
+                jdbc.sql("DELETE FROM app.document_chunk WHERE version_id = :v").param("v", version).update();
+                audit(tenant, "RETENTION_DELETED", "EXTRACTED_TEXT", version);
+            });
+            texts++;
+        }
+        // Uploaded originals (business artifacts): encrypted object, any remaining chunks, version marked DELETED.
         List<Map<String, Object>> docs = tx.execute(s -> {
-            List<UUID> reqs = closed(days("DOCUMENT"), everything);
+            List<UUID> reqs = closed(days("DOCUMENT"));
             if (reqs.isEmpty()) {
                 return List.<Map<String, Object>>of();
             }
@@ -179,7 +174,7 @@ class RetentionService {
         }
         // BRDs, items, evidence, flags and the model proposal they came from.
         List<UUID> brds = tx.execute(s -> {
-            List<UUID> reqs = closed(days("BRD"), everything);
+            List<UUID> reqs = closed(days("BRD"));
             if (reqs.isEmpty()) {
                 return List.<UUID>of();
             }
@@ -204,18 +199,16 @@ class RetentionService {
             });
             versions++;
         }
-        // Audit metadata older than its period (FR-RET-14). Never during a tenant deletion (records of the deletion).
-        if (!everything) {
-            audits = tx.execute(s -> jdbc.sql("""
-                    DELETE FROM app.audit_event WHERE occurred_at < clock_timestamp() - make_interval(days => :d)
-                    """).param("d", days("AUDIT")).update());
-            if (audits > 0) {
-                tx.executeWithoutResult(s -> audit(tenant, "RETENTION_AUDIT_PURGED", "TENANT", tenant));
-            }
+        // Audit metadata older than its period (FR-RET-14).
+        audits = tx.execute(s -> jdbc.sql("""
+                DELETE FROM app.audit_event WHERE occurred_at < clock_timestamp() - make_interval(days => :d)
+                """).param("d", days("AUDIT")).update());
+        if (audits > 0) {
+            tx.executeWithoutResult(s -> audit(tenant, "RETENTION_AUDIT_PURGED", "TENANT", tenant));
         }
-        log.info("Retention applied: tenant={} snapshots={} documents={} brdVersions={} auditRows={}", tenant, snapshots,
-                documents, versions, audits);
-        return new Result(snapshots, documents, versions, audits);
+        log.info("Retention applied: tenant={} snapshots={} extractedTexts={} documents={} brdVersions={} auditRows={}",
+                tenant, snapshots, texts, documents, versions, audits);
+        return new Result(snapshots, texts, documents, versions, audits);
     }
 
     private void deleteObject(String key) {

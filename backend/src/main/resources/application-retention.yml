@@ -12,11 +12,12 @@ spring:
 
 sdlc:
   retention:
-    # PRD FR-RET-11..14 development defaults (days after closure; audit: days after the event). They must be confirmed
-    # against contractual and privacy requirements before production (O-02/O-04/O-23/O-25). Per-tenant overrides live in
-    # app.retention_policy (set-policy command).
+    # Owner decision O-25 (2026-11-08) defaults, in days after the recorded closure (audit: after the event).
+    # Temporary extraction artifacts 30; closed-requirement business artifacts 365; audit 365. Operational application
+    # logs (90 days) are kept by the log platform, not by this process. Per-tenant overrides: app.retention_policy.
     default-days:
       snapshot: ${SDLC_RETENTION_SNAPSHOT_DAYS:30}
-      document: ${SDLC_RETENTION_DOCUMENT_DAYS:90}
+      extracted-text: ${SDLC_RETENTION_EXTRACTED_TEXT_DAYS:30}
+      document: ${SDLC_RETENTION_DOCUMENT_DAYS:365}
       brd: ${SDLC_RETENTION_BRD_DAYS:365}
       audit: ${SDLC_RETENTION_AUDIT_DAYS:365}

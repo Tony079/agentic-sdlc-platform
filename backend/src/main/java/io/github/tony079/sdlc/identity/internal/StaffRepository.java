@@ -94,6 +94,14 @@ class StaffRepository {
                 .query((rs, n) -> new Assignment(rs.getObject(1, UUID.class), rs.getString(2))).list();
     }
 
+    /** An unrevoked assignment to the tenant, whatever the tenant's status (lifecycle operations only). */
+    boolean assignedAnyStatus(UUID staffId, UUID tenantId) {
+        return jdbc.sql("""
+                SELECT count(*) FROM app.staff_tenant_assignment
+                WHERE staff_id = :staff AND assigned_tenant_id = :tenant AND revoked_at IS NULL
+                """).param("staff", staffId).param("tenant", tenantId).query(Integer.class).single() > 0;
+    }
+
     boolean assigned(UUID staffId, UUID tenantId) {
         return activeAssignments(staffId).stream().anyMatch(a -> a.tenantId().equals(tenantId));
     }

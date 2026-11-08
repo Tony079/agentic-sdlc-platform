@@ -67,7 +67,7 @@ class RetentionIT extends ApiIntegrationTest {
     private RetentionService service() {
         DriverManagerDataSource ds = new DriverManagerDataSource(db.appUrl(), "sdlc_retention", db.retentionPassword());
         return new RetentionService(JdbcClient.create(ds), new TenantAwareTransactionManager(ds), storage,
-                Map.of("SNAPSHOT", 30, "DOCUMENT", 90, "BRD", 365, "AUDIT", 365));
+                Map.of("SNAPSHOT", 30, "EXTRACTED_TEXT", 30, "DOCUMENT", 365, "BRD", 365, "AUDIT", 365));
     }
 
     /** A requirement analysed with an attachment, then rejected by a Business Reviewer: closed (REJECTED). */
@@ -89,17 +89,21 @@ class RetentionIT extends ApiIntegrationTest {
         assertThat(reviewer.post("/api/v1/staff/brd-versions/" + version + "/reject",
                 Map.of("reason", "Closed for the retention test.")).status()).isEqualTo(200);
         assertThat(s.state()).isEqualTo("REJECTED");
+        s.drive();
+        // O-25: closure is recorded by the worker once nothing is left open.
+        WorkerContext.bean(io.github.tony079.sdlc.workflow.internal.ClosureRecorder.class).recordEligible();
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.requirement_closure WHERE requirement_id = ?::uuid",
+                Integer.class, s.requirementId)).isEqualTo(1);
         return s;
     }
 
-    /** TEST ONLY: moves the closing transition into the past (the product never rewrites history). */
+    /** TEST ONLY: moves the recorded closure into the past (the product never rewrites it). */
     private void closedDaysAgo(AnalysisScenario s, int days) throws Exception {
         try (Connection c = db.adminConnection(); Statement st = c.createStatement()) {
-            st.execute("SET session_replication_role = replica");
             st.executeUpdate("""
-                    UPDATE app.workflow_transition t SET occurred_at = clock_timestamp() - interval '%d days'
-                    FROM app.workflow_instance i
-                    WHERE t.instance_id = i.id AND t.seq = i.last_seq AND i.requirement_id = '%s'
+                    UPDATE app.requirement_closure SET terminal_at = clock_timestamp() - interval '%1$d days',
+                           closed_at = clock_timestamp() - interval '%1$d days'
+                    WHERE requirement_id = '%2$s'
                     """.formatted(days, UUID.fromString(s.requirementId)));
         }
     }
@@ -136,7 +140,7 @@ class RetentionIT extends ApiIntegrationTest {
         RetentionService.Result none = service().applyAll();
         assertThat(snapshotOf(s, "status")).isNotEqualTo("DELETED");
 
-        // 100 days after closure: snapshots (30) and documents (90) are due; the BRD (365) is not.
+        // 100 days after closure: snapshots and extracted text (30) are due; originals and the BRD (365) are not.
         closedDaysAgo(s, 100);
         service().applyAll();
         assertThat(snapshotOf(s, "status")).isEqualTo("DELETED");
@@ -145,11 +149,11 @@ class RetentionIT extends ApiIntegrationTest {
                 Integer.class, snapshotId)).isZero();
         assertThat(admin.queryForObject("SELECT count(*) FROM app.code_symbol WHERE snapshot_id = ?::uuid",
                 Integer.class, snapshotId)).isZero();
-        assertThat(admin.queryForObject("SELECT state FROM app.document_version WHERE id = ?::uuid", String.class,
-                s.documentVersionId())).isEqualTo("DELETED");
-        assertThat(stored(docKey)).isFalse();
         assertThat(admin.queryForObject("SELECT count(*) FROM app.document_chunk WHERE version_id = ?::uuid",
                 Integer.class, s.documentVersionId())).isZero();
+        assertThat(admin.queryForObject("SELECT state FROM app.document_version WHERE id = ?::uuid", String.class,
+                s.documentVersionId())).isNotEqualTo("DELETED");
+        assertThat(stored(docKey)).isTrue();
         assertThat(admin.queryForObject("SELECT status FROM app.brd_version WHERE id = ?::uuid", String.class, brd))
                 .isEqualTo("WITHDRAWN");
         assertThat(admin.queryForObject("SELECT count(*) FROM app.brd_item WHERE brd_version_id = ?::uuid",
@@ -162,9 +166,13 @@ class RetentionIT extends ApiIntegrationTest {
         assertThat(admin.queryForObject("SELECT count(*) FROM app.audit_event WHERE action = 'RETENTION_DELETED'",
                 Integer.class)).isEqualTo(before);
 
-        // A per-tenant override (FR-RET-07/AC-EXT-39) brings the BRD period down to 50 days.
+        // Per-tenant overrides (FR-RET-07/AC-EXT-39) bring the original-document and BRD periods down to 50 days.
+        service().setPolicy("acme", "DOCUMENT", 50);
         service().setPolicy("acme", "BRD", 50);
         service().applyAll();
+        assertThat(admin.queryForObject("SELECT state FROM app.document_version WHERE id = ?::uuid", String.class,
+                s.documentVersionId())).isEqualTo("DELETED");
+        assertThat(stored(docKey)).isFalse();
         assertThat(admin.queryForObject("SELECT status FROM app.brd_version WHERE id = ?::uuid", String.class, brd))
                 .isEqualTo("PURGED");
         assertThat(admin.queryForObject("SELECT count(*) FROM app.brd_item WHERE brd_version_id = ?::uuid",
@@ -175,12 +183,14 @@ class RetentionIT extends ApiIntegrationTest {
         assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId + "/brd").status()).isEqualTo(404);
         assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId).status()).isEqualTo(200);
         service().setPolicy("acme", "BRD", 365);
+        service().setPolicy("acme", "DOCUMENT", 365);
 
         // Each deletion is audited, without content (FR-RET-04).
         assertThat(admin.queryForList("""
                 SELECT resource_type FROM app.audit_event WHERE action = 'RETENTION_DELETED' AND resource_id IN
-                  (?::uuid, ?::uuid, ?::uuid)""", String.class, snapshotId, s.documentId, brd))
-                .containsExactlyInAnyOrder("REPOSITORY_SNAPSHOT", "DOCUMENT", "BRD_VERSION");
+                  (?::uuid, ?::uuid, ?::uuid, ?::uuid)""", String.class, snapshotId, s.documentId, brd,
+                s.documentVersionId())).containsExactlyInAnyOrder("REPOSITORY_SNAPSHOT", "EXTRACTED_TEXT", "DOCUMENT",
+                "BRD_VERSION");
         assertThat(none).isNotNull();
     }
 
@@ -223,6 +233,11 @@ class RetentionIT extends ApiIntegrationTest {
                     .hasMessageContaining("permission denied");
             assertThat(catchThrowable(() -> st.executeUpdate("DELETE FROM app.workflow_transition")))
                     .hasMessageContaining("permission denied");
+            // Tenant deletion is not a retention operation any more (O-25 soft deletion is two-person, API only).
+            assertThat(catchThrowable(() -> st.executeUpdate("UPDATE app.tenant SET status = 'DELETED'")))
+                    .hasMessageContaining("permission denied");
+            assertThat(catchThrowable(() -> st.executeUpdate("UPDATE app.requirement_closure SET closed_at = now()")))
+                    .hasMessageContaining("permission denied");
             // Without a tenant context, RLS shows nothing.
             try (var rs = st.executeQuery("SELECT count(*) FROM app.audit_event")) {
                 rs.next();
@@ -237,16 +252,38 @@ class RetentionIT extends ApiIntegrationTest {
     }
 
     @Test
-    void tenantDeletionProcedureClosesTheTenantAndAuditsIt() {
-        UUID tenant = WorkerContext.newTenant("closing");
-        String slug = admin.queryForObject("SELECT slug FROM app.tenant WHERE id = ?", String.class, tenant);
-        service().deleteTenantData(slug);
+    void softDeletedTenantsAreNeverPurgedByRetention() {
+        UUID tenant = WorkerContext.newTenant("frozen");
+        admin.update("""
+                INSERT INTO app.audit_event (tenant_id, occurred_at, actor_type, action, resource_type, result)
+                VALUES (?, clock_timestamp() - interval '900 days', 'SYSTEM', 'RETENTION_PROBE', 'TENANT', 'SUCCESS')
+                """, tenant);
+        admin.update("UPDATE app.tenant SET status = 'DELETED' WHERE id = ?", tenant);
+        service().applyAll();
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.audit_event WHERE tenant_id = ?", Integer.class,
+                tenant)).isEqualTo(1);
         assertThat(admin.queryForObject("SELECT status FROM app.tenant WHERE id = ?", String.class, tenant))
-                .isEqualTo("CLOSED");
+                .isEqualTo("DELETED");
+    }
+
+    @Test
+    void requirementsWithoutAClosureRecordAreNotTouched() throws Exception {
+        UUID acme = db.tenantId("acme");
+        int closures = admin.queryForObject("SELECT count(*) FROM app.requirement_closure WHERE tenant_id = ?",
+                Integer.class, acme);
+        int openSnapshots = admin.queryForObject("""
+                SELECT count(*) FROM app.repository_snapshot s JOIN app.requirement_repository rr
+                  ON rr.id = s.requirement_repository_id
+                WHERE s.status <> 'DELETED' AND NOT EXISTS (SELECT 1 FROM app.requirement_closure c
+                                                            WHERE c.requirement_id = rr.requirement_id)
+                """, Integer.class);
+        service().applyAll();
         assertThat(admin.queryForObject("""
-                SELECT count(*) FROM app.audit_event WHERE tenant_id = ? AND action = 'TENANT_DATA_DELETED'
-                """, Integer.class, tenant)).isEqualTo(1);
-        assertThatThrownBy(() -> service().deleteTenantData("no-such-tenant"))
-                .isInstanceOf(IllegalArgumentException.class);
+                SELECT count(*) FROM app.repository_snapshot s JOIN app.requirement_repository rr
+                  ON rr.id = s.requirement_repository_id
+                WHERE s.status <> 'DELETED' AND NOT EXISTS (SELECT 1 FROM app.requirement_closure c
+                                                            WHERE c.requirement_id = rr.requirement_id)
+                """, Integer.class)).isEqualTo(openSnapshots);
+        assertThat(closures).isGreaterThanOrEqualTo(0);
     }
 }

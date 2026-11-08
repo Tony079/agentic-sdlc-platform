@@ -20,8 +20,10 @@ import org.springframework.transaction.PlatformTransactionManager;
  * Command line of the one-shot {@code retention} process. Usage:
  * <pre>
  * apply                                           apply the policy to every tenant (schedule daily)
- * set-policy --tenant=SLUG --class=SNAPSHOT|DOCUMENT|BRD|AUDIT --days=N
- * delete-tenant-data --tenant=SLUG --confirm=SLUG  FR-RET-02 tenant deletion procedure
+ * set-policy --tenant=SLUG --class=SNAPSHOT|EXTRACTED_TEXT|DOCUMENT|BRD|AUDIT --days=N
+ *
+ * Tenant deletion is not a retention command: it is the two-person soft-deletion workflow (O-25). Physical erasure is
+ * a separate operation that does not exist.
  * </pre>
  */
 @Component
@@ -33,11 +35,13 @@ class RetentionRunner implements ApplicationRunner {
 
     RetentionRunner(JdbcClient jdbc, PlatformTransactionManager transactionManager, ObjectStore storage,
                     @Value("${sdlc.retention.default-days.snapshot}") int snapshot,
+                    @Value("${sdlc.retention.default-days.extracted-text}") int extractedText,
                     @Value("${sdlc.retention.default-days.document}") int document,
                     @Value("${sdlc.retention.default-days.brd}") int brd,
                     @Value("${sdlc.retention.default-days.audit}") int audit) {
         this.service = new RetentionService(jdbc, transactionManager, storage,
-                Map.of("SNAPSHOT", snapshot, "DOCUMENT", document, "BRD", brd, "AUDIT", audit));
+                Map.of("SNAPSHOT", snapshot, "EXTRACTED_TEXT", extractedText, "DOCUMENT", document, "BRD", brd,
+                        "AUDIT", audit));
     }
 
     @Override
@@ -50,13 +54,6 @@ class RetentionRunner implements ApplicationRunner {
             case "apply" -> log.info("Retention totals: {}", service.applyAll());
             case "set-policy" -> service.setPolicy(one(args, "tenant"), one(args, "class").toUpperCase(Locale.ROOT),
                     Integer.parseInt(one(args, "days")));
-            case "delete-tenant-data" -> {
-                String tenant = one(args, "tenant");
-                if (!tenant.equals(one(args, "confirm"))) {
-                    throw new IllegalArgumentException("--confirm must repeat the tenant slug");
-                }
-                log.info("Tenant data deleted: {}", service.deleteTenantData(tenant));
-            }
             default -> throw new IllegalArgumentException("unknown retention command");
         }
     }
