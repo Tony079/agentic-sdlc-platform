@@ -79,7 +79,23 @@ class ReviewService {
         audit.record(AuditAction.BRD_VIEWED, "BRD_VERSION", versionId, AuditResult.SUCCESS);
         return new ReviewDetail(reviews.requirementKey(version.requirementId()),
                 requirements.currentRevision(version.requirementId()).orElseThrow().content(),
-                workflow.state(version.requirementId()).name(), reviews.view(versionId, true));
+                workflow.state(version.requirementId()).name(), reviews.view(versionId, true),
+                reviews.versionsOf(version.requirementId()));
+    }
+
+    /** TDD 16.8: compares two versions of the same requirement (any order; reported oldest to newest). */
+    @Transactional
+    public BrdViews.VersionDiff diff(UUID versionId, UUID againstId) {
+        reviewer();
+        VersionRow version = reviews.version(versionId, false).orElseThrow(ApiException::notFound);
+        VersionRow against = reviews.version(againstId, false).orElseThrow(ApiException::notFound);
+        if (!version.requirementId().equals(against.requirementId())) {
+            throw ApiException.notFound();
+        }
+        BrdViews.VersionView a = reviews.view(versionId, true);
+        BrdViews.VersionView b = reviews.view(againstId, true);
+        audit.record(AuditAction.BRD_VIEWED, "BRD_VERSION", versionId, AuditResult.SUCCESS);
+        return a.versionNo() <= b.versionNo() ? BrdViews.diff(a, b) : BrdViews.diff(b, a);
     }
 
     @Transactional

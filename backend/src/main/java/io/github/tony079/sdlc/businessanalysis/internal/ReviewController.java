@@ -47,6 +47,11 @@ class ReviewController {
         return reviews.detail(id);
     }
 
+    @GetMapping("/api/v1/staff/brd-versions/{id}/diff")
+    BrdViews.VersionDiff diff(@PathVariable UUID id, @org.springframework.web.bind.annotation.RequestParam UUID against) {
+        return reviews.diff(id, against);
+    }
+
     @PostMapping("/api/v1/staff/brd-versions/{id}/flags/{itemKey}/acknowledge")
     ResponseEntity<Void> acknowledge(@PathVariable UUID id, @PathVariable String itemKey,
                                      @Valid @RequestBody(required = false) AckRequest body) {

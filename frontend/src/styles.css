@@ -172,3 +172,19 @@ dl.content dd {
 .documents button { margin-left: 0.5rem; }
 .doc-rejected_invalid, .doc-rejected_malware, .doc-extraction_failed_final { color: #a00; }
 .upload input { display: block; margin-top: 0.25rem; }
+
+.card {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.diff-added {
+  background: #e6f4ea;
+}
+
+.diff-removed {
+  background: #fce8e6;
+  text-decoration: line-through;
+}

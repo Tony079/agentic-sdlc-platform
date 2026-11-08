@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { ReviewDetail } from '../../api/types';
 import { BrdItems } from '../../components/BrdItems';
+import { VersionComparison } from '../../components/VersionComparison';
 
 const ERRORS: Record<string, string> = {
   VERSION_CHANGED: 'This BRD version changed. Reload before deciding.',
@@ -11,6 +12,7 @@ const ERRORS: Record<string, string> = {
   FLAGS_NOT_ACKNOWLEDGED: 'Acknowledge every flagged statement first.',
   SELF_APPROVAL_FORBIDDEN: 'You wrote correction notes for this version; another reviewer must approve it.',
   APPROVAL_CONFLICT: 'This version was already decided.',
+  OPEN_CLARIFICATIONS: 'A blocking clarification is still open for this requirement.',
   FORBIDDEN: 'You are not allowed to review BRDs for this organisation.',
 };
 
@@ -85,6 +87,7 @@ export function StaffReviewPage() {
           ) : null
         }
       />
+      <VersionComparison versionId={version.id} versions={detail.data.versions ?? []} />
       {message && (
         <p className="notice" role="status">
           {message}

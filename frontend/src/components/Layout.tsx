@@ -30,6 +30,7 @@ export function Layout() {
         <span className="brand">Agentic SDLC Platform</span>
         <nav aria-label="Main">
           <NavLink to="/projects">Projects</NavLink> <NavLink to="/requirements">Requirements</NavLink>{' '}
+          <NavLink to="/clarifications">Clarifications</NavLink>{' '}
           <NavLink to="/notifications">Notifications{unread > 0 ? ` (${unread})` : ''}</NavLink>
           {me?.roles.includes('CLIENT_APPROVER') && (
             <>

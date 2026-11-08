@@ -7,6 +7,7 @@ import java.sql.Connection;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import io.github.tony079.sdlc.identity.api.StaffCapability;
 import io.github.tony079.sdlc.identity.internal.StaffFixtures;
@@ -186,11 +187,40 @@ class ReviewIT extends ApiIntegrationTest {
         Response revision = author.post("/api/v1/staff/brd-versions/" + v1 + "/request-revision",
                 Map.of("notes", List.of(Map.of("itemKey", flaggedKey(v1), "instruction", "Remove the billing claim."))));
         assertThat(revision.body().path("state").asString()).isEqualTo("REVISION_REQUESTED");
+        // The revised run drops the billing claim and adds a new (also flagged) statement.
+        fake.cannedReply("ba.phase-b", """
+                {"items": [
+                  {"kind": "FACT", "section": "FACTS", "statement": "Loans are served by the controller mapped to /loans.",
+                   "evidence": [{"type": "REPOSITORY", "path": "%1$s", "startLine": 3, "endLine": 6,
+                                 "documentVersionId": null, "chunk": null, "quote": "RequestMapping(\\"/loans\\")"}],
+                   "risk": null, "component": "Loan API"},
+                  {"kind": "FACT", "section": "FACTS", "statement": "Repayment dates are kept in the treasury ledger.",
+                   "evidence": [{"type": "REPOSITORY", "path": "%1$s", "startLine": 4, "endLine": 4,
+                                 "documentVersionId": null, "chunk": null, "quote": "class LoanController"}],
+                   "risk": null, "component": null}
+                 ], "unsupported": [], "clarifications": []}""".formatted(AnalysisScenario.CONTROLLER));
         s.drive();
         assertThat(s.state()).isEqualTo("INTERNAL_REVIEW");
         Map<String, Object> v2 = openVersion(s);
         assertThat(v2.get("version_no")).isEqualTo(2);
         String v2Id = (String) v2.get("id");
+
+        assertThat(author.get("/api/v1/staff/brd-versions/" + v2Id).body().path("versions").size()).isEqualTo(2);
+        // Version comparison (TDD 16.8, FR-UI-02): statement level by item_key, reported oldest to newest.
+        Response diff = author.get("/api/v1/staff/brd-versions/" + v2Id + "/diff?against=" + v1);
+        assertThat(diff.status()).as(diff.body().toString()).isEqualTo(200);
+        assertThat(diff.body().path("from").path("versionNo").asInt()).isEqualTo(1);
+        assertThat(diff.body().path("to").path("versionNo").asInt()).isEqualTo(2);
+        assertThat(diff.body().path("removed").path(0).path("statement").asString()).contains("billing");
+        assertThat(diff.body().path("added").path(0).path("statement").asString()).contains("treasury ledger");
+        assertThat(diff.body().path("removed").size()).isEqualTo(1);
+        assertThat(diff.body().path("added").size()).isEqualTo(1);
+        assertThat(diff.body().path("unchanged").asInt()).isEqualTo(1);
+        assertThat(diff.body().path("changed").size()).isZero();
+        assertThat(author.get("/api/v1/staff/brd-versions/" + v2Id + "/diff?against=" + UUID.randomUUID()).status())
+                .isEqualTo(404);
+        assertThat(s.alice.get("/api/v1/staff/brd-versions/" + v2Id + "/diff?against=" + v1).status())
+                .isIn(401, 403);
         assertThat(fake.calls().get(fake.calls().size() - 1).data()).anySatisfy(block ->
                 assertThat(block.content()).contains("Remove the billing claim."));
 

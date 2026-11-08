@@ -131,6 +131,9 @@ export function StaffHomePage() {
       {canReview && (
         <>
           <h2>BRDs awaiting review</h2>
+          <p>
+            <Link to="/staff/inbox">Reviewer inbox: clarifications and document decisions</Link>
+          </p>
           {reviews.data?.length === 0 && <p>Nothing is waiting for review.</p>}
           <ul>
             {reviews.data?.map((r) => (

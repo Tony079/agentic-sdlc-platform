@@ -269,6 +269,62 @@ export interface ReviewDetail {
   requirement: RequirementContent;
   state: string;
   version: BrdVersion;
+  versions?: VersionRef[];
+}
+
+export interface VersionRef {
+  id: string;
+  versionNo: number;
+  status: string;
+  contentHash: string;
+}
+
+export interface ChangedItem {
+  itemKey: string;
+  before: BrdItem;
+  after: BrdItem;
+  fields: string[];
+}
+
+export interface VersionDiff {
+  from: VersionRef;
+  to: VersionRef;
+  added: BrdItem[];
+  removed: BrdItem[];
+  changed: ChangedItem[];
+  unchanged: number;
+}
+
+export interface ClarificationMessage {
+  kind: string;
+  authorType: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface Clarification {
+  id: string;
+  requirementId: string;
+  source: string;
+  blocking: boolean;
+  assignedRole: string;
+  status: string;
+  question: string;
+  whyItMatters: string | null;
+  interpretations: string | null;
+  recommendedOption: string | null;
+  createdAt: string;
+  messages: ClarificationMessage[];
+}
+
+export interface PendingDocumentDecision {
+  requirementId: string;
+  requirementKey: string;
+  documentId: string;
+  versionId: string;
+  fileName: string;
+  state: string;
+  reasonCode: string | null;
 }
 
 export interface NotificationItem {
