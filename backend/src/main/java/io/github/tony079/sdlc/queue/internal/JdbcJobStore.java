@@ -277,7 +277,8 @@ public class JdbcJobStore implements JobQueue {
         meters.counter("sdlc.jobs.succeeded", "job_type", job.jobType()).increment();
     }
 
-    private record Policy(int retryableFailures, int maxAttempts, int base, int cap) {
+    /** {@code windowExceeded}: the job is older than its type's maximum retry window (O-27). */
+    private record Policy(int retryableFailures, int maxAttempts, int base, int cap, boolean windowExceeded) {
     }
 
     /**
@@ -287,11 +288,12 @@ public class JdbcJobStore implements JobQueue {
      */
     public void finishFailure(ClaimedJob job, JobFailure failure) {
         Policy policy = jdbc.sql("""
-                SELECT retryable_failure_count, max_attempts, backoff_base_seconds, backoff_cap_seconds
-                FROM app.job WHERE id = :id
+                SELECT j.retryable_failure_count, j.max_attempts, j.backoff_base_seconds, j.backoff_cap_seconds,
+                       clock_timestamp() > j.created_at + make_interval(secs => t.max_retry_seconds)
+                FROM app.job j JOIN app.job_type t ON t.code = j.job_type WHERE j.id = :id
                 """)
                 .param("id", job.id())
-                .query((rs, n) -> new Policy(rs.getInt(1), rs.getInt(2), rs.getInt(3), rs.getInt(4)))
+                .query((rs, n) -> new Policy(rs.getInt(1), rs.getInt(2), rs.getInt(3), rs.getInt(4), rs.getBoolean(5)))
                 .single();
         switch (failure.kind()) {
             case FATAL -> {
@@ -303,6 +305,8 @@ public class JdbcJobStore implements JobQueue {
                 int failures = policy.retryableFailures() + 1;
                 if (failures >= policy.maxAttempts()) {
                     markDead(job, "RETRIES_EXHAUSTED", failure.code(), failures);
+                } else if (policy.windowExceeded()) {
+                    markDead(job, "RETRY_WINDOW_EXCEEDED", failure.code(), failures);
                 } else {
                     requeue(job, failure.code(), backoffSeconds(policy.base(), policy.cap(), failures), failures, false);
                     meters.counter("sdlc.jobs.retried", "job_type", job.jobType()).increment();

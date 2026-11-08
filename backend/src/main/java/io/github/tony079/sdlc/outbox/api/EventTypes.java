@@ -36,6 +36,12 @@ public final class EventTypes {
     public static final String CLARIFICATION_OPENED = "ClarificationOpened";
     public static final String CLARIFICATION_ANSWERED = "ClarificationAnswered";
     public static final String DOCUMENT_DECISION_RECORDED = "DocumentDecisionRecorded";
+    public static final String RELEASE_APPROVED = "ReleaseApproved";
+    public static final String ADMIN_RETRY_REQUESTED = "AdminRetryRequested";
+    public static final String ADMIN_RETRY_COMPLETED = "AdminRetryCompleted";
+    public static final String ADMIN_RETRY_REJECTED = "AdminRetryRejected";
+    public static final String CHANGE_REQUEST_SUBMITTED = "ChangeRequestSubmitted";
+    public static final String CHANGE_REQUEST_ACCEPTED = "ChangeRequestAccepted";
 
     private static final Map<String, Integer> VERSIONS = Map.ofEntries(
             Map.entry(REQUIREMENT_SUBMITTED, 1),
@@ -65,7 +71,13 @@ public final class EventTypes {
             Map.entry(APPROVAL_INVALIDATED, 1),
             Map.entry(CLARIFICATION_OPENED, 1),
             Map.entry(CLARIFICATION_ANSWERED, 1),
-            Map.entry(DOCUMENT_DECISION_RECORDED, 1));
+            Map.entry(DOCUMENT_DECISION_RECORDED, 1),
+            Map.entry(RELEASE_APPROVED, 1),
+            Map.entry(ADMIN_RETRY_REQUESTED, 1),
+            Map.entry(ADMIN_RETRY_COMPLETED, 1),
+            Map.entry(ADMIN_RETRY_REJECTED, 1),
+            Map.entry(CHANGE_REQUEST_SUBMITTED, 1),
+            Map.entry(CHANGE_REQUEST_ACCEPTED, 1));
 
     private EventTypes() {
     }

@@ -43,6 +43,21 @@ class AnalysisStarter {
         return start(requirementId, "[]");
     }
 
+    /** O-27 operator retry (worker): T26 with a new input set from the current inputs. Requires FAILED. */
+    Optional<UUID> startRetry(UUID requirementId) {
+        if (workflow.lockState(requirementId) != WorkflowState.FAILED) {
+            return Optional.empty();
+        }
+        Optional<InputSets.Draft> draft = inputSets.evaluate(requirementId, "[]");
+        if (draft.isEmpty()) {
+            return Optional.empty();
+        }
+        UUID inputSetId = repository.insertInputSet(TenantContext.requireTenant(), draft.get(),
+                json.writeValueAsString(draft.get().documents()));
+        return workflow.retryAnalysis(requirementId, draft.get().inputHash(),
+                Map.of("inputSetId", inputSetId.toString()));
+    }
+
     /** Requires the instance locked by the caller and a state that allows T11/T15. */
     Optional<UUID> start(UUID requirementId, String correctionsJson) {
         Optional<InputSets.Draft> draft = inputSets.evaluate(requirementId, correctionsJson);

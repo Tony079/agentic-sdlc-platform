@@ -31,10 +31,15 @@ class ReviewController {
 
     private final ReviewService reviews;
     private final ClientBrdService client;
+    private final ReleaseService releases;
+    private final OperatorRetryService retries;
 
-    ReviewController(ReviewService reviews, ClientBrdService client) {
+    ReviewController(ReviewService reviews, ClientBrdService client, ReleaseService releases,
+                     OperatorRetryService retries) {
         this.reviews = reviews;
         this.client = client;
+        this.releases = releases;
+        this.retries = retries;
     }
 
     @GetMapping("/api/v1/staff/reviews")
@@ -45,6 +50,34 @@ class ReviewController {
     @GetMapping("/api/v1/staff/brd-versions/{id}")
     ReviewDetail detail(@PathVariable UUID id) {
         return reviews.detail(id);
+    }
+
+    @GetMapping("/api/v1/staff/failed-jobs")
+    List<OperatorRetryService.DeadJob> deadJobs() {
+        return retries.deadJobs();
+    }
+
+    @PostMapping("/api/v1/staff/failed-jobs/{id}/retry")
+    Map<String, String> retry(@PathVariable UUID id, @Valid @RequestBody RetryRequest body) {
+        return retries.requestRetry(id, body.reason());
+    }
+
+    record RetryRequest(@jakarta.validation.constraints.Size(max = 2000) String reason) {
+    }
+
+    @GetMapping("/api/v1/staff/releases")
+    List<ReleaseService.PendingRelease> pendingReleases() {
+        return releases.pending();
+    }
+
+    @PostMapping("/api/v1/staff/brd-versions/{id}/release")
+    ReleaseService.ReleaseView approveRelease(@PathVariable UUID id, @Valid @RequestBody ReleaseRequest body) {
+        return releases.approve(id, body.expectedContentHash(), body.expectedCommitSha(), body.reason());
+    }
+
+    record ReleaseRequest(@jakarta.validation.constraints.Size(max = 64) String expectedContentHash,
+                          @jakarta.validation.constraints.Size(max = 40) String expectedCommitSha,
+                          @jakarta.validation.constraints.Size(max = 4000) String reason) {
     }
 
     @GetMapping("/api/v1/staff/brd-versions/{id}/diff")

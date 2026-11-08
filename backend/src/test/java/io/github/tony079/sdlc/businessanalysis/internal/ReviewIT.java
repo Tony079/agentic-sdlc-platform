@@ -82,6 +82,75 @@ class ReviewIT extends ApiIntegrationTest {
         return s;
     }
 
+    private Enrolled releaseManager(String tenant) {
+        Enrolled member = StaffFixtures.createEnrolled(StaffFixtures.uniqueEmail("release"), AnalysisScenario.PASSWORD);
+        StaffFixtures.assign(member.email(), tenant);
+        StaffFixtures.grant(member.email(), StaffCapability.RELEASE_APPROVE);
+        return member;
+    }
+
+    /** O-16: separation of duties, mandatory gates, binding to hash and commit; no automatic release. */
+    @Test
+    void releaseNeedsAReleaseManagerAndPassingGates() {
+        AnalysisScenario s = inReview();
+        Enrolled reviewerMember = reviewer("acme");
+        ApiClient reviewer = AnalysisScenario.staffSession(client(), reviewerMember, "acme", 0);
+        Map<String, Object> v1 = openVersion(s);
+        String versionId = (String) v1.get("id");
+        reviewer.post("/api/v1/staff/brd-versions/" + versionId + "/flags/" + flaggedKey(versionId) + "/acknowledge",
+                Map.of());
+        assertThat(approve(reviewer, versionId, v1.get("content_hash")).status()).isEqualTo(200);
+        s.drive();
+        String commit = s.repo.headSha();
+        Map<String, Object> body = Map.of("expectedContentHash", v1.get("content_hash"), "expectedCommitSha", commit,
+                "reason", "Release after review of the gates.");
+
+        // The scans of the pinned snapshot ran: the built-in secret scan completed; others are honestly UNAVAILABLE.
+        assertThat(admin.queryForList("""
+                SELECT r.kind || ':' || r.status FROM app.security_scan_run r JOIN app.analysis_input_set i
+                  ON i.snapshot_id = r.snapshot_id JOIN app.brd_version v ON v.input_set_id = i.id WHERE v.id = ?::uuid
+                """, String.class, versionId)).containsExactlyInAnyOrder("SECRET:COMPLETED", "DEPENDENCY:UNAVAILABLE",
+                "SAST:UNAVAILABLE");
+        // Without RELEASE_APPROVE: 403. The internal approver, even with the capability: separation of duties.
+        assertThat(reviewer.post("/api/v1/staff/brd-versions/" + versionId + "/release", body).status()).isEqualTo(403);
+        StaffFixtures.grant(reviewerMember.email(), StaffCapability.RELEASE_APPROVE);
+        assertThat(reviewer.post("/api/v1/staff/brd-versions/" + versionId + "/release", body).errorCode())
+                .isEqualTo("SEPARATION_OF_DUTIES");
+        ApiClient manager = AnalysisScenario.staffSession(client(), releaseManager("acme"), "acme", 0);
+        // Bound to the exact content hash and commit.
+        assertThat(manager.post("/api/v1/staff/brd-versions/" + versionId + "/release", Map.of(
+                "expectedContentHash", "0".repeat(64), "expectedCommitSha", commit,
+                "reason", "Release after review of the gates.")).errorCode()).isEqualTo("VERSION_CHANGED");
+        assertThat(manager.post("/api/v1/staff/brd-versions/" + versionId + "/release", Map.of(
+                "expectedContentHash", v1.get("content_hash"), "expectedCommitSha", "f".repeat(40),
+                "reason", "Release after review of the gates.")).errorCode()).isEqualTo("VERSION_CHANGED");
+        // A HIGH secret finding in the pinned snapshot blocks the release (recorded as a scanner result).
+        admin.update("""
+                INSERT INTO app.security_finding (tenant_id, scan_run_id, severity, rule_id, category, path, line, evidence)
+                SELECT r.tenant_id, r.id, 'HIGH', 'aws-access-key-id', 'SECRET', 'config.yml', 3, 'AKIA…(20 chars)'
+                FROM app.security_scan_run r JOIN app.analysis_input_set i ON i.snapshot_id = r.snapshot_id
+                JOIN app.brd_version v ON v.input_set_id = i.id WHERE v.id = ?::uuid AND r.kind = 'SECRET'
+                """, UUID.fromString(versionId));
+        Response blocked = manager.post("/api/v1/staff/brd-versions/" + versionId + "/release", body);
+        assertThat(blocked.errorCode()).isEqualTo("RELEASE_GATE_FAILED");
+        assertThat(blocked.body().toString()).contains("SECURITY_SCAN_SECRET");
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.release_approval WHERE brd_version_id = ?::uuid",
+                Integer.class, versionId)).isZero();
+        assertThat(admin.queryForObject("""
+                SELECT count(*) FROM app.audit_event WHERE action = 'RELEASE_GATE_FAILED' AND resource_id = ?::uuid
+                """, Integer.class, versionId)).isPositive();
+        s.drive();
+        assertThat(s.state()).isEqualTo("INTERNAL_APPROVED");
+        // The database refuses a release approval by the internal approver even without the API.
+        UUID reviewerId = reviewerMember.id();
+        assertThat(catchThrowable(() -> admin.update("""
+                INSERT INTO app.release_approval (tenant_id, brd_version_id, requirement_id, release_label, content_hash,
+                    commit_sha, approver_staff_id, reason, evidence)
+                SELECT tenant_id, id, requirement_id, 'brd-v1', content_hash, ?, ?, 'direct insert test', '[]'::jsonb
+                FROM app.brd_version WHERE id = ?::uuid
+                """, commit, reviewerId, versionId))).hasMessageContaining("internal approver");
+    }
+
     private Map<String, Object> openVersion(AnalysisScenario s) {
         return admin.queryForMap("""
                 SELECT id::text AS id, content_hash, version_no FROM app.brd_version
@@ -132,9 +201,29 @@ class ReviewIT extends ApiIntegrationTest {
                 """, versionId)).containsEntry("content_hash", v1.get("content_hash")).containsEntry("status", "VALID")
                 .containsEntry("decision", "APPROVED");
 
-        // Release T25 happens in the worker, separately from T1.
+        // O-16 MANUAL: internal approval alone never releases.
+        s.drive();
+        assertThat(s.state()).isEqualTo("INTERNAL_APPROVED");
+        assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId + "/brd").status()).isEqualTo(404);
+        // A Release Manager approves the release (bound to hash and commit); the worker executes T25 separately.
+        ApiClient manager = AnalysisScenario.staffSession(client(), releaseManager("acme"), "acme", 0);
+        Response pending = manager.get("/api/v1/staff/releases");
+        assertThat(pending.status()).isEqualTo(200);
+        var entry = pending.body().valueStream().filter(n -> n.path("brdVersionId").asString().equals(versionId))
+                .findFirst().orElseThrow();
+        Response releaseApproved = manager.post("/api/v1/staff/brd-versions/" + versionId + "/release", Map.of(
+                "expectedContentHash", entry.path("contentHash").asString(),
+                "expectedCommitSha", entry.path("commitSha").asString(),
+                "reason", "All gates passed; client may see v1."));
+        assertThat(releaseApproved.status()).as(releaseApproved.body().toString()).isEqualTo(200);
+        assertThat(admin.queryForObject("SELECT status FROM app.release_approval WHERE brd_version_id = ?::uuid",
+                String.class, versionId)).isEqualTo("APPROVED");
         s.drive();
         assertThat(s.state()).isEqualTo("SHARED_WITH_CLIENT");
+        assertThat(admin.queryForMap("""
+                SELECT status, commit_sha, release_label FROM app.release_approval WHERE brd_version_id = ?::uuid
+                """, versionId)).containsEntry("status", "EXECUTED").containsEntry("commit_sha", s.repo.headSha())
+                .containsEntry("release_label", "brd-v1");
         Response released = s.alice.get("/api/v1/requirements/" + s.requirementId + "/brd");
         assertThat(released.status()).isEqualTo(200);
         assertThat(released.body().path("version").path("status").asString()).isEqualTo("RELEASED");

@@ -48,6 +48,7 @@ final class TransitionTable {
             new Rule(Transition.T23_REJECT, WorkflowState.INTERNAL_REVIEW, WorkflowState.REJECTED),
             new Rule(Transition.T24_REANALYSE_REVISION, WorkflowState.REVISION_REQUESTED, WorkflowState.ANALYSING),
             new Rule(Transition.T25_RELEASE_TO_CLIENT, WorkflowState.INTERNAL_APPROVED, WorkflowState.SHARED_WITH_CLIENT),
+            new Rule(Transition.T26_ADMIN_RETRY, WorkflowState.FAILED, WorkflowState.ANALYSING),
             new Rule(Transition.T27_CLIENT_CHANGES, WorkflowState.SHARED_WITH_CLIENT, WorkflowState.CLIENT_CHANGES_REQUESTED),
             new Rule(Transition.T28_REANALYSE_CLIENT_CHANGES, WorkflowState.CLIENT_CHANGES_REQUESTED,
                     WorkflowState.ANALYSING),

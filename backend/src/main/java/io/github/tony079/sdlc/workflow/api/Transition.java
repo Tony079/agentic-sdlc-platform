@@ -56,6 +56,11 @@ public enum Transition {
     T24_REANALYSE_REVISION(true),
     /** T25: INTERNAL_APPROVED to SHARED_WITH_CLIENT, by the engine (release T2, separate from T1). */
     T25_RELEASE_TO_CLIENT(true),
+    /**
+     * T26: FAILED to ANALYSING, by the engine, after an operator retry request (O-27) was re-validated. BA jobs only;
+     * never reachable through the ordinary analysis start.
+     */
+    T26_ADMIN_RETRY(true),
     /** T27: SHARED_WITH_CLIENT to CLIENT_CHANGES_REQUESTED, by the client (C-09 provisional: requirement owner). */
     T27_CLIENT_CHANGES(false),
     /** T28: CLIENT_CHANGES_REQUESTED to ANALYSING, by the engine with the client's request as input. */

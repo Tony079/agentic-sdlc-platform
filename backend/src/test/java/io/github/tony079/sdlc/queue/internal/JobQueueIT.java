@@ -283,6 +283,19 @@ class JobQueueIT {
                 .hasMessageContaining("is final");
     }
 
+    /** O-27: a retryable failure after the job type's maximum retry window ends the job, even with attempts left. */
+    @Test
+    void retriesStopWhenTheRetryWindowIsExceeded() throws Exception {
+        UUID id = enqueue("scan:window");
+        try (var c = TestDatabase.get().adminConnection(); var st = c.createStatement()) {
+            st.execute("SET session_replication_role = replica");
+            st.executeUpdate("UPDATE app.job SET created_at = now() - interval '7 hours' WHERE id = '" + id + "'");
+        }
+        commitFailure(claimOne("w1"), JobFailure.retryable("SCANNER_ERROR", null));
+        assertThat(job(id)).containsEntry("status", "DEAD").containsEntry("dead_reason", "RETRY_WINDOW_EXCEEDED")
+                .containsEntry("retryable_failure_count", 1);
+    }
+
     @Test
     void fatalFailureDeadLettersAtOnceAndDependencyOutagesDoNotUseTheBudget() {
         UUID fatal = enqueue("scan:fatal");

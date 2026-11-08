@@ -32,15 +32,15 @@ class SchemaSecurityIT {
                 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
                 WHERE n.nspname = 'app' AND c.relkind = 'r' ORDER BY 1
                 """, String.class);
-        assertThat(tenantTables).containsExactly("analysis_input_set", "app_user", "approval", "audit_event",
+        assertThat(tenantTables).containsExactly("admin_retry_request", "analysis_input_set", "app_user", "approval", "audit_event",
                 "ba_result_pending", "brd", "brd_flag_ack", "brd_item", "brd_item_evidence", "brd_version",
                 "build_dependency", "clarification", "clarification_message", "client_change_request", "code_symbol",
                 "document", "document_chunk", "document_decision",
                 "document_extraction", "document_version",
                 "idempotency_record", "job", "job_attempt", "model_call_record", "notification",
-                "outbox_event", "processed_event", "project", "project_repository", "repository",
+                "outbox_event", "processed_event", "project", "project_repository", "release_approval", "repository",
                 "repository_file", "repository_link_request", "repository_snapshot", "requirement",
-                "requirement_closure", "requirement_key_counter", "requirement_repository", "requirement_repository_link", "requirement_revision", "retention_policy", "stage_execution",
+                "requirement_closure", "requirement_key_counter", "requirement_repository", "requirement_repository_link", "requirement_revision", "retention_policy", "security_finding", "security_scan_run", "stage_execution",
                 "workflow_instance", "workflow_transition");
 
         for (String table : tenantTables) {

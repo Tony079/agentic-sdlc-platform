@@ -94,6 +94,12 @@ public interface WorkflowEngine {
     /** Engine only: T25 release to the client (T2, separate from approval T1). Empty unless INTERNAL_APPROVED. */
     Optional<WorkflowState> release(UUID requirementId);
 
+    /**
+     * Engine only (worker): T26 FAILED to ANALYSING after an operator retry request was re-validated (O-27). Same stage,
+     * job and event as {@link #startAnalysis}; empty unless the requirement is FAILED.
+     */
+    Optional<UUID> retryAnalysis(UUID requirementId, String inputHash, Map<String, Object> jobPayload);
+
     /** Engine only: T19 after the BA job is dead or fatal. Empty if the requirement is no longer ANALYSING. */
     Optional<WorkflowState> failAnalysis(UUID requirementId);
 }

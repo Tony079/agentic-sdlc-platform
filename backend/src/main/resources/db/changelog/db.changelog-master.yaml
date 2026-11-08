@@ -43,3 +43,7 @@ databaseChangeLog:
   - include: { file: changes/0025-tenant-lifecycle-retention.sql, relativeToChangelogFile: true }
   # O-13 (2026-11-08): two-person, time-limited, single-use administrator bootstrap ceremony.
   - include: { file: changes/0026-admin-bootstrap-ceremony.sql, relativeToChangelogFile: true }
+  # O-27 retry window and operator retry (T26), O-16 manual release, O-03 security scans, O-08 feature flags.
+  - include: { file: changes/0027-retry-release-scan-flags.sql, relativeToChangelogFile: true }
+  # C-17 (2026-11-08): security alert rules, deduplication, rate limit, email/webhook delivery.
+  - include: { file: changes/0028-security-alerting.sql, relativeToChangelogFile: true }

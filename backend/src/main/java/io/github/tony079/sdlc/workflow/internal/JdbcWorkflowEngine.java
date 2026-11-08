@@ -300,6 +300,21 @@ class JdbcWorkflowEngine implements WorkflowEngine {
         if (transition == null) {
             return Optional.empty();
         }
+        return Optional.of(enterAnalysis(requirementId, current, transition, inputHash, jobPayload));
+    }
+
+    @Override
+    public Optional<UUID> retryAnalysis(UUID requirementId, String inputHash, Map<String, Object> jobPayload) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.FAILED) {
+            return Optional.empty();
+        }
+        return Optional.of(enterAnalysis(requirementId, current, Transition.T26_ADMIN_RETRY, inputHash, jobPayload));
+    }
+
+    private UUID enterAnalysis(UUID requirementId, Current current, Transition transition, String inputHash,
+                               Map<String, Object> jobPayload) {
         applyLocked(requirementId, current, transition, null);
         int attempt = jdbc.sql("""
                 SELECT coalesce(max(attempt_no), 0) + 1 FROM app.stage_execution
@@ -317,7 +332,7 @@ class JdbcWorkflowEngine implements WorkflowEngine {
         outbox.publish(AGGREGATE, requirementId, EventTypes.ANALYSIS_STARTED,
                 Map.of("requirementId", requirementId.toString(), "stageExecutionId", stage.toString()));
         audit.record(AuditAction.ANALYSIS_STARTED, AGGREGATE, requirementId, AuditResult.SUCCESS);
-        return Optional.of(stage);
+        return stage;
     }
 
     @Override

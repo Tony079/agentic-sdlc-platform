@@ -147,7 +147,32 @@ class GitHubBroker {
      * An installation token narrowed to one repository and read-only permissions. Refused if GitHub grants anything
      * beyond Contents: Read and Metadata: Read.
      */
+    private io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder securityEvents;
+
+    /** C-17: credential and installation-token failures become security events (worker; optional in unit tests). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setSecurityEvents(io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder securityEvents) {
+        this.securityEvents = securityEvents;
+    }
+
     Token token(Installation installation, String repositoryName) throws GitHubException {
+        try {
+            return exchangeToken(installation, repositoryName);
+        } catch (GitHubException e) {
+            if (securityEvents != null && (e.kind() == Kind.ACCESS_DENIED || "GITHUB_TOKEN_SCOPE".equals(e.code()))) {
+                securityEvents.record(
+                        io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder.SecurityEventType
+                                .GITHUB_CREDENTIAL_FAILURE,
+                        "GITHUB_TOKEN_SCOPE".equals(e.code())
+                                ? io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder.Severity.HIGH
+                                : io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder.Severity.MEDIUM,
+                        "github-app", e.code());
+            }
+            throw e;
+        }
+    }
+
+    private Token exchangeToken(Installation installation, String repositoryName) throws GitHubException {
         requireEnabled();
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("repositories", List.of(repositoryName));

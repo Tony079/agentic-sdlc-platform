@@ -23,6 +23,12 @@ public interface StaffAccess {
      */
     UUID requireCapabilityForTenant(StaffCapability capability, UUID tenantId);
 
+    /**
+     * Platform-level operations with no tenant data (feature flags, O-08): active staff with MFA holding
+     * {@code capability}. Returns the staff id.
+     */
+    UUID requirePlatformCapability(StaffCapability capability);
+
     record StaffContext(UUID staffId, UUID tenantId) {
     }
 }
