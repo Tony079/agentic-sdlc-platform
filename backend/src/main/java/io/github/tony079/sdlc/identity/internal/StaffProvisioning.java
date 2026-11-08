@@ -1,7 +1,11 @@
 package io.github.tony079.sdlc.identity.internal;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.HexFormat;
 import java.util.Locale;
 import java.util.OptionalLong;
 import java.util.UUID;
@@ -42,15 +46,32 @@ class StaffProvisioning {
     private final MfaCipher cipher;
     private final String environment;
     private final Clock clock;
+    private final boolean productionBootstrapEnabled;
+    private final String authorizationSha256;
+
+    static final Duration MAX_CEREMONY_TTL = Duration.ofHours(24);
 
     StaffProvisioning(JdbcClient jdbc, PlatformTransactionManager transactionManager, PasswordEncoder passwordEncoder,
                       MfaCipher cipher, String environment, Clock clock) {
+        this(jdbc, transactionManager, passwordEncoder, cipher, environment, clock, false, null);
+    }
+
+    /**
+     * @param productionBootstrapEnabled O-13: the INITIAL/RECOVERY ceremony stays disabled unless this is true
+     * @param authorizationSha256        SHA-256 (hex) of the one-time ceremony authorisation the owner hands to the
+     *                                   operator out of band; without it no ceremony can be opened
+     */
+    StaffProvisioning(JdbcClient jdbc, PlatformTransactionManager transactionManager, PasswordEncoder passwordEncoder,
+                      MfaCipher cipher, String environment, Clock clock, boolean productionBootstrapEnabled,
+                      String authorizationSha256) {
         this.jdbc = jdbc;
         this.tx = new TransactionTemplate(transactionManager);
         this.passwordEncoder = passwordEncoder;
         this.cipher = cipher;
         this.environment = environment == null ? "" : environment.trim().toLowerCase(Locale.ROOT);
         this.clock = clock;
+        this.productionBootstrapEnabled = productionBootstrapEnabled;
+        this.authorizationSha256 = authorizationSha256 == null ? "" : authorizationSha256.trim().toLowerCase(Locale.ROOT);
     }
 
     boolean developmentOrTest() {
@@ -98,10 +119,188 @@ class StaffProvisioning {
             UUID a = proveAdminPresence(first, false);
             UUID b = proveAdminPresence(second, false);
             distinct(a, b);
-            insertGrant(a, StaffCapability.STAFF_ADMIN, null, b, true);
-            insertGrant(b, StaffCapability.STAFF_ADMIN, null, a, true);
+            // Development/test: both participants are present in this call; the same ceremony record is used.
+            UUID ceremony = insertCeremony("DEVELOPMENT", a, b, Duration.ofMinutes(10));
+            jdbc.sql("""
+                    UPDATE app.staff_bootstrap_ceremony SET approved_a_at = clock_timestamp(), approved_b_at = clock_timestamp()
+                    WHERE id = :id
+                    """).param("id", ceremony).update();
+            completeCeremony(ceremony, a, b);
             audit(null, "STAFF_BOOTSTRAP", "STAFF_USER", a + "," + b, null);
         });
+    }
+
+    // --- O-13 production ceremony ----------------------------------------------------------------------------
+
+    /**
+     * Opens an INITIAL or RECOVERY ceremony naming two distinct, MFA-enrolled participants. Refused unless production
+     * bootstrap is enabled by configuration and the operator presents the one-time authorisation whose SHA-256 is
+     * configured. The database additionally refuses INITIAL once any administrator exists, RECOVERY while two active
+     * administrators exist, a second open ceremony, and a lifetime over 24 hours. Returns the ceremony id.
+     */
+    UUID openCeremony(String purpose, String firstEmail, String secondEmail, Duration ttl, String authorization) {
+        if (!"INITIAL".equals(purpose) && !"RECOVERY".equals(purpose)) {
+            throw new ProvisioningException("purpose must be INITIAL or RECOVERY");
+        }
+        if (!productionBootstrapEnabled || authorizationSha256.isEmpty()) {
+            refuse("CEREMONY_DISABLED");
+            throw new ProvisioningException("the production bootstrap ceremony is disabled: set "
+                    + "sdlc.provisioning.production-bootstrap.enabled and its authorization-sha256");
+        }
+        if (authorization == null || !MessageDigest.isEqual(sha256(authorization).getBytes(StandardCharsets.US_ASCII),
+                authorizationSha256.getBytes(StandardCharsets.US_ASCII))) {
+            refuse("CEREMONY_AUTHORIZATION_INVALID");
+            throw new ProvisioningException("ceremony authorisation not accepted");
+        }
+        if (ttl == null || ttl.isNegative() || ttl.isZero() || ttl.compareTo(MAX_CEREMONY_TTL) > 0) {
+            throw new ProvisioningException("ceremony lifetime must be between 1 minute and 24 hours");
+        }
+        expireLapsed();
+        try {
+            return tx.execute(status -> {
+                UUID a = staffId(firstEmail);
+                UUID b = staffId(secondEmail);
+                distinct(a, b);
+                UUID id = insertCeremony(purpose, a, b, ttl);
+                audit(null, "BOOTSTRAP_CEREMONY_OPENED", "BOOTSTRAP_CEREMONY", id.toString(), null);
+                securityEvent("ADMIN_BOOTSTRAP", "HIGH", null, "OPENED:" + purpose + ":" + id);
+                return id;
+            });
+        } catch (org.springframework.dao.DataAccessException e) {
+            refuse("CEREMONY_REFUSED");
+            throw new ProvisioningException("the ceremony cannot be opened now (closed, already open or invalid)");
+        }
+    }
+
+    /**
+     * One participant approves, authenticated with their own password and current TOTP code. The first approval is
+     * recorded; the second (by the other participant, before expiry) grants STAFF_ADMIN to both and completes the
+     * ceremony, which can never be used again. Non-participants, repeated approvals and expired ceremonies are refused.
+     */
+    String approveCeremony(UUID ceremonyId, String email, String password, String totpCode) {
+        expireLapsed();
+        try {
+            return tx.execute(status -> {
+                record Ceremony(String purpose, UUID a, UUID b, boolean approvedA, boolean approvedB, String state,
+                                boolean expired) {
+                }
+                Ceremony c = jdbc.sql("""
+                        SELECT purpose, participant_a, participant_b, approved_a_at IS NOT NULL, approved_b_at IS NOT NULL,
+                               status, clock_timestamp() >= expires_at FROM app.staff_bootstrap_ceremony WHERE id = :id
+                        FOR UPDATE
+                        """).param("id", ceremonyId).query((rs, n) -> new Ceremony(rs.getString(1),
+                        rs.getObject(2, UUID.class), rs.getObject(3, UUID.class), rs.getBoolean(4), rs.getBoolean(5),
+                        rs.getString(6), rs.getBoolean(7))).optional()
+                        .orElseThrow(() -> new ProvisioningException("ceremony approval refused"));
+                if ("DEVELOPMENT".equals(c.purpose()) || !"OPEN".equals(c.state()) || c.expired()) {
+                    throw new ProvisioningException("ceremony approval refused");
+                }
+                UUID participant = proveParticipant(email, password, totpCode);
+                boolean isA = participant.equals(c.a());
+                if (!isA && !participant.equals(c.b())) {
+                    throw new ProvisioningException("ceremony approval refused");
+                }
+                if ((isA && c.approvedA()) || (!isA && c.approvedB())) {
+                    throw new ProvisioningException("this participant has already approved");
+                }
+                jdbc.sql("UPDATE app.staff_bootstrap_ceremony SET " + (isA ? "approved_a_at" : "approved_b_at")
+                        + " = clock_timestamp() WHERE id = :id").param("id", ceremonyId).update();
+                audit(participant, "BOOTSTRAP_CEREMONY_APPROVED", "BOOTSTRAP_CEREMONY", ceremonyId.toString(), null);
+                securityEvent("ADMIN_BOOTSTRAP", "HIGH", participant.toString(), "APPROVED:" + ceremonyId);
+                if ((isA ? c.approvedB() : c.approvedA())) {
+                    completeCeremony(ceremonyId, c.a(), c.b());
+                    audit(participant, "BOOTSTRAP_CEREMONY_COMPLETED", "BOOTSTRAP_CEREMONY", ceremonyId.toString(), null);
+                    securityEvent("ADMIN_BOOTSTRAP", "HIGH", participant.toString(), "COMPLETED:" + ceremonyId);
+                    return "COMPLETED";
+                }
+                return "APPROVED";
+            });
+        } catch (ProvisioningException e) {
+            refuse("CEREMONY_APPROVAL_REFUSED");
+            throw e;
+        } catch (org.springframework.dao.DataAccessException e) {
+            refuse("CEREMONY_APPROVAL_REFUSED");
+            throw new ProvisioningException("ceremony approval refused");
+        }
+    }
+
+    /** A lapsed ceremony becomes EXPIRED (final), so it can never be completed and never blocks a new one. */
+    private void expireLapsed() {
+        tx.executeWithoutResult(status -> {
+            int expired = jdbc.sql("""
+                    UPDATE app.staff_bootstrap_ceremony SET status = 'EXPIRED'
+                    WHERE status = 'OPEN' AND clock_timestamp() >= expires_at
+                    """).update();
+            if (expired > 0) {
+                audit(null, "BOOTSTRAP_CEREMONY_EXPIRED", "BOOTSTRAP_CEREMONY", String.valueOf(expired), null);
+            }
+        });
+    }
+
+    private UUID insertCeremony(String purpose, UUID a, UUID b, Duration ttl) {
+        return jdbc.sql("""
+                INSERT INTO app.staff_bootstrap_ceremony (purpose, participant_a, participant_b, expires_at, operator)
+                VALUES (:purpose, :a, :b, clock_timestamp() + make_interval(secs => :seconds), current_user) RETURNING id
+                """).param("purpose", purpose).param("a", a).param("b", b).param("seconds", ttl.toSeconds())
+                .query(UUID.class).single();
+    }
+
+    /** Grants STAFF_ADMIN to each participant not already an administrator (RECOVERY keeps the survivor's grant). */
+    private void completeCeremony(UUID ceremony, UUID a, UUID b) {
+        for (UUID[] pair : new UUID[][] {{a, b}, {b, a}}) {
+            if (Boolean.TRUE.equals(jdbc.sql("SELECT app.staff_is_admin(:id)").param("id", pair[0])
+                    .query(Boolean.class).single())) {
+                continue;
+            }
+            jdbc.sql("""
+                    INSERT INTO app.staff_capability_grant (staff_id, capability, bootstrap, approved_by, operator, ceremony_id)
+                    VALUES (:staff, 'STAFF_ADMIN', true, :approver, current_user, :ceremony)
+                    """).param("staff", pair[0]).param("approver", pair[1]).param("ceremony", ceremony).update();
+            securityEvent("PRIVILEGE_CHANGED", "HIGH", pair[1].toString(), "STAFF_ADMIN:" + pair[0]);
+        }
+        jdbc.sql("UPDATE app.staff_bootstrap_ceremony SET status = 'COMPLETED', completed_at = clock_timestamp() WHERE id = :id")
+                .param("id", ceremony).update();
+    }
+
+    /** Password and current TOTP of an active, enrolled staff member (no administrator grant required). */
+    private UUID proveParticipant(String email, String password, String totpCode) {
+        String hash = jdbc.sql("SELECT password_hash FROM app.staff_user WHERE lower(email) = lower(:email)")
+                .param("email", email == null ? "" : email.trim()).query(String.class).optional().orElse(null);
+        if (hash == null || password == null || !passwordEncoder.matches(password, hash)) {
+            throw new ProvisioningException("ceremony approval refused");
+        }
+        try {
+            return proveAdminPresence(new Admin(email, totpCode), false);
+        } catch (ProvisioningException e) {
+            throw new ProvisioningException("ceremony approval refused");
+        }
+    }
+
+    private void refuse(String reason) {
+        tx.executeWithoutResult(status -> {
+            jdbc.sql("""
+                    INSERT INTO app.platform_audit_event (action, target_type, target_ref, result)
+                    VALUES ('BOOTSTRAP_CEREMONY_REFUSED', 'BOOTSTRAP_CEREMONY', :reason, 'DENIED')
+                    """).param("reason", reason).update();
+            securityEvent("ADMIN_BOOTSTRAP", "HIGH", null, "REFUSED:" + reason);
+        });
+    }
+
+    private void securityEvent(String type, String severity, String actor, String target) {
+        jdbc.sql("""
+                INSERT INTO app.platform_security_event (type, severity, actor_ref, target_ref)
+                VALUES (:type, :severity, :actor, :target)
+                """).param("type", type).param("severity", severity).param("actor", actor)
+                .param("target", target.length() > 128 ? target.substring(0, 128) : target).update();
+    }
+
+    static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.strip().getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     void grantCapability(String staffEmail, StaffCapability capability, Admin requester, Admin approver) {
@@ -112,6 +311,7 @@ class StaffProvisioning {
             distinct(r, p, grantee);
             insertGrant(grantee, capability, r, p, false);
             audit(r, "STAFF_CAPABILITY_GRANTED", "STAFF_USER", grantee + ":" + capability.name(), null);
+            securityEvent("PRIVILEGE_CHANGED", "HIGH", r.toString(), "GRANT:" + capability.name() + ":" + grantee);
         });
     }
 
@@ -128,6 +328,7 @@ class StaffProvisioning {
                     """).param("staff", assignee).param("tenant", tenant).param("requester", r).param("approver", p)
                     .update();
             audit(r, "STAFF_TENANT_ASSIGNED", "STAFF_USER", assignee.toString(), tenant);
+            securityEvent("PRIVILEGE_CHANGED", "MEDIUM", r.toString(), "ASSIGN:" + assignee);
         });
     }
 
@@ -143,6 +344,7 @@ class StaffProvisioning {
                 throw new ProvisioningException("no active grant to revoke");
             }
             audit(a, "STAFF_CAPABILITY_REVOKED", "STAFF_USER", target + ":" + capability.name(), null);
+            securityEvent("PRIVILEGE_CHANGED", "MEDIUM", a.toString(), "REVOKE:" + capability.name() + ":" + target);
         });
     }
 
@@ -159,6 +361,7 @@ class StaffProvisioning {
                 throw new ProvisioningException("no active assignment to revoke");
             }
             audit(a, "STAFF_TENANT_REVOKED", "STAFF_USER", target.toString(), tenant);
+            securityEvent("PRIVILEGE_CHANGED", "MEDIUM", a.toString(), "UNASSIGN:" + target);
         });
     }
 
@@ -168,6 +371,7 @@ class StaffProvisioning {
             UUID a = proveAdminPresence(admin, true);
             jdbc.sql("UPDATE app.staff_user SET status = 'DISABLED' WHERE id = :id").param("id", target).update();
             audit(a, "STAFF_DISABLED", "STAFF_USER", target.toString(), null);
+            securityEvent("PRIVILEGE_CHANGED", "MEDIUM", a.toString(), "DISABLE:" + target);
         });
     }
 
@@ -185,6 +389,7 @@ class StaffProvisioning {
                     WHERE id = :id
                     """).param("seconds", window.toSeconds()).param("id", target).update();
             audit(r, "STAFF_MFA_RESET", "STAFF_USER", target.toString(), null);
+            securityEvent("PRIVILEGE_CHANGED", "HIGH", r.toString(), "MFA_RESET:" + target);
         });
     }
 

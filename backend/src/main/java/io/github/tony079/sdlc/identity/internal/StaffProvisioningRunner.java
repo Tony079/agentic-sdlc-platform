@@ -30,6 +30,9 @@ import org.springframework.transaction.PlatformTransactionManager;
  * <pre>
  * create-staff --email=E --display-name=N [--enrolment-hours=72]          (password read from standard input)
  * bootstrap-admins --first=E --first-code=C --second=E --second-code=C     (development/test only)
+ * bootstrap-ceremony-open --purpose=INITIAL|RECOVERY --first=E --second=E [--ttl-minutes=60]
+ *                                                    (O-13; one-time authorisation read from standard input)
+ * bootstrap-ceremony-approve --ceremony=ID --staff=E --code=C  (participant's own password from standard input)
  * grant-capability --staff=E --capability=REPOSITORY_REGISTER|STAFF_ADMIN --requester=E --requester-code=C
  *                  --approver=E --approver-code=C
  * assign-tenant --staff=E --tenant=SLUG --requester=E --requester-code=C --approver=E --approver-code=C
@@ -51,9 +54,11 @@ class StaffProvisioningRunner implements ApplicationRunner {
 
     StaffProvisioningRunner(JdbcClient jdbc, PlatformTransactionManager transactionManager,
                             PasswordEncoder passwordEncoder, MfaCipher cipher,
-                            @Value("${sdlc.provisioning.environment:}") String environment) {
+                            @Value("${sdlc.provisioning.environment:}") String environment,
+                            @Value("${sdlc.provisioning.production-bootstrap.enabled:false}") boolean ceremonyEnabled,
+                            @Value("${sdlc.provisioning.production-bootstrap.authorization-sha256:}") String authorization) {
         this.provisioning = new StaffProvisioning(jdbc, transactionManager, passwordEncoder, cipher, environment,
-                Clock.systemUTC());
+                Clock.systemUTC(), ceremonyEnabled, authorization);
     }
 
     @Override
@@ -71,6 +76,20 @@ class StaffProvisioningRunner implements ApplicationRunner {
                 LOG.info("Staff member created: {}", id);
             }
             case "bootstrap-admins" -> provisioning.bootstrapAdmins(admin(args, "first"), admin(args, "second"));
+            case "bootstrap-ceremony-open" -> {
+                String authorization = readPassword();
+                List<String> ttl = args.getOptionValues("ttl-minutes");
+                Duration lifetime = Duration.ofMinutes(ttl == null || ttl.isEmpty() ? 60 : Long.parseLong(ttl.get(0)));
+                var id = provisioning.openCeremony(one(args, "purpose").toUpperCase(Locale.ROOT), one(args, "first"),
+                        one(args, "second"), lifetime, authorization);
+                LOG.info("Bootstrap ceremony opened: {}", id);
+            }
+            case "bootstrap-ceremony-approve" -> {
+                String password = readPassword();
+                LOG.info("Bootstrap ceremony: {}", provisioning.approveCeremony(
+                        java.util.UUID.fromString(one(args, "ceremony")), one(args, "staff"), password,
+                        one(args, "code")));
+            }
             case "grant-capability" -> provisioning.grantCapability(one(args, "staff"), capability(args),
                     admin(args, "requester"), admin(args, "approver"));
             case "assign-tenant" -> provisioning.assignTenant(one(args, "staff"), one(args, "tenant"),

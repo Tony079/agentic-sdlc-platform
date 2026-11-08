@@ -38,11 +38,11 @@ public final class TestDatabase {
     private final String adminUser;
     private final String adminPassword;
     private final String databaseName;
-    private final String appPassword = randomSecret();
-    private final String migratorPassword = randomSecret();
-    private final String workerPassword = randomSecret();
-    private final String provisionerPassword = randomSecret();
-    private final String retentionPassword = randomSecret();
+    private final String appPassword;
+    private final String migratorPassword;
+    private final String workerPassword;
+    private final String provisionerPassword;
+    private final String retentionPassword;
     /** Staff MFA encryption key for the test run (random, never committed). */
     public static final String MFA_KEY = java.util.Base64.getEncoder().encodeToString(randomBytes(32));
 
@@ -51,6 +51,34 @@ public final class TestDatabase {
         this.adminUser = adminUser;
         this.adminPassword = adminPassword;
         this.databaseName = "sdlc_it_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        this.appPassword = randomSecret();
+        this.migratorPassword = randomSecret();
+        this.workerPassword = randomSecret();
+        this.provisionerPassword = randomSecret();
+        this.retentionPassword = randomSecret();
+    }
+
+    /** A second database on the same cluster; login roles are cluster-wide, so their passwords are shared. */
+    private TestDatabase(TestDatabase source) {
+        this.adminBaseUrl = source.adminBaseUrl;
+        this.adminUser = source.adminUser;
+        this.adminPassword = source.adminPassword;
+        this.databaseName = "sdlc_it_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        this.appPassword = source.appPassword;
+        this.migratorPassword = source.migratorPassword;
+        this.workerPassword = source.workerPassword;
+        this.provisionerPassword = source.provisionerPassword;
+        this.retentionPassword = source.retentionPassword;
+    }
+
+    /**
+     * A new, fully migrated database (TEST ONLY), for tests that need a state the shared database can no longer have,
+     * such as "no administrator has ever existed" for the O-13 production ceremony.
+     */
+    public static synchronized TestDatabase fresh() {
+        TestDatabase db = new TestDatabase(get());
+        db.prepare();
+        return db;
     }
 
     public static synchronized TestDatabase get() {

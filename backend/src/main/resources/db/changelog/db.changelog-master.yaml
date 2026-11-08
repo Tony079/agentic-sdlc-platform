@@ -41,3 +41,5 @@ databaseChangeLog:
   - include: { file: changes/0024-manual-intake-closure-capabilities.sql, relativeToChangelogFile: true }
   # O-25 (2026-11-08): two-person tenant soft deletion and restoration; retention classes.
   - include: { file: changes/0025-tenant-lifecycle-retention.sql, relativeToChangelogFile: true }
+  # O-13 (2026-11-08): two-person, time-limited, single-use administrator bootstrap ceremony.
+  - include: { file: changes/0026-admin-bootstrap-ceremony.sql, relativeToChangelogFile: true }

@@ -15,3 +15,8 @@ sdlc:
   provisioning:
     # development or test enables bootstrap-admins; any other value (including empty) refuses it (O-13).
     environment: ${SDLC_PROVISIONING_ENVIRONMENT:}
+    # O-13 production ceremony: disabled until the owner supplies both values. The authorisation itself is never
+    # stored; only its SHA-256 (hex) is configured, and the operator types the authorisation on standard input.
+    production-bootstrap:
+      enabled: ${SDLC_PROVISIONING_PRODUCTION_BOOTSTRAP_ENABLED:false}
+      authorization-sha256: ${SDLC_PROVISIONING_BOOTSTRAP_AUTHORIZATION_SHA256:}
