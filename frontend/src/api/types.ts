@@ -334,3 +334,42 @@ export interface NotificationItem {
   createdAt: string;
   readAt: string | null;
 }
+
+export interface ScopeDiffItem {
+  field: string;
+  area: string;
+  changeType: 'ADDITION' | 'MODIFICATION' | 'REMOVAL';
+  recommendedPriority: string;
+  priority: string;
+  before: string | null;
+  after: string | null;
+  adjustmentReason: string | null;
+}
+
+export interface ChangeRequest {
+  id: string;
+  requirementId: string;
+  status: string;
+  requestedChange: string;
+  justification: string;
+  expectedImpact: string;
+  submittedAt: string;
+  scopeAssessment: string | null;
+  effortEstimate: string | null;
+  timelineImpact: string | null;
+  technicalImpact: string | null;
+  reviewNote: string | null;
+  decisionNote: string | null;
+  baselineVersion: number;
+  diff: ScopeDiffItem[];
+}
+
+export interface TenantLifecycleRequest {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  kind: 'DELETE' | 'RESTORE';
+  status: string;
+  reason: string;
+  requestedAt: string;
+}

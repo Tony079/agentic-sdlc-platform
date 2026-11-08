@@ -90,6 +90,9 @@ export function StaffHomePage() {
     <section>
       <h1>Staff workspace</h1>
       <p>
+        <Link to="/staff/operations">Operations: manual intake, change requests, releases, retries, flags</Link>
+      </p>
+      <p>
         {staff.displayName} · <button type="button" onClick={() => void signOut()}>Sign out</button>
       </p>
       <label>

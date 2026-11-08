@@ -188,3 +188,28 @@ dl.content dd {
   background: #fce8e6;
   text-decoration: line-through;
 }
+
+table.diff {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+table.diff td,
+table.diff th {
+  border: 1px solid #ccc;
+  padding: 0.25rem 0.5rem;
+  vertical-align: top;
+  text-align: left;
+}
+
+.diff-added-cell {
+  background: #e6f4ea;
+}
+
+.diff-removed-cell {
+  background: #fce8e6;
+}
+
+.inline-form input {
+  width: 14rem;
+}

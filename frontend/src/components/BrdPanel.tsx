@@ -38,7 +38,7 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
     try {
       await api.post(`/api/v1/requirements/${requirementId}/client-changes`, { text: text.trim() });
       setText('');
-      setMessage('Your change request was sent. A new BRD version will be prepared.');
+      setMessage('Your change request was submitted. It is assessed and reviewed, and a Client Approver decides; nothing changes until it is accepted.');
       await queryClient.invalidateQueries();
     } catch {
       setMessage('The change request could not be sent.');

@@ -41,7 +41,7 @@ describe('BrdPanel (client)', () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/Request changes/), 'Please also cover refunds.');
     await user.click(screen.getByRole('button', { name: 'Request changes' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Your change request was sent.');
+    expect(await screen.findByRole('status')).toHaveTextContent('nothing changes until it is accepted');
     expect(JSON.parse(String(calls.find((c) => c.init.method === 'POST')?.init.body))).toEqual({ text: 'Please also cover refunds.' });
   });
 });

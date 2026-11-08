@@ -35,7 +35,9 @@ export function Layout() {
           {me?.roles.includes('CLIENT_APPROVER') && (
             <>
               {' '}
-              <NavLink to="/repository-links/redeem">Link a repository</NavLink>
+              <NavLink to="/repository-links/redeem">Link a repository</NavLink>{' '}
+              <NavLink to="/change-requests">Change decisions</NavLink>{' '}
+              <NavLink to="/organisation">Organisation</NavLink>
             </>
           )}
         </nav>

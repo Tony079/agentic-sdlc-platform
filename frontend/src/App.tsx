@@ -11,6 +11,9 @@ import { RequirementsPage } from './pages/RequirementsPage';
 import { RedeemLinkPage } from './pages/RedeemLinkPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { ClarificationsPage } from './pages/ClarificationsPage';
+import { ChangeDecisionsPage } from './pages/ChangeDecisionsPage';
+import { OrganisationPage } from './pages/OrganisationPage';
+import { StaffOperationsPage } from './pages/staff/StaffOperationsPage';
 import { StaffClarificationsPage } from './pages/staff/StaffClarificationsPage';
 import { StaffHomePage } from './pages/staff/StaffHomePage';
 import { StaffLoginPage } from './pages/staff/StaffLoginPage';
@@ -34,6 +37,7 @@ export function App() {
       <Route path="/staff" element={<StaffHomePage />} />
       <Route path="/staff/reviews/:versionId" element={<StaffReviewPage />} />
       <Route path="/staff/inbox" element={<StaffClarificationsPage />} />
+      <Route path="/staff/operations" element={<StaffOperationsPage />} />
       <Route
         element={
           <RequireSession>
@@ -50,6 +54,8 @@ export function App() {
         <Route path="/repository-links/redeem" element={<RedeemLinkPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/clarifications" element={<ClarificationsPage />} />
+        <Route path="/change-requests" element={<ChangeDecisionsPage />} />
+        <Route path="/organisation" element={<OrganisationPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
