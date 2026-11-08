@@ -12,7 +12,8 @@ import io.github.tony079.sdlc.modelgateway.api.ModelProvider;
 import org.springframework.stereotype.Component;
 
 /**
- * Deterministic fake provider (PRD FR-LLM-09, TDD 13.1): no network, no randomness, no tools, no dependencies.
+ * Deterministic fake provider (PRD FR-LLM-09, TDD 13.1): no network, no randomness, no dependencies. It never runs a
+ * tool; it can only ask the gateway for tool calls when scripted to.
  * Behaviour comes from a script (consumed in order) or a canned reply per prompt id; otherwise it returns an empty
  * reply. Token counts are derived from text length (ceil(chars / 4)), so usage figures are reproducible; they are
  * marked as estimated, never as provider measurements.
@@ -22,7 +23,7 @@ import org.springframework.stereotype.Component;
 public class FakeModelProvider implements ModelProvider {
 
     /** One scripted behaviour for the next call. */
-    public sealed interface Behaviour permits Reply, ReplyWithoutUsage, Fail, Hang {
+    public sealed interface Behaviour permits Reply, ReplyWithoutUsage, Fail, Hang, CallTools {
     }
 
     /** Return this text (valid JSON, invalid JSON, empty: whatever the scenario needs). */
@@ -31,6 +32,10 @@ public class FakeModelProvider implements ModelProvider {
 
     /** Return this text without any usage data, like a provider that omits it. */
     public record ReplyWithoutUsage(String text) implements Behaviour {
+    }
+
+    /** Ask the gateway to run these tool calls (the gateway decides whether they are allowed). */
+    public record CallTools(List<ToolCall> calls) implements Behaviour {
     }
 
     /** Fail with the given kind (timeout, unavailable, rate limit, error). */
@@ -79,6 +84,7 @@ public class FakeModelProvider implements ModelProvider {
         return switch (behaviour) {
             case Reply reply -> new Result(reply.text(), new Usage(tokens(call), estimate(reply.text()), true));
             case ReplyWithoutUsage reply -> new Result(reply.text(), null);
+            case CallTools tools -> new Result(null, new Usage(tokens(call), 8, true), tools.calls());
             case Fail fail -> throw new Failure(fail.kind());
             case Hang hang -> {
                 try {

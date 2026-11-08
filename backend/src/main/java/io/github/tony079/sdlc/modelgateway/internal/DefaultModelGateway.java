@@ -2,8 +2,12 @@ package io.github.tony079.sdlc.modelgateway.internal;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -14,13 +18,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import io.github.tony079.sdlc.common.api.CorrelationId;
-import io.github.tony079.sdlc.modelgateway.api.ModelException;
+import io.github.tony079.sdlc.modelgateway.api.DataBlock;
 import io.github.tony079.sdlc.modelgateway.api.ModelException.Code;
+import io.github.tony079.sdlc.modelgateway.api.ModelException;
 import io.github.tony079.sdlc.modelgateway.api.ModelGateway;
-import io.github.tony079.sdlc.modelgateway.api.ModelProvider;
 import io.github.tony079.sdlc.modelgateway.api.ModelProvider.Failure;
+import io.github.tony079.sdlc.modelgateway.api.ModelProvider;
 import io.github.tony079.sdlc.modelgateway.api.ModelRequest;
 import io.github.tony079.sdlc.modelgateway.api.ModelResponse;
+import io.github.tony079.sdlc.modelgateway.api.ModelTool;
 import io.github.tony079.sdlc.modelgateway.api.ModelUsage;
 import io.github.tony079.sdlc.tenancy.api.TenantContext;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -72,6 +78,8 @@ class DefaultModelGateway implements ModelGateway {
     private final Duration retryBackoff;
     private final BigDecimal tenantMonthlyCap;
     private final BigDecimal requirementCap;
+    private final int maxToolRounds;
+    private final int maxToolCalls;
 
     DefaultModelGateway(ModelProviderRegistry registry, ModelCallStore store, Validator validator, MeterRegistry meters,
                         PlatformTransactionManager transactionManager,
@@ -80,7 +88,9 @@ class DefaultModelGateway implements ModelGateway {
                         @Value("${sdlc.model.retry-backoff:2s}") Duration retryBackoff,
                         @Value("${sdlc.model.budget.tenant-monthly-usd:}") String tenantMonthlyCap,
                         @Value("${sdlc.model.budget.requirement-usd:}") String requirementCap,
-                        @Value("${sdlc.model.max-concurrent-calls:16}") int maxConcurrentCalls) {
+                        @Value("${sdlc.model.max-concurrent-calls:16}") int maxConcurrentCalls,
+                        @Value("${sdlc.model.max-tool-rounds:10}") int maxToolRounds,
+                        @Value("${sdlc.model.max-tool-calls:40}") int maxToolCalls) {
         this.registry = registry;
         this.store = store;
         this.validator = validator;
@@ -108,6 +118,12 @@ class DefaultModelGateway implements ModelGateway {
         this.retryBackoff = retryBackoff;
         this.tenantMonthlyCap = tenantMonthlyCap.isBlank() ? null : new BigDecimal(tenantMonthlyCap.strip());
         this.requirementCap = requirementCap.isBlank() ? null : new BigDecimal(requirementCap.strip());
+        // Rounds plus retries must stay within model_call_record.attempts (at most 20).
+        if (maxToolRounds < 1 || maxToolRounds > 10 || maxToolCalls < 1 || maxToolCalls > 40) {
+            throw new IllegalStateException("sdlc.model.max-tool-rounds must be 1-10 and max-tool-calls 1-40 (TDD 12.4)");
+        }
+        this.maxToolRounds = maxToolRounds;
+        this.maxToolCalls = maxToolCalls;
     }
 
     @Override
@@ -138,10 +154,15 @@ class DefaultModelGateway implements ModelGateway {
         int maxTokens = Math.min(request.maxOutputTokens(), model.maxOutputTokens());
         int transientLeft = maxTransientRetries;
         boolean repaired = false;
+        List<ModelProvider.ToolSpec> specs = request.tools().stream()
+                .map(t -> new ModelProvider.ToolSpec(t.name(), t.description())).toList();
+        List<ModelProvider.ToolExchange> exchanges = new ArrayList<>();
+        Map<String, Integer> toolCounts = new TreeMap<>();
+        int rounds = 0;
         while (true) {
             String instructions = request.prompt().instructions() + (repaired ? REPAIR_NOTE : "");
             ModelProvider.Call call = new ModelProvider.Call(requestId, correlationId, modelId, request.prompt().id(),
-                    request.prompt().version(), instructions, request.data(), maxTokens, timeout);
+                    request.prompt().version(), instructions, request.data(), maxTokens, timeout, specs, exchanges);
             ModelProvider.Result result;
             try {
                 attempts.count++;
@@ -162,6 +183,24 @@ class DefaultModelGateway implements ModelGateway {
                 throw new ModelException(code, requestId, null);
             }
             attempts.add(result.usage());
+            if (!result.toolCalls().isEmpty()) {
+                rounds++;
+                if (rounds > maxToolRounds || exchanges.size() + result.toolCalls().size() > maxToolCalls) {
+                    log.warn("Model exceeded the tool limits (request {}, rounds {}, calls {})", requestId, rounds,
+                            exchanges.size() + result.toolCalls().size());
+                    attempts.finish("INVALID_OUTPUT");
+                    throw new ModelException(Code.INVALID_OUTPUT, requestId, null);
+                }
+                for (ModelProvider.ToolCall toolCall : result.toolCalls()) {
+                    exchanges.add(runTool(request, toolCall, toolCounts));
+                }
+                log.info("model.tools request={} round={} calls={}", requestId, rounds, toolCounts);
+                if (budgetExceeded(request)) {
+                    attempts.finish("BUDGET_EXCEEDED");
+                    throw new ModelException(Code.BUDGET_EXCEEDED, requestId, null);
+                }
+                continue;
+            }
             if (result.text() == null || result.text().isBlank()) {
                 if (!repaired) {
                     repaired = true;
@@ -182,6 +221,58 @@ class DefaultModelGateway implements ModelGateway {
             ModelUsage usage = attempts.finish("SUCCEEDED");
             return new ModelResponse<>(output.get(), requestId, correlationId, provider.name(), modelId,
                     request.prompt().id(), request.prompt().version(), usage);
+        }
+    }
+
+    /**
+     * Runs one tool call (TDD 12.5): only a tool bound to this request; arguments checked by the tool; result cut to the
+     * tool's byte cap and returned as an untrusted data block. A refusal or failure is returned as fixed text.
+     * Names and counts are logged, never arguments or results.
+     */
+    private ModelProvider.ToolExchange runTool(ModelRequest<?> request, ModelProvider.ToolCall toolCall,
+                                               Map<String, Integer> counts) {
+        String name = toolCall.name() != null && toolCall.name().matches("^[a-z][a-z0-9_.]{1,63}$") ? toolCall.name()
+                : "unknown";
+        ModelTool tool = request.tools().stream().filter(t -> t.name().equals(name)).findFirst().orElse(null);
+        String outcome;
+        String content;
+        if (tool == null) {
+            outcome = "refused";
+            content = "REFUSED: this tool is not available.";
+        } else {
+            try {
+                content = truncate(tool.invoke(toolCall.arguments()), tool.maxResultBytes());
+                outcome = "ok";
+            } catch (ModelTool.Refused refused) {
+                outcome = "refused";
+                content = "REFUSED: " + refused.getMessage();
+            } catch (RuntimeException e) {
+                log.warn("Tool {} failed ({})", name, e.getClass().getSimpleName());
+                outcome = "failed";
+                content = "FAILED: the tool could not run.";
+            }
+        }
+        counts.merge(name + ":" + outcome, 1, Integer::sum);
+        meters.counter("sdlc.model.tool_calls", "tool", tool == null ? "unregistered" : name, "outcome", outcome)
+                .increment();
+        return new ModelProvider.ToolExchange(toolCall, new DataBlock("tool:" + name + "#" + (counts.values().stream()
+                .mapToInt(Integer::intValue).sum()), content == null ? "" : content));
+    }
+
+    static String truncate(String text, int maxBytes) {
+        if (text == null) {
+            return "";
+        }
+        byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (bytes.length <= maxBytes) {
+            return text;
+        }
+        java.nio.charset.CharsetDecoder decoder = java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.IGNORE);
+        try {
+            return decoder.decode(java.nio.ByteBuffer.wrap(bytes, 0, maxBytes)) + "\n[TRUNCATED]";
+        } catch (java.nio.charset.CharacterCodingException e) {
+            return "";
         }
     }
 
