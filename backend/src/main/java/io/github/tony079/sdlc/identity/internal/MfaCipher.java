@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
  * staff row does not decrypt. Used by the API and the provisioning process only.
  */
 @Component
-@Profile({"!migrate & !worker"})
+@Profile({"!migrate & !worker & !retention"})
 class MfaCipher {
 
     private final SecretKeySpec key;

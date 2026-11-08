@@ -35,3 +35,5 @@ databaseChangeLog:
   - include: { file: changes/0021-review-release.sql, relativeToChangelogFile: true }
   # PRD FR-CLR (clarifications, T16/T17) and reviewer document decisions (T10/T12/T13).
   - include: { file: changes/0022-clarifications-document-decisions.sql, relativeToChangelogFile: true }
+  # PRD FR-RET: per-tenant retention policy, retention states, sdlc_retention grants (S-01).
+  - include: { file: changes/0023-retention.sql, relativeToChangelogFile: true }

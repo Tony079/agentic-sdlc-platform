@@ -98,6 +98,7 @@ jobs:
             echo "SDLC_DB_WORKER_PASSWORD=$(openssl rand -hex 24)"
             echo "SDLC_STORAGE_KEY=$(openssl rand -base64 32)"
             echo "SDLC_DB_PROVISIONER_PASSWORD=$(openssl rand -hex 24)"
+            echo "SDLC_DB_RETENTION_PASSWORD=$(openssl rand -hex 24)"
             echo "SDLC_MFA_KEY=$(openssl rand -base64 32)"
             echo "SDLC_DEV_SEED=true"
             echo "SDLC_DEV_SEED_PASSWORD=ci-demo-password-1"

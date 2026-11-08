@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
  * login can read them and change only the MFA columns of staff_user, under the 0017 trigger rules.
  */
 @Service
-@Profile({"!migrate & !worker & !provision"})
+@Profile({"!migrate & !worker & !provision & !retention"})
 class StaffAuthService {
 
     private final StaffRepository staff;

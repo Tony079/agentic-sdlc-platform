@@ -18,7 +18,7 @@ public class SdlcPlatformApplication {
     public static void main(String[] args) {
         disableLiquibaseAnalytics();
         ConfigurableApplicationContext context = SpringApplication.run(SdlcPlatformApplication.class, args);
-        if (context.getEnvironment().acceptsProfiles(Profiles.of("migrate | provision"))) {
+        if (context.getEnvironment().acceptsProfiles(Profiles.of("migrate | provision | retention"))) {
             System.exit(SpringApplication.exit(context));
         }
     }

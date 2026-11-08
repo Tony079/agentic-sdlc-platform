@@ -1,0 +1,22 @@
+# One-shot retention and deletion process (PRD FR-RET, S-01). Connects as sdlc_retention, the only login that may
+# delete derived data and expired audit rows. Serves no HTTP, runs one command, then exits. Schedule "apply" daily.
+spring:
+  main:
+    web-application-type: none
+    banner-mode: off
+  datasource:
+    username: ${SDLC_DB_RETENTION_USER:sdlc_retention}
+    password: ${SDLC_DB_RETENTION_PASSWORD:}
+    hikari:
+      maximum-pool-size: 2
+
+sdlc:
+  retention:
+    # PRD FR-RET-11..14 development defaults (days after closure; audit: days after the event). They must be confirmed
+    # against contractual and privacy requirements before production (O-02/O-04/O-23/O-25). Per-tenant overrides live in
+    # app.retention_policy (set-policy command).
+    default-days:
+      snapshot: ${SDLC_RETENTION_SNAPSHOT_DAYS:30}
+      document: ${SDLC_RETENTION_DOCUMENT_DAYS:90}
+      brd: ${SDLC_RETENTION_BRD_DAYS:365}
+      audit: ${SDLC_RETENTION_AUDIT_DAYS:365}

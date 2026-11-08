@@ -26,6 +26,11 @@ BEGIN
     -- Used only by the one-shot "provision" process; never by the API or worker. No RLS bypass, not an owner.
     CREATE ROLE sdlc_provisioner LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sdlc_retention') THEN
+    -- Controlled retention and deletion process (PRD FR-RET-14, S-01): the only login that may delete derived data
+    -- and expired audit rows. Used only by the one-shot "retention" process. No RLS bypass, not an owner.
+    CREATE ROLE sdlc_retention LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
 END
 $roles$;
 

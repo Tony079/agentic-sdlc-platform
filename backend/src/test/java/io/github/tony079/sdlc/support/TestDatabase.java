@@ -42,6 +42,7 @@ public final class TestDatabase {
     private final String migratorPassword = randomSecret();
     private final String workerPassword = randomSecret();
     private final String provisionerPassword = randomSecret();
+    private final String retentionPassword = randomSecret();
     /** Staff MFA encryption key for the test run (random, never committed). */
     public static final String MFA_KEY = java.util.Base64.getEncoder().encodeToString(randomBytes(32));
 
@@ -103,6 +104,14 @@ public final class TestDatabase {
         return provisionerPassword;
     }
 
+    public String retentionPassword() {
+        return retentionPassword;
+    }
+
+    public java.sql.Connection retentionConnection() throws SQLException {
+        return DriverManager.getConnection(appUrl(), "sdlc_retention", retentionPassword);
+    }
+
     /** Opens a raw connection as sdlc_provisioner (for provisioning and privilege tests). */
     public Connection provisionerConnection() throws SQLException {
         return DriverManager.getConnection(appUrl(), provisionerUser(), provisionerPassword);
@@ -118,6 +127,11 @@ public final class TestDatabase {
         return new JdbcTemplate(new DriverManagerDataSource(appUrl(), adminUser, adminPassword));
     }
 
+    /** Raw superuser connection to the test database (test setup only). */
+    public Connection adminConnection() throws SQLException {
+        return DriverManager.getConnection(appUrl(), adminUser, adminPassword);
+    }
+
     public UUID tenantId(String slug) {
         return admin().queryForObject("SELECT id FROM app.tenant WHERE slug = ?", UUID.class, slug);
     }
@@ -131,6 +145,7 @@ public final class TestDatabase {
             statement.execute("ALTER ROLE sdlc_app PASSWORD '" + appPassword + "'");
             statement.execute("ALTER ROLE sdlc_worker PASSWORD '" + workerPassword + "'");
             statement.execute("ALTER ROLE sdlc_provisioner PASSWORD '" + provisionerPassword + "'");
+            statement.execute("ALTER ROLE sdlc_retention PASSWORD '" + retentionPassword + "'");
         } catch (SQLException | IOException e) {
             throw new IllegalStateException("Bootstrap (roles) failed", e);
         }
