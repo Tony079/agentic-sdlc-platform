@@ -345,3 +345,16 @@ therefore superseded for R1-M5: validation still ends with T06/T07, and analysis
 | D-R6-07 | Client view: owner only, RELEASED versions only; evidence references (path, lines, commit, file name, chunk label) without quotes (AC-EXT-29). Reviewers see quotes | TDD 16.4, 19.5 | ACTIVE |
 | D-R6-08 | In-app notifications: BRD_RELEASED to the requirement owner; list and mark-read endpoints. No staff notifications (the review queue serves) and no clarification notifications | AC-EXT-40 partial | ACTIVE — partial |
 | D-R6-09 | **Not built in this branch:** clarification lifecycle (TDD 17, T16/T17, C-05), document decisions (T12/T13), critical-finding records (16.11.6), version comparison (16.8, O-22), BRD export (16.9), manual release, admin retry T26 (O-27), admin access grants (O-32), T04/T05 manual-intake resume | Time-boxed; each is recorded as a gap in the verification matrix | OPEN — gaps |
+
+## 13. Implementation decisions (MVP completion, branch `feature/mvp-production-readiness`)
+
+| ID | Decision | Rationale / limit | Status |
+|---|---|---|---|
+| D-R7-01 | Clarifications are assigned to **REQUIREMENT_OWNER** (the client user who owns the requirement) or **BUSINESS_REVIEWER**. TDD 17.1 lists CLIENT_USER / CLIENT_APPROVER / BUSINESS_REVIEWER, but under C-18 only the owner may see the requirement, so client questions go to the owner | Keeps C-18 owner-only visibility | ACTIVE — flagged (PO) |
+| D-R7-02 | Agent clarifications come from Phase B prompt **v2** (`ba.phase-b@2`, new `clarifications[]` field). Blocking ones pause the whole BRD commit (PAUSED pending result, T16): the BA run has one dependent unit, the BRD, so "only dependent work pauses" is satisfied at that granularity; repository/document stages are never reset | TDD 17.3 item-level dependency is coarser here | ACTIVE |
+| D-R7-03 | The engine (worker) resolves an ANSWERED clarification and resumes with **T17** by building a new input set from the current inputs plus every answer; the waiting execution is SUPERSEDED (FR-CLR-09/10) | Changed inputs can never be used stale | ACTIVE |
+| D-R7-04 | Reviewer clarifications (FR-CLR-13) stay in INTERNAL_REVIEW and block approval (409 OPEN_CLARIFICATIONS); their answers feed the next version on T22 (FR-DOC-10) | No TDD transition from INTERNAL_REVIEW to AWAITING_CLARIFICATION | ACTIVE |
+| D-R7-05 | Document decisions: Business Reviewer **EXCLUDE** for UNSUPPORTED_CONTENT / EXTRACTION_FAILED_FINAL / UPLOAD_FAILED; requirement owner **ACKNOWLEDGE_EXCLUSION** for UPLOAD_FAILED only. Excluded versions are listed on the BRD version. T10/T12/T13 implemented | AC-EXT-23/31/32 | ACTIVE |
+| D-R7-06 | Uploads are allowed up to INTERNAL_REVIEW; a new document during ANALYSING cancels the BA jobs (epoch raised), marks the execution STALE and applies T14; during INTERNAL_REVIEW the open BRD version becomes STALE and its approvals invalid (reviewer then requests revision) | AC-DOC-14, AC-EXT-41, TDD 9.6 | ACTIVE |
+| D-R7-07 | Escalation (FR-CLR-07, P1) and expiry are not built; age is visible in the inboxes (TDD 17.4 P0 visibility) | P1 | DEFERRED (P1) |
+| D-R7-08 | New outbox event `ClarificationAnswered` (catalogue extension, like D-M4R-10) | Answers are recorded by the API; resolution is an engine step | ACTIVE — flagged |

@@ -13,7 +13,8 @@ import io.github.tony079.sdlc.modelgateway.api.PromptTemplate;
 final class BaPrompts {
 
     static final PromptTemplate PHASE_A = load("ba.phase-a", 1, "prompts/ba-phase-a-v1.txt");
-    static final PromptTemplate PHASE_B = load("ba.phase-b", 1, "prompts/ba-phase-b-v1.txt");
+    /** v2 adds agent-raised clarifications (FR-CLR-01); v1 stays registered but unused. */
+    static final PromptTemplate PHASE_B = load("ba.phase-b", 2, "prompts/ba-phase-b-v2.txt");
 
     private BaPrompts() {
     }

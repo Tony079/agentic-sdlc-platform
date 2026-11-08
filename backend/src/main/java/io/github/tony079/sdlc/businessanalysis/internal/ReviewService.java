@@ -113,6 +113,9 @@ class ReviewService {
         if (!current.equals(version.inputHash())) {
             throw ApiException.conflict("STALE_INPUTS", "The inputs of this BRD version have changed.");
         }
+        if (reviews.openBlockingClarifications(version.requirementId()) > 0) {
+            throw ApiException.conflict("OPEN_CLARIFICATIONS", "A blocking clarification is still open.");
+        }
         if (reviews.unacknowledgedFlags(versionId) > 0) {
             throw ApiException.conflict("FLAGS_NOT_ACKNOWLEDGED", "Acknowledge every flagged item before approving.");
         }

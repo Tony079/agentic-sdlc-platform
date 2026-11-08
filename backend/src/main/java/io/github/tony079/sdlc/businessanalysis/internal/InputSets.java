@@ -61,6 +61,20 @@ class InputSets {
         this.jdbc = jdbc;
     }
 
+    /** Document versions with a recorded decision (TDD 9.4 b): excluded from analysis and listed on the BRD. */
+    java.util.Set<UUID> decidedVersions(UUID requirementId) {
+        return new java.util.HashSet<>(jdbc.sql(
+                "SELECT document_version_id FROM app.document_decision WHERE requirement_id = :r")
+                .param("r", requirementId).query(UUID.class).list());
+    }
+
+    /** Whether a current document needs a decision that has not been recorded (T07/T10). */
+    boolean undecidedDocuments(UUID requirementId) {
+        java.util.Set<UUID> decided = decidedVersions(requirementId);
+        return documents.analysisDocuments(requirementId).stream()
+                .anyMatch(d -> NEEDS_DECISION.contains(d.state()) && !decided.contains(d.versionId()));
+    }
+
     /** The jsonb text form of the corrections, exactly as stored, so that hashes recomputed later match. */
     String normaliseCorrections(String correctionsJson) {
         if (correctionsJson == null || correctionsJson.isBlank()) {
@@ -78,12 +92,16 @@ class InputSets {
             return Optional.empty();
         }
         List<DocumentEntry> entries = new ArrayList<>();
+        java.util.Set<UUID> decided = decidedVersions(requirementId);
         for (AnalysisDocument doc : documents.analysisDocuments(requirementId)) {
-            if (IN_PROGRESS.contains(doc.state()) || NEEDS_DECISION.contains(doc.state())) {
+            if (IN_PROGRESS.contains(doc.state())) {
+                return Optional.empty();
+            }
+            if (NEEDS_DECISION.contains(doc.state()) && !decided.contains(doc.versionId())) {
                 return Optional.empty();
             }
             boolean processed = "PROCESSED".equals(doc.state()) && doc.extractionNo() != null;
-            if (!processed && !EXCLUDED.contains(doc.state())) {
+            if (!processed && !EXCLUDED.contains(doc.state()) && !NEEDS_DECISION.contains(doc.state())) {
                 return Optional.empty();
             }
             entries.add(new DocumentEntry(doc.documentId(), doc.versionId(), doc.fileName(), doc.state(),

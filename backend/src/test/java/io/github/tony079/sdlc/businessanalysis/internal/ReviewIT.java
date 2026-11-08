@@ -54,7 +54,7 @@ class ReviewIT extends ApiIntegrationTest {
                    "evidence": [{"type": "REPOSITORY", "path": "%1$s", "startLine": 4, "endLine": 4,
                                  "documentVersionId": null, "chunk": null, "quote": "class LoanController"}],
                    "risk": null, "component": null}
-                 ], "unsupported": []}""".formatted(AnalysisScenario.CONTROLLER));
+                 ], "unsupported": [], "clarifications": []}""".formatted(AnalysisScenario.CONTROLLER));
     }
 
     @AfterEach

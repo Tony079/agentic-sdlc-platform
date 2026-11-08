@@ -53,10 +53,16 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
     static final String JOB_TYPE = "BA_COMMIT_RESULT";
 
     /** items null: nothing to do (already decided) or invalid (invalidCode set). */
-    record Outcome(UUID pendingId, List<VerifiedItem> items, String invalidCode) {
+    record Outcome(UUID pendingId, List<VerifiedItem> items, String invalidCode,
+                   List<BaContracts.ClarificationProposal> clarifications) {
+        Outcome(UUID pendingId, List<VerifiedItem> items, String invalidCode) {
+            this(pendingId, items, invalidCode, List.of());
+        }
     }
 
     private final AnalysisRepository repository;
+    private final ClarificationRepository clarifications;
+    private final ReviewRepository reviews;
     private final RepositoryInputs repositories;
     private final DocumentProcessing documents;
     private final InputSets inputSets;
@@ -68,10 +74,13 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
     private final JsonMapper strict;
     private final TransactionTemplate readOnly;
 
-    BaCommitHandler(AnalysisRepository repository, RepositoryInputs repositories, DocumentProcessing documents,
+    BaCommitHandler(AnalysisRepository repository, ClarificationRepository clarifications, ReviewRepository reviews,
+                    RepositoryInputs repositories, DocumentProcessing documents,
                     InputSets inputSets, AnalysisStarter starter, WorkflowEngine workflow, AuditWriter audit,
                     Validator validator, JsonMapper json, PlatformTransactionManager transactionManager) {
         this.repository = repository;
+        this.clarifications = clarifications;
+        this.reviews = reviews;
         this.repositories = repositories;
         this.documents = documents;
         this.inputSets = inputSets;
@@ -128,7 +137,8 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         } catch (IOException e) {
             throw JobFailure.retryable("SNAPSHOT_READ_FAILED", e);
         }
-        return new Outcome(pendingId, EvidenceVerifier.verify(proposal, files, loaded.documents()), null);
+        return new Outcome(pendingId, EvidenceVerifier.verify(proposal, files, loaded.documents()), null,
+                proposal.clarifications());
     }
 
     private Loaded load(UUID pendingId) {
@@ -182,6 +192,29 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         if (outcome.items() == null) {
             reject(pending, "REJECTED_INVALID", outcome.invalidCode() == null ? "PROPOSAL_INVALID" : outcome.invalidCode());
             workflow.failAnalysis(requirementId);
+            return;
+        }
+        // FR-CLR-01..03, TDD 17: the engine (never the model) creates the clarifications. A blocking one pauses the
+        // result (no BRD) and the workflow (T16); non-blocking ones are recorded and the BRD proceeds.
+        boolean blocking = false;
+        for (BaContracts.ClarificationProposal c : outcome.clarifications()) {
+            clarifications.insert(job.tenantId(), requirementId, "AGENT", pending.stageExecutionId(), null,
+                    set.revisionNo(), set.commitSha(), pending.inputHash(), c.blocking(),
+                    c.assignedTo() == BaContracts.Assignee.CLIENT ? "REQUIREMENT_OWNER" : "BUSINESS_REVIEWER",
+                    c.question().strip(), c.whyItMatters(), json.writeValueAsString(c.interpretations()),
+                    c.recommendedOption());
+            blocking |= c.blocking();
+            if (c.assignedTo() == BaContracts.Assignee.CLIENT) {
+                reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "CLARIFICATION_ASSIGNED",
+                        requirementId);
+            }
+        }
+        if (!outcome.clarifications().isEmpty()) {
+            audit.record(AuditAction.CLARIFICATION_OPENED, "REQUIREMENT", requirementId, AuditResult.SUCCESS);
+        }
+        if (blocking) {
+            repository.decidePending(pending.id(), "PAUSED", "BLOCKING_CLARIFICATION");
+            workflow.awaitClarification(requirementId, pending.stageExecutionId());
             return;
         }
         UUID brd = repository.brdFor(job.tenantId(), requirementId);

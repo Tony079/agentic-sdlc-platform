@@ -39,6 +39,7 @@ class ReviewConsumers implements EventConsumer {
             EventTypes.CLIENT_CHANGES_REQUESTED);
 
     private final ReviewRepository reviews;
+    private final ClarificationRepository clarificationRepository;
     private final InputSets inputSets;
     private final AnalysisStarter starter;
     private final WorkflowEngine workflow;
@@ -46,9 +47,10 @@ class ReviewConsumers implements EventConsumer {
     private final AuditWriter audit;
     private final JsonMapper json;
 
-    ReviewConsumers(ReviewRepository reviews, InputSets inputSets, AnalysisStarter starter, WorkflowEngine workflow,
+    ReviewConsumers(ReviewRepository reviews, ClarificationRepository clarificationRepository, InputSets inputSets, AnalysisStarter starter, WorkflowEngine workflow,
                     OutboxPublisher outbox, AuditWriter audit, JsonMapper json) {
         this.reviews = reviews;
+        this.clarificationRepository = clarificationRepository;
         this.inputSets = inputSets;
         this.starter = starter;
         this.workflow = workflow;
@@ -74,7 +76,8 @@ class ReviewConsumers implements EventConsumer {
             case EventTypes.BRD_APPROVED_INTERNAL -> release(requirementId);
             case EventTypes.REVISION_REQUESTED -> {
                 if (workflow.lockState(requirementId) == WorkflowState.REVISION_REQUESTED) {
-                    starter.start(requirementId, reviews.latestRevisionNotes(requirementId).orElse("[]"));
+                    starter.start(requirementId, withClarifications(requirementId,
+                            reviews.latestRevisionNotes(requirementId).orElse("[]")));
                 }
             }
             case EventTypes.CLIENT_CHANGES_REQUESTED -> {
@@ -86,6 +89,14 @@ class ReviewConsumers implements EventConsumer {
             }
             default -> { }
         }
+    }
+
+    /** FR-DOC-10: clarification answers given during review feed the next version, never the approved one. */
+    private String withClarifications(UUID requirementId, String notesJson) {
+        java.util.List<Object> merged = new java.util.ArrayList<>();
+        json.readTree(notesJson).forEach(merged::add);
+        merged.addAll(clarificationRepository.answeredInputs(requirementId));
+        return json.writeValueAsString(merged);
     }
 
     private void release(UUID requirementId) {

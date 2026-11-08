@@ -72,6 +72,18 @@ public interface WorkflowEngine {
     /** Engine only: the execution's inputs changed (TDD 9.6): stage STALE, ExecutionStale, T14 unless restarted after. */
     void markAnalysisStale(UUID requirementId, UUID stageExecutionId, boolean waitForInputs);
 
+    /** Engine only: T10 (a document needs a decision). Empty unless AWAITING_DOCUMENTS. */
+    Optional<WorkflowState> documentDecisionNeeded(UUID requirementId);
+
+    /** Engine only: T12 (decisions recorded, documents still in progress). Empty unless AWAITING_DOCUMENT_DECISION. */
+    Optional<WorkflowState> documentDecisionsRecorded(UUID requirementId);
+
+    /** Engine only: T16; the execution waits for a human (stage WAITING_HUMAN); ClarificationOpened. */
+    Optional<WorkflowState> awaitClarification(UUID requirementId, UUID stageExecutionId);
+
+    /** Engine only: an execution that waited for clarifications is superseded by the resumed one (T17, FR-CLR-10). */
+    void supersedeWaitingAnalysis(UUID requirementId);
+
     /** Engine only: T25 release to the client (T2, separate from approval T1). Empty unless INTERNAL_APPROVED. */
     Optional<WorkflowState> release(UUID requirementId);
 

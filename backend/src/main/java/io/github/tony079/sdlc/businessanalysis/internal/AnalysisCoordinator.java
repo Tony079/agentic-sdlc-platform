@@ -20,9 +20,11 @@ class AnalysisCoordinator implements EventConsumer {
             EventTypes.DOCUMENT_PROCESSED, EventTypes.DOCUMENT_FAILED);
 
     private final AnalysisStarter starter;
+    private final InputChangeConsumers inputChanges;
 
-    AnalysisCoordinator(AnalysisStarter starter) {
+    AnalysisCoordinator(AnalysisStarter starter, InputChangeConsumers inputChanges) {
         this.starter = starter;
+        this.inputChanges = inputChanges;
     }
 
     @Override
@@ -37,6 +39,8 @@ class AnalysisCoordinator implements EventConsumer {
 
     @Override
     public void handle(DomainEvent event) {
-        starter.tryStart(event.uuid("requirementId"));
+        if (starter.tryStart(event.uuid("requirementId")).isEmpty()) {
+            inputChanges.resumeIfUnblocked(event.uuid("requirementId"));
+        }
     }
 }

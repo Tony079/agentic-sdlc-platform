@@ -17,6 +17,16 @@ public enum Transition {
     T07_REPO_VALIDATED_DOCUMENT_DECISION(true),
     /** T09: REPO_VALIDATING to FAILED, by the engine when the validation job is dead. No retry path (O-27). */
     T09_REPO_VALIDATION_FAILED(true),
+    /** T10: AWAITING_DOCUMENTS to AWAITING_DOCUMENT_DECISION, by the engine when a document needs a decision. */
+    T10_DOCUMENT_DECISION_NEEDED(true),
+    /** T12: AWAITING_DOCUMENT_DECISION to AWAITING_DOCUMENTS, by the engine once decisions are recorded. */
+    T12_DOCUMENT_DECISION_RECORDED(true),
+    /** T13: AWAITING_DOCUMENT_DECISION to ANALYSING, by the engine when decisions are recorded and guard 9.4 holds. */
+    T13_START_ANALYSIS_AFTER_DECISION(true),
+    /** T16: ANALYSING to AWAITING_CLARIFICATION, by the engine when only blocked work remains. */
+    T16_AWAIT_CLARIFICATION(true),
+    /** T17: AWAITING_CLARIFICATION to ANALYSING, by the engine when no blocking clarification remains. */
+    T17_RESUME_ANALYSIS(true),
     /** T11: AWAITING_DOCUMENTS to ANALYSING, by the engine when guard 9.4 holds; freezes the input set. */
     T11_START_ANALYSIS(true),
     /** T14: ANALYSING to AWAITING_DOCUMENTS, by the engine: inputs changed and the guard no longer holds. */

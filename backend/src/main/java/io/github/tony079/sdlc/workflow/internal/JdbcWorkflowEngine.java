@@ -108,6 +108,57 @@ class JdbcWorkflowEngine implements WorkflowEngine {
     }
 
     @Override
+    public Optional<WorkflowState> documentDecisionNeeded(UUID requirementId) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.AWAITING_DOCUMENTS) {
+            return Optional.empty();
+        }
+        WorkflowState to = applyLocked(requirementId, current, Transition.T10_DOCUMENT_DECISION_NEEDED, null);
+        outbox.publish(AGGREGATE, requirementId, EventTypes.DOCUMENT_DECISION_REQUESTED,
+                Map.of("requirementId", requirementId.toString()));
+        return Optional.of(to);
+    }
+
+    @Override
+    public Optional<WorkflowState> documentDecisionsRecorded(UUID requirementId) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.AWAITING_DOCUMENT_DECISION) {
+            return Optional.empty();
+        }
+        return Optional.of(applyLocked(requirementId, current, Transition.T12_DOCUMENT_DECISION_RECORDED, null));
+    }
+
+    @Override
+    public Optional<WorkflowState> awaitClarification(UUID requirementId, UUID stageExecutionId) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.ANALYSING) {
+            return Optional.empty();
+        }
+        WorkflowState to = applyLocked(requirementId, current, Transition.T16_AWAIT_CLARIFICATION, null);
+        jdbc.sql("""
+                UPDATE app.stage_execution SET status = 'WAITING_HUMAN', updated_at = clock_timestamp()
+                WHERE id = :stage AND status IN ('PENDING', 'BLOCKED', 'READY', 'RUNNING')
+                """).param("stage", stageExecutionId).update();
+        outbox.publish(AGGREGATE, requirementId, EventTypes.CLARIFICATION_OPENED,
+                Map.of("requirementId", requirementId.toString()));
+        return Optional.of(to);
+    }
+
+    @Override
+    public void supersedeWaitingAnalysis(UUID requirementId) {
+        requireEngine();
+        jdbc.sql("""
+                UPDATE app.stage_execution s SET status = 'SUPERSEDED', updated_at = clock_timestamp()
+                FROM app.workflow_instance i
+                WHERE i.id = s.instance_id AND i.requirement_id = :r AND s.stage_key = 'BA_ANALYSIS'
+                  AND s.status = 'WAITING_HUMAN'
+                """).param("r", requirementId).update();
+    }
+
+    @Override
     public Optional<WorkflowState> release(UUID requirementId) {
         requireEngine();
         Current current = lock(requirementId);
@@ -203,6 +254,8 @@ class JdbcWorkflowEngine implements WorkflowEngine {
             case AWAITING_DOCUMENTS -> Transition.T11_START_ANALYSIS;
             case ANALYSING -> Transition.T15_ANALYSIS_RESTART;
             case REVISION_REQUESTED -> Transition.T24_REANALYSE_REVISION;
+            case AWAITING_DOCUMENT_DECISION -> Transition.T13_START_ANALYSIS_AFTER_DECISION;
+            case AWAITING_CLARIFICATION -> Transition.T17_RESUME_ANALYSIS;
             case CLIENT_CHANGES_REQUESTED -> Transition.T28_REANALYSE_CLIENT_CHANGES;
             default -> null;
         };

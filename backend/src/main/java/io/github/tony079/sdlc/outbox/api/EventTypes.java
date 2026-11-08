@@ -32,6 +32,9 @@ public final class EventTypes {
     public static final String BRD_RELEASED_TO_CLIENT = "BrdReleasedToClient";
     public static final String CLIENT_CHANGES_REQUESTED = "ClientChangesRequested";
     public static final String APPROVAL_INVALIDATED = "ApprovalInvalidated";
+    public static final String CLARIFICATION_OPENED = "ClarificationOpened";
+    public static final String CLARIFICATION_ANSWERED = "ClarificationAnswered";
+    public static final String DOCUMENT_DECISION_RECORDED = "DocumentDecisionRecorded";
 
     private static final Map<String, Integer> VERSIONS = Map.ofEntries(
             Map.entry(REQUIREMENT_SUBMITTED, 1),
@@ -57,7 +60,10 @@ public final class EventTypes {
             Map.entry(REQUIREMENT_REJECTED, 1),
             Map.entry(BRD_RELEASED_TO_CLIENT, 1),
             Map.entry(CLIENT_CHANGES_REQUESTED, 1),
-            Map.entry(APPROVAL_INVALIDATED, 1));
+            Map.entry(APPROVAL_INVALIDATED, 1),
+            Map.entry(CLARIFICATION_OPENED, 1),
+            Map.entry(CLARIFICATION_ANSWERED, 1),
+            Map.entry(DOCUMENT_DECISION_RECORDED, 1));
 
     private EventTypes() {
     }

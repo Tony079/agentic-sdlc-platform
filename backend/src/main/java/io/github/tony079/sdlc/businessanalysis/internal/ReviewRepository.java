@@ -122,6 +122,23 @@ class ReviewRepository {
                 (String) header[9], (OffsetDateTime) header[10], items);
     }
 
+    record InputSetRef(int revisionNo, String commitSha) {
+    }
+
+    InputSetRef inputSetOf(UUID versionId) {
+        return jdbc.sql("""
+                SELECT s.revision_no, s.commit_sha FROM app.brd_version v JOIN app.analysis_input_set s ON s.id = v.input_set_id
+                WHERE v.id = :v
+                """).param("v", versionId).query((rs, n) -> new InputSetRef(rs.getInt(1), rs.getString(2))).single();
+    }
+
+    int openBlockingClarifications(UUID requirementId) {
+        return jdbc.sql("""
+                SELECT count(*) FROM app.clarification WHERE requirement_id = :r AND blocking
+                  AND status IN ('OPEN', 'NEEDS_INFO', 'ANSWERED')
+                """).param("r", requirementId).query(Integer.class).single();
+    }
+
     boolean itemExists(UUID versionId, String itemKey) {
         return jdbc.sql("SELECT count(*) FROM app.brd_item WHERE brd_version_id = :v AND item_key = :k")
                 .param("v", versionId).param("k", itemKey).query(Integer.class).single() > 0;

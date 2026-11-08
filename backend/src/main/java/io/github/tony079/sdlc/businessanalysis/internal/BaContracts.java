@@ -37,7 +37,17 @@ final class BaContracts {
 
     /** Phase B: the BRD proposal. */
     record Proposal(@NotNull @Size(max = 60) List<@Valid Item> items,
-                    @NotNull @Size(max = 30) List<@Valid Unsupported> unsupported) {
+                    @NotNull @Size(max = 30) List<@Valid Unsupported> unsupported,
+                    @NotNull @Size(max = 10) List<@Valid ClarificationProposal> clarifications) {
+    }
+
+    enum Assignee { CLIENT, BUSINESS_REVIEWER }
+
+    /** FR-CLR-01: proposed by the agent; created as a clarification only by the engine (Tx C). */
+    record ClarificationProposal(@NotBlank @Size(max = 2000) String question, @Size(max = 2000) String whyItMatters,
+                                 @NotNull @Size(max = 10) List<@NotBlank @Size(max = 1000) String> interpretations,
+                                 @Size(max = 2000) String recommendedOption, @NotNull Boolean blocking,
+                                 @NotNull Assignee assignedTo) {
     }
 
     record Item(@NotNull Kind kind, @NotNull Section section, @NotBlank @Size(max = 2000) String statement,

@@ -54,8 +54,14 @@ class DocumentService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
     /** Non-terminal states reachable so far in which attachments may be added (PRD 0.4: also MANUAL_INTAKE). */
+    /**
+     * PRD AC-DOC-14: a document may also be added after analysis started; the engine then marks the running analysis
+     * or the BRD version in review stale (businessanalysis InputChangeConsumer).
+     */
     static final Set<WorkflowState> UPLOADABLE = Set.of(WorkflowState.DRAFT, WorkflowState.SUBMITTED,
-            WorkflowState.MANUAL_INTAKE, WorkflowState.REPO_VALIDATING);
+            WorkflowState.MANUAL_INTAKE, WorkflowState.REPO_VALIDATING, WorkflowState.AWAITING_DOCUMENTS,
+            WorkflowState.AWAITING_DOCUMENT_DECISION, WorkflowState.ANALYSING, WorkflowState.AWAITING_CLARIFICATION,
+            WorkflowState.INTERNAL_REVIEW);
 
     private final DocumentRepository documents;
     private final RequirementDirectory requirements;
