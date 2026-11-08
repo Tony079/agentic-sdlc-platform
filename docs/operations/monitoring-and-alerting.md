@@ -10,7 +10,9 @@ Structured ECS JSON (`SDLC_LOG_FORMAT=ecs`). Every request carries a correlation
 stored on audit, security events and model call records. Logs never contain document text, prompts, model output,
 tokens, TOTP codes or keys.
 
-## What to alert on (log patterns and SQL; no alerting stack is configured: C-17 open)
+Security alerts (C-17) are delivered by the worker to a webhook and/or email: see `security-alerting.md`. The signals below are operational and still need the operator's monitoring stack.
+
+## What to alert on (operational: log patterns and SQL)
 | Signal | Source | Suggested threshold |
 |---|---|---|
 | Dead job | log `ALERT job dead`; `app.job WHERE status = 'DEAD'` | any |

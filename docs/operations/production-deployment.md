@@ -2,17 +2,19 @@
 
 **Status: not ready for production.** The following gates are open, and each blocks a production go-live.
 
-| Gate | Effect |
+| Gate | Effect (updated 2026-11-08 after the owner decisions) |
 |---|---|
-| O-13 | The administrator ceremony is not implemented. `bootstrap-admins` is refused outside development/test, so no production staff grants are possible |
-| O-12 / C-13 | The production object store and KMS are not decided. Only the encrypted local file store exists, with a single static key |
-| O-01 | No model provider is decided. Analysis waits indefinitely with provider `none` |
-| O-03 | The production scanner is not decided |
-| O-15 | The extractor isolation spike is not accepted. Extraction must stay off for real client documents |
-| O-25, O-02, O-04, O-23 | The retention process exists (`retention-and-deletion.md`), but its durations are PRD development defaults, not approved values. Backup expiry (FR-RET-06) is not configured |
-| O-32 | No admin access-grant path |
+| O-12 / C-13 | Envelope encryption, the secrets provider and the production checks exist, but **no managed KMS adapter**: production mode refuses to start (`STORAGE_KMS_LOCAL`). Needs the hosting platform (O-07) |
+| O-01 | Anthropic and OpenAI adapters exist; no provider selected and no benchmark executed. Provider stays `none` |
+| O-03 | Secret scanning built in; dependency and SAST products not chosen (they report UNAVAILABLE) |
+| O-15 | Sandbox implemented (network namespace, limits, fail closed); residual risk R-02; production host must allow user namespaces |
+| O-13 | Implemented: two-person ceremony (`release-and-retry-operations.md` §6) |
+| O-25 | Implemented: closure-based retention and two-person soft deletion. Backup expiry (O-07) and log retention are platform settings |
+| O-32 | No admin access-grant path (owner decision) |
 | GitHub App | Must be created and installed. Real GitHub has not been tested |
-| CI | Not run on the R1-M4/M5/M6 or MVP-completion branches (not pushed). The Compose runtime was not started in this environment |
+| CI | Not run on this branch (not pushed). The Compose runtime was not started in this environment |
+
+See `production-readiness-checklist.md` for the full gate list.
 
 ## Procedure (for a pre-production environment once the gates allow it)
 1. **Provision PostgreSQL 16:**

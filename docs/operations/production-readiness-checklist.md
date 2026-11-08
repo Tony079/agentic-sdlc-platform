@@ -1,63 +1,90 @@
-# Production Readiness Checklist (2026-11-08)
+# Production Readiness Checklist (Deliverable F, 2026-11-08)
 
-Each gate is **PASS** only with executed evidence. **OPEN** means the work, the evidence or the owner decision is missing. Branch: `feature/mvp-production-readiness` (local).
+Branch `feature/mvp-production-readiness` (local), HEAD after `98a8c8d`.
+
+**Status values (as required by the owner):**
+- **PASS**: executed evidence exists.
+- **FAIL**: checked, and the requirement is not met.
+- **BLOCKED**: cannot be done without a decision, credential or infrastructure not available.
+- **NOT VERIFIED**: the work may be done, but no evidence was produced.
 
 ## A. Functional completeness
 
-| # | Gate | Status | Evidence / blocker |
+| # | Gate | Status | Evidence / reason |
 |---|---|---|---|
-| A1 | All 60 acceptance criteria verified | **OPEN** | 37 VERIFIED, 18 qualified, 1 not verified, 1 blocked, 3 not complete (`docs/testing/mvp-acceptance-criteria-matrix.md`) |
-| A2 | Workflow transitions T01–T29 | **OPEN** | All implemented except T04 (C-06/C-07), T05, T08 (superseded by T11, D-R5-01) and T26 (O-27) |
-| A3 | Clarifications, document decisions, staleness | PASS | `ClarificationIT` (7) |
-| A4 | Review, approval, release, client view | PASS | `ReviewIT` (4); release mode AUTOMATIC is provisional (O-16) |
-| A5 | Retention and tenant deletion | PASS (mechanism) / **OPEN** (values) | `RetentionIT`; values need owner confirmation (O-02/O-04/O-23/O-25) |
-| A6 | Version comparison | PASS (minimal) | `ReviewIT`; priority conflict C-16 open |
-| A7 | Tool calling in the gateway | PASS (fake provider) | `ModelGatewayIT` |
+| A1 | All 60 acceptance criteria verified | **FAIL** | 39 VERIFIED, 18 with qualification, 1 not verified (AC-CORE-17), 2 blocked (AC-EXT-30, AC-EXT-37) |
+| A2 | Workflow transitions T01–T29 | PASS | 28 of 29 implemented, including T04, T05 and T26; T08 superseded by T11 (D-R5-01). `WorkflowConsistencyIT`, `DefinitionVerifier` |
+| A3 | Manual intake resume and close (C-06/C-07) | PASS | `ManualIntakeIT` (3) |
+| A4 | Review, manual release with separation of duties (O-16) | PASS | `ReviewIT` (5) |
+| A5 | Change requests and scope diff (C-09, C-16) | PASS | `ReviewIT`, `ScopeDiffTest` |
+| A6 | Retention, closure, tenant soft deletion (O-25) | PASS | `RetentionIT` (5), `TenantLifecycleIT` (2), jar smoke |
+| A7 | Bounded and operator retry (O-27) | PASS | `JobQueueIT` (14), `OperatorRetryIT` (2) |
+| A8 | Feature-flag acknowledgement (O-08) | PASS | `OperationsIT` |
+| A9 | Frontend for the new workflows | PASS (unit) / NOT VERIFIED (browser) | Vitest 40/40, `tsc`, ESLint, build; not exercised in a browser against a running stack this phase |
+| A10 | Released requirements reach closure (completion state) | **BLOCKED** | No completion state in Release 1; PO decision (Deliverable G) |
 
 ## B. External integrations
 
-| # | Gate | Status | Evidence / blocker |
+| # | Gate | Status | Evidence / reason |
 |---|---|---|---|
-| B1 | Real GitHub App verified | **OPEN** | No credentials (`docs/testing/external-integration-verification.md`) |
-| B2 | Real LLM provider adapter and verification | **OPEN** | O-01; no adapter |
-| B3 | Production malware scanner | **OPEN** | O-03 |
-| B4 | Production object store and KMS | **OPEN** | O-12/C-13 |
+| B1 | Real GitHub App verified | **BLOCKED** | No App credentials or test organisation |
+| B2 | Real LLM provider verified and evaluated (O-01) | **BLOCKED** | Adapters exist and are mock-tested; no API keys, so the evaluation reported NOT_EXECUTED |
+| B3 | Managed KMS (O-12/C-13) | **FAIL** | Only `LocalKeyManagement` exists; production mode refuses to start (jar smoke). The adapter needs the hosting platform (O-07) |
+| B4 | Production object store | **FAIL** | Only the encrypted local file store; no S3-compatible adapter (O-07) |
+| B5 | Dependency and SAST scanners (O-03) | **BLOCKED** | No product named; the kinds report UNAVAILABLE |
+| B6 | Alert delivery to real channels (C-17) | **NOT VERIFIED** | Mechanism tested against loopback webhook and SMTP; no real receiver |
+| B7 | Production malware scanner | **NOT VERIFIED** | ClamAV in development and CI only; hardening not done |
 
 ## C. Security
 
-| # | Gate | Status | Evidence / blocker |
+| # | Gate | Status | Evidence / reason |
 |---|---|---|---|
-| C1 | Tenant isolation tests | PASS | `SchemaSecurityIT`, `RlsIsolationIT`, `RlsPoolLeakIT` |
-| C2 | Audit immutability for runtime logins (S-01) | PASS | `RetentionIT` |
+| C1 | Tenant isolation | PASS | `SchemaSecurityIT`, `RlsIsolationIT`, `RlsPoolLeakIT` |
+| C2 | Audit immutability; retention-only audit purge (S-01) | PASS | `RetentionIT` |
 | C3 | Two-person grants (S-02) | PASS | `StaffProvisioningIT` |
-| C4 | Production administrator ceremony | **OPEN** | O-13 not implemented |
-| C5 | Key rotation / KMS | **OPEN** | SEC-REVIEW-2 |
-| C6 | Alert channel for security events | **OPEN** | C-17 |
-| C7 | Extractor isolation | **OPEN** | O-15 (extraction must stay off for real documents) |
-| C8 | Secret scan | PASS | gitleaks, full history clean |
-| C9 | Dependency and image scans | **OPEN** | npm production 0; Maven and image scans not run |
-| C10 | Independent security review or penetration test | **OPEN** | Not performed |
+| C4 | Production administrator ceremony (O-13) | PASS (mechanism) | `BootstrapCeremonyIT`; jar refusal while disabled. Never run in a real environment |
+| C5 | Key rotation and KMS | **FAIL** | No managed KMS; no re-wrap command (R-01, R-05) |
+| C6 | Security alerting (C-17) | PASS (mechanism) / NOT VERIFIED (real channel) | `SecurityAlertingIT` |
+| C7 | Extractor isolation (O-15) | PASS (namespace and limits) | `ExtractorIsolationTest` executed; residual R-02 (no mount namespace or seccomp); production host NOT VERIFIED |
+| C8 | Secret scan of the repository | PASS | gitleaks, full history, no leaks |
+| C9 | Dependency and image vulnerability scans | **NOT VERIFIED** | npm production 0; Maven and image scans not run (offline) |
+| C10 | Independent security review or penetration test | **NOT VERIFIED** | Not performed |
+| C11 | Production configuration fails closed | PASS | `ProductionConfigurationValidatorTest`; jar smoke refused `STORAGE_KMS_LOCAL`, `SECRETS_PROVIDER_NOT_MANAGED`, `NO_SECURITY_ALERT_CHANNEL` |
+| C12 | Admin access grants to tenant content (O-32) | **BLOCKED** | Owner decision; AC-EXT-37 |
+| C13 | Legal hold | **BLOCKED** | Not supported; legal decision needed |
 
 ## D. Build, deployment and operations
 
-| # | Gate | Status | Evidence / blocker |
+| # | Gate | Status | Evidence / reason |
 |---|---|---|---|
-| D1 | Backend build and tests | PASS | 263 tests, 0 failures (local PostgreSQL 16) |
-| D2 | Frontend build and tests | PASS | Vitest 36/36, `tsc`, ESLint, `vite build` |
-| D3 | CI green on the release branch | **OPEN** | Not pushed (no authorisation) |
-| D4 | `docker compose up` smoke | **OPEN** | No Docker daemon here; only `docker compose config` was validated |
-| D5 | One-shot processes (migrate, provision, retention) | PASS (retention smoke) / partial | `retention apply` jar smoke exited 0; migrate is exercised by every test run; provision by `StaffProvisioningIT` |
-| D6 | Backup and restore drill | **OPEN** | Procedure documented, never exercised |
-| D7 | RPO/RTO targets | **OPEN** | Owner decision; not invented |
-| D8 | Monitoring and alerting stack | **OPEN** | Health, structured logs and Micrometer metrics exist; no alerting stack (C-17) |
-| D9 | Hosting platform and production database platform check | **OPEN** | O-07, O-31 |
-| D10 | Runbooks | PASS | `docs/operations/*` (8 documents, updated 2026-11-08) |
+| D1 | Backend build and tests | PASS | 296 tests, 0 failures (PostgreSQL 16), plus `ManualIntakeIT` 3/3 after `98a8c8d` |
+| D2 | Frontend build and tests | PASS | Vitest 40/40, `tsc`, ESLint, `vite build` |
+| D3 | CI green on this branch | **BLOCKED** | Not pushed; no authorisation |
+| D4 | `docker compose up` smoke | **BLOCKED** | No Docker daemon here; `compose config` is valid |
+| D5 | One-shot processes from the packaged jar | PASS | `migrate` exit 0 (104 changesets); `retention apply` exit 0; removed and disabled commands refused |
+| D6 | Backup and restore drill | **NOT VERIFIED** | Procedure documented, never exercised |
+| D7 | RPO/RTO targets | **BLOCKED** | Owner decision; not invented |
+| D8 | Log retention 90 days (O-25) | **NOT VERIFIED** | A log-platform setting; no platform chosen |
+| D9 | Hosting platform and production database platform check (O-07, O-31) | **BLOCKED** | Owner and operations decision |
+| D10 | Runbooks | PASS | `docs/operations/*`, updated 2026-11-08 (retention, alerting, scanning, extraction isolation, release and retry, secrets, deployment) |
 
 ## E. Governance
 
 | # | Gate | Status |
 |---|---|---|
-| E1 | Owner decisions required for production closed | **OPEN** (`docs/decisions/mvp-final-decision-closure.md`) |
-| E2 | Push, merge and deploy authorisation | Not given. Nothing pushed, merged or deployed |
+| E1 | Owner decisions required for production closed | **BLOCKED** (Deliverable G: O-07, O-32, O-03 products, provider selection, completion state, RPO/RTO, legal hold) |
+| E2 | Push, merge and deploy authorisation | **BLOCKED**: not given. Nothing pushed, merged or deployed |
 
-**Result: 20 of the 33 gates above are OPEN (A5 counted as open for its values).** The platform is not ready for production.
+## Result
+
+| Status | Count |
+|---|---|
+| PASS (including PASS-mechanism rows) | 21 |
+| FAIL | 4 (A1, B3, B4, C5) |
+| BLOCKED | 12 (A10, B1, B2, B5, C12, C13, D3, D4, D7, D9, E1, E2) |
+| NOT VERIFIED | 6 (B6, B7, C9, C10, D6, D8) |
+| **Total** | **43** |
+
+Rows marked "PASS / NOT VERIFIED" (A9, C6) are counted as PASS above, and their NOT VERIFIED part is named in the row.
+
+**The platform is not ready for production.**
