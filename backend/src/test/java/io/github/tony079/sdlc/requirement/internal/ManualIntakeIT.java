@@ -93,6 +93,17 @@ class ManualIntakeIT extends ApiIntegrationTest {
         String id = manualIntake(alice);
         ApiClient reviewer = reviewer();
 
+        // AC-EXT-28/42: in MANUAL_INTAKE an upload is validated, scanned and stored, but no extraction is scheduled.
+        Response uploaded = alice.upload("/api/v1/requirements/" + id + "/documents", "intake.txt", "text/plain",
+                "Manual intake notes for the reviewer.".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(uploaded.status()).as(uploaded.body().toString()).isEqualTo(201);
+        UUID documentId = UUID.fromString(uploaded.body().path("documentId").asString());
+        drive();
+        assertThat(admin.queryForObject("SELECT state FROM app.document_version WHERE document_id = ?",
+                String.class, documentId)).isEqualTo("READY_FOR_EXTRACTION");
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.job WHERE aggregate_id = ? AND job_type = "
+                + "'DOCUMENT_EXTRACT'", Integer.class, documentId)).isZero();
+
         Response queue = reviewer.get("/api/v1/staff/manual-intake");
         assertThat(queue.status()).isEqualTo(200);
         assertThat(queue.body().valueStream().map(n -> n.path("id").asString())).contains(id);
@@ -141,6 +152,9 @@ class ManualIntakeIT extends ApiIntegrationTest {
         drive();
         assertThat(admin.queryForObject("SELECT count(*) FROM app.job WHERE aggregate_id = ?::uuid AND job_type = "
                 + "'REPO_VALIDATE'", Integer.class, UUID.fromString(id))).isEqualTo(1);
+        // AC-EXT-42: after the resume, extraction is scheduled once for the stored, scanned document.
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.job WHERE aggregate_id = ? AND job_type = "
+                + "'DOCUMENT_EXTRACT'", Integer.class, documentId)).isEqualTo(1);
         // A second resume is refused (no longer MANUAL_INTAKE).
         assertThat(resume(reviewer, id, 2).errorCode()).isEqualTo("NOT_IN_MANUAL_INTAKE");
     }
