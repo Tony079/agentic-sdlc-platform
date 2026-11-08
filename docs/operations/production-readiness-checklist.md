@@ -60,4 +60,4 @@ Each gate is **PASS** only with executed evidence. **OPEN** means the work, the 
 | E1 | Owner decisions required for production closed | **OPEN** (`docs/decisions/mvp-final-decision-closure.md`) |
 | E2 | Push, merge and deploy authorisation | Not given. Nothing pushed, merged or deployed |
 
-**Result: 17 of the gates above are OPEN.** The platform is not ready for production.
+**Result: 20 of the 33 gates above are OPEN (A5 counted as open for its values).** The platform is not ready for production.

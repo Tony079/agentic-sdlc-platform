@@ -16,7 +16,7 @@
 | Backend tests | 263 passed, 0 failed (75 unit, 188 integration) | `mvn verify`, PostgreSQL 16 |
 | Frontend | 36/36 Vitest; `tsc`, ESLint and build OK | — |
 | Real external integrations | **0 verified** (GitHub, LLM, production scanner, production store) | `docs/testing/external-integration-verification.md` |
-| Production-readiness gates | 17 OPEN | `docs/operations/production-readiness-checklist.md` |
+| Production-readiness gates | 20 of 33 OPEN | `docs/operations/production-readiness-checklist.md` |
 | **Production verdict** | **NOT READY** | §8 |
 
 **The MVP is not 100 % complete,** and this report does not claim it is.
