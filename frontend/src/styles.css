@@ -213,3 +213,78 @@ table.diff th {
 .inline-form input {
   width: 14rem;
 }
+
+/* Prototype: development adapter labelling, dashboard tiles, workflow progress. */
+.mock-banner {
+  background: #fff4ce;
+  border-bottom: 2px solid #b58900;
+  color: #3d2e00;
+  padding: 0.5rem 1rem;
+}
+
+.mock-notice {
+  background: #fff4ce;
+  border-left: 4px solid #b58900;
+  color: #3d2e00;
+  padding: 0.5rem 0.75rem;
+}
+
+.attention {
+  background: #e7f1ff;
+  border-left: 4px solid #1a5fb4;
+  padding: 0.5rem 0.75rem;
+}
+
+.tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+
+.tiles li {
+  background: #fff;
+  border: 1px solid #e1e4ea;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  min-width: 9rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.tile-count {
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.workflow-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  list-style: none;
+  padding: 0;
+}
+
+.workflow-steps li {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid #c5cad3;
+  font-size: 0.875rem;
+}
+
+.workflow-steps li.done {
+  background: #e6f4ea;
+  border-color: #2e7d32;
+}
+
+.workflow-steps li.current {
+  background: #1a5fb4;
+  border-color: #1a5fb4;
+  color: #fff;
+  font-weight: 600;
+}
+
+.workflow-steps li.todo {
+  color: #5c6370;
+}

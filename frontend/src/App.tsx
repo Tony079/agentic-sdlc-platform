@@ -4,6 +4,7 @@ import { useAuth } from './auth/AuthContext';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { RequirementDetailPage } from './pages/RequirementDetailPage';
 import { RequirementFormPage } from './pages/RequirementFormPage';
@@ -45,7 +46,7 @@ export function App() {
           </RequireSession>
         }
       >
-        <Route path="/" element={<Navigate to="/projects" replace />} />
+        <Route path="/" element={<DashboardPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/requirements" element={<RequirementsPage />} />
         <Route path="/requirements/new" element={<RequirementFormPage />} />

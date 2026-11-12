@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import type { ClientBrd, RequirementState } from '../api/types';
+import { MockOutputNotice } from './MockNotice';
 import { BrdItems } from './BrdItems';
 
 const BEFORE_RELEASE: Partial<Record<RequirementState, string>> = {
@@ -60,6 +61,7 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
             Version {brd.data.version.versionNo} · {brd.data.version.status === 'RELEASED' ? 'Released' : brd.data.version.status}{' '}
             · <span className="small">content hash {brd.data.version.contentHash.substring(0, 12)}</span>
           </p>
+          <MockOutputNotice provider={brd.data.version.modelProvider} />
           {brd.data.version.understanding && <p>{brd.data.version.understanding}</p>}
           <BrdItems items={brd.data.version.items} />
           {requirementState === 'SHARED_WITH_CLIENT' && (

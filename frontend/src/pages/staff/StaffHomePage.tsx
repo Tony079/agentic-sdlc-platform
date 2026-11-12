@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { PendingRepositoryLink, ReviewQueueEntry, StaffMe } from '../../api/types';
 import { Link } from 'react-router-dom';
+import { DevelopmentAdaptersBanner } from '../../components/MockNotice';
 
 const REGISTER_ERRORS: Record<string, string> = {
   REPOSITORY_ALREADY_REGISTERED: 'A repository is already registered for that requirement.',
@@ -89,6 +90,7 @@ export function StaffHomePage() {
   return (
     <section>
       <h1>Staff workspace</h1>
+      <DevelopmentAdaptersBanner />
       <p>
         <Link to="/staff/operations">Operations: manual intake, change requests, releases, retries, flags</Link>
       </p>

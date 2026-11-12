@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { ReviewDetail } from '../../api/types';
 import { BrdItems } from '../../components/BrdItems';
+import { MockOutputNotice } from '../../components/MockNotice';
 import { VersionComparison } from '../../components/VersionComparison';
 
 const ERRORS: Record<string, string> = {
@@ -60,6 +61,7 @@ export function StaffReviewPage() {
         BRD version {version.versionNo} · {version.status} · requirement state {state} · model {version.modelProvider}/
         {version.modelId} · <span className="small">content hash {version.contentHash.substring(0, 12)}</span>
       </p>
+      <MockOutputNotice provider={version.modelProvider} />
       {requirement.description && <p>{requirement.description}</p>}
       {version.understanding && (
         <p>

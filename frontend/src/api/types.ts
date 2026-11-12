@@ -373,3 +373,19 @@ export interface TenantLifecycleRequest {
   reason: string;
   requestedAt: string;
 }
+
+/** Content-free audit entry of a requirement. `actor` is a category (YOU, USER, STAFF, SYSTEM), never an id. */
+export interface AuditEntry {
+  occurredAt: string;
+  actor: 'YOU' | 'USER' | 'STAFF' | 'SYSTEM';
+  action: string;
+  resourceType: string;
+  result: 'SUCCESS' | 'DENIED' | 'FAILED';
+}
+
+/** Names of the adapters this deployment runs with; `developmentAdapters` lists the ones that are not real. */
+export interface RuntimeInfo {
+  modelProvider: string;
+  repositorySource: string;
+  developmentAdapters: ('MODEL' | 'REPOSITORY')[];
+}

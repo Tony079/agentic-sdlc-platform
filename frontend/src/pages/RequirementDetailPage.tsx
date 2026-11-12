@@ -13,6 +13,8 @@ import { fieldMessage } from '../components/RequirementForm';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { BrdPanel } from '../components/BrdPanel';
 import { RepositoryLinkPanel } from '../components/RepositoryLinkPanel';
+import { AuditHistory } from '../components/AuditHistory';
+import { WorkflowProgress } from '../components/WorkflowProgress';
 
 const CONTENT_LABELS: [keyof RequirementContent, string][] = [
   ['description', 'Description'],
@@ -48,7 +50,21 @@ const STATE_NOTES: Partial<Record<RequirementState, string>> = {
     'Waiting for repository validation. Repository connection and analysis are not available yet, so the requirement stays here for now.',
   MANUAL_INTAKE:
     'New-product request kept for manual intake by the platform team. No automated analysis is scheduled.',
+  AWAITING_DOCUMENTS: 'The repository is validated. Waiting for documents to finish processing before analysis starts.',
+  AWAITING_DOCUMENT_DECISION: 'A document could not be processed. A reviewer must decide whether to exclude it.',
+  ANALYSING: 'Analysis is running. This page updates automatically.',
+  AWAITING_CLARIFICATION: 'The analysis is paused until an open clarification is answered. See Clarifications.',
+  INTERNAL_REVIEW: 'A BRD version is with the internal reviewer. You will see it once it is approved and released.',
+  INTERNAL_APPROVED: 'The BRD is approved internally and waits for the release decision.',
+  SHARED_WITH_CLIENT: 'The BRD has been released to you. It is shown below.',
+  FAILED: 'Processing failed. The history below shows where; platform staff may be able to retry the analysis.',
 };
+
+/** States the worker moves on from by itself: the page polls while the requirement is in one of them. */
+const IN_MOTION: RequirementState[] = [
+  'SUBMITTED', 'REPO_VALIDATING', 'AWAITING_DOCUMENTS', 'ANALYSING', 'BRD_DRAFTED', 'REVISION_REQUESTED',
+  'CLIENT_CHANGES_REQUESTED',
+];
 
 /** States in which the owner may cancel (PRD section 6: any non-terminal state; these are the ones reachable so far). */
 const CANCELLABLE: RequirementState[] = [
@@ -86,12 +102,12 @@ export function RequirementDetailPage() {
     queryKey: ['requirement', id],
     queryFn: () => api.get<RequirementDetail>(`/api/v1/requirements/${id}`),
     // Routing happens asynchronously in the worker: poll briefly while the requirement is SUBMITTED.
-    refetchInterval: (query) => (query.state.data?.state === 'SUBMITTED' ? 3000 : false),
+    refetchInterval: (query) => (query.state.data && IN_MOTION.includes(query.state.data.state) ? 4000 : false),
   });
   const timeline = useQuery({
     queryKey: ['requirement', id, 'timeline'],
     queryFn: () => api.get<TimelineEntry[]>(`/api/v1/requirements/${id}/timeline`),
-    refetchInterval: requirement.data?.state === 'SUBMITTED' ? 3000 : false,
+    refetchInterval: requirement.data && IN_MOTION.includes(requirement.data.state) ? 4000 : false,
   });
 
   if (requirement.isPending) {
@@ -157,6 +173,7 @@ export function RequirementDetailPage() {
         State: <span className={`state state-${detail.state.toLowerCase()}`}>{detail.state}</span> · Revision{' '}
         {detail.currentRevisionNo}
       </p>
+      <WorkflowProgress state={detail.state} />
       {note && (
         <p className="notice" role="status">
           {note}
@@ -228,7 +245,7 @@ export function RequirementDetailPage() {
         </div>
       )}
 
-      <h2>History</h2>
+      <h2>Workflow history</h2>
       <ol>
         {timeline.data?.map((t) => (
           <li key={t.seq}>
@@ -237,6 +254,8 @@ export function RequirementDetailPage() {
           </li>
         ))}
       </ol>
+
+      <AuditHistory requirementId={detail.id} />
     </section>
   );
 }
