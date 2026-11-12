@@ -101,6 +101,12 @@ class RequirementController {
         return requirements.timeline(id);
     }
 
+    /** Audit history of the requirement and its documents, clarifications and BRD versions (content-free). */
+    @GetMapping("/{id}/audit")
+    List<io.github.tony079.sdlc.audit.api.AuditTrail.AuditEntry> audit(@PathVariable UUID id) {
+        return requirements.auditHistory(id);
+    }
+
     @PutMapping("/{id}")
     ResponseEntity<Detail> update(@PathVariable UUID id, @RequestBody UpdateRequest body,
                                   @RequestHeader(name = "If-Match", required = false) String ifMatch) {

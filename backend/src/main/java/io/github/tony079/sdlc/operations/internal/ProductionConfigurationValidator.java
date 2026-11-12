@@ -19,7 +19,8 @@ import org.springframework.stereotype.Component;
  *   <li>secrets come from mounted files of a secrets service ({@code sdlc.secrets.provider=file}), not environment;</li>
  *   <li>document extraction, if enabled, requires its sandbox;</li>
  *   <li>session cookies are secure;</li>
- *   <li>at least one security-alert channel is configured.</li>
+ *   <li>at least one security-alert channel is configured;</li>
+ *   <li>no development adapter is selected (mock or fake model provider, development repository source).</li>
  * </ul>
  * Only the names of failed checks are reported, never values. Development and test environments are not checked.
  */
@@ -65,6 +66,13 @@ class ProductionConfigurationValidator implements SmartInitializingSingleton {
         if (environment.getProperty("sdlc.alerts.webhook.url", "").isBlank()
                 && environment.getProperty("sdlc.alerts.email.host", "").isBlank()) {
             failures.add("NO_SECURITY_ALERT_CHANNEL");
+        }
+        String modelProvider = environment.getProperty("sdlc.model.provider", "none").strip();
+        if ("development-mock".equals(modelProvider) || "fake".equals(modelProvider)) {
+            failures.add("DEVELOPMENT_MODEL_PROVIDER");
+        }
+        if (!"github".equals(environment.getProperty("sdlc.repository.source", "github").strip())) {
+            failures.add("DEVELOPMENT_REPOSITORY_SOURCE");
         }
         if (!failures.isEmpty()) {
             log.error("Production configuration checks failed: {}", failures);

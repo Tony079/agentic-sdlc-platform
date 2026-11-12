@@ -34,14 +34,14 @@ class RepoVerifyHandler implements JobHandler<RepoVerifyHandler.Outcome> {
     record Outcome(String status, String reason, long githubRepoId, String defaultBranch) {
     }
 
-    private final GitHubBroker broker;
+    private final RepositoryAccess broker;
     private final WorkerRepository repositories;
     private final JobQueue jobs;
     private final AuditWriter audit;
     private final TransactionTemplate tx;
     private final TransactionTemplate nested;
 
-    RepoVerifyHandler(GitHubBroker broker, WorkerRepository repositories, JobQueue jobs, AuditWriter audit,
+    RepoVerifyHandler(RepositoryAccess broker, WorkerRepository repositories, JobQueue jobs, AuditWriter audit,
                       PlatformTransactionManager transactionManager) {
         this.broker = broker;
         this.repositories = repositories;
@@ -66,8 +66,8 @@ class RepoVerifyHandler implements JobHandler<RepoVerifyHandler.Outcome> {
             throw JobFailure.fatal("REPOSITORY_NOT_FOUND", null);
         }
         try {
-            GitHubBroker.Token token = broker.token(broker.installation(repo.owner(), repo.name()), repo.name());
-            RepositoryInfo info = broker.repository(repo.owner(), repo.name(), token);
+            RepositoryAccess.Session session = broker.open(repo.owner(), repo.name());
+            RepositoryInfo info = session.repository();
             if (!info.fullName().equalsIgnoreCase(repo.owner() + "/" + repo.name())) {
                 return new Outcome("UNAVAILABLE", "REPOSITORY_UNAVAILABLE", 0, null);
             }

@@ -54,4 +54,15 @@ class ProductionConfigurationValidatorTest {
                 .withProperty("sdlc.alerts.webhook.url", "https://alerts.example.test/hook");
         assertThat(new ProductionConfigurationValidator(env, provider("file")).check()).isEmpty();
     }
+
+    @Test
+    void developmentAdaptersAreRefusedInProduction() {
+        MockEnvironment env = new MockEnvironment().withProperty("sdlc.environment", "production")
+                .withProperty("sdlc.storage.kms.provider", "managed-kms")
+                .withProperty("sdlc.alerts.webhook.url", "https://alerts.example.test/hook")
+                .withProperty("sdlc.model.provider", "development-mock")
+                .withProperty("sdlc.repository.source", "development");
+        assertThat(new ProductionConfigurationValidator(env, provider("file")).check())
+                .containsExactly("DEVELOPMENT_MODEL_PROVIDER", "DEVELOPMENT_REPOSITORY_SOURCE");
+    }
 }

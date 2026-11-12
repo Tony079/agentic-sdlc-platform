@@ -10,6 +10,8 @@ import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
+import io.github.tony079.sdlc.audit.api.AuditTrail;
+import io.github.tony079.sdlc.audit.api.AuditTrail.AuditEntry;
 import io.github.tony079.sdlc.audit.api.AuditWriter;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditAction;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditResult;
@@ -56,9 +58,12 @@ class RequirementService {
     private final WorkflowEngine workflow;
     private final AuditWriter audit;
     private final SecurityEventRecorder securityEvents;
+    private final AuditTrail auditTrail;
 
     RequirementService(RequirementRepository requirements, RequirementKeyGenerator keys, IdempotencyStore idempotency,
-                       WorkflowEngine workflow, AuditWriter audit, SecurityEventRecorder securityEvents) {
+                       WorkflowEngine workflow, AuditWriter audit, SecurityEventRecorder securityEvents,
+                       AuditTrail auditTrail) {
+        this.auditTrail = auditTrail;
         this.requirements = requirements;
         this.keys = keys;
         this.idempotency = idempotency;
@@ -142,6 +147,13 @@ class RequirementService {
     public List<TimelineEntry> timeline(UUID id) {
         owned(id);
         return workflow.timeline(id);
+    }
+
+    /** Content-free audit history of a requirement, for its owner only (C-18). */
+    @Transactional(readOnly = true)
+    public List<AuditEntry> auditHistory(UUID id) {
+        owned(id);
+        return auditTrail.forRequirement(id, TenantContext.currentActor().orElse(null));
     }
 
     /**

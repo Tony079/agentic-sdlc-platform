@@ -47,14 +47,14 @@ class RepoSnapshotHandler implements JobHandler<RepoSnapshotHandler.Outcome> {
                    Inventory inventory, String failureCode) {
     }
 
-    private final GitHubBroker broker;
+    private final RepositoryAccess broker;
     private final WorkerRepository repositories;
     private final ObjectStore storage;
     private final JobQueue jobs;
     private final AuditWriter audit;
     private final TransactionTemplate tx;
 
-    RepoSnapshotHandler(GitHubBroker broker, WorkerRepository repositories, ObjectStore storage, JobQueue jobs,
+    RepoSnapshotHandler(RepositoryAccess broker, WorkerRepository repositories, ObjectStore storage, JobQueue jobs,
                         AuditWriter audit, PlatformTransactionManager transactionManager) {
         this.broker = broker;
         this.repositories = repositories;
@@ -83,8 +83,8 @@ class RepoSnapshotHandler implements JobHandler<RepoSnapshotHandler.Outcome> {
         RepositoryRow repo = row.repository();
         StoredObject stored;
         try {
-            GitHubBroker.Token token = broker.token(broker.installation(repo.owner(), repo.name()), repo.name());
-            try (InputStream archive = broker.tarball(repo.owner(), repo.name(), row.pinnedSha(), token)) {
+            RepositoryAccess.Session session = broker.open(repo.owner(), repo.name());
+            try (InputStream archive = session.tarball(row.pinnedSha())) {
                 stored = storage.put(job.tenantId(), archive, MAX_ARCHIVE_BYTES);
             }
         } catch (GitHubException e) {

@@ -37,7 +37,7 @@ class RepoValidateHandler implements JobHandler<RepoValidateHandler.Outcome> {
     record Outcome(UUID requirementRepositoryId, String sha, String defaultBranch) {
     }
 
-    private final GitHubBroker broker;
+    private final RepositoryAccess broker;
     private final WorkerRepository repositories;
     private final WorkflowEngine workflow;
     private final DocumentProcessing documents;
@@ -45,7 +45,7 @@ class RepoValidateHandler implements JobHandler<RepoValidateHandler.Outcome> {
     private final AuditWriter audit;
     private final TransactionTemplate tx;
 
-    RepoValidateHandler(GitHubBroker broker, WorkerRepository repositories, WorkflowEngine workflow,
+    RepoValidateHandler(RepositoryAccess broker, WorkerRepository repositories, WorkflowEngine workflow,
                         DocumentProcessing documents, JobQueue jobs, AuditWriter audit,
                         PlatformTransactionManager transactionManager) {
         this.broker = broker;
@@ -82,12 +82,12 @@ class RepoValidateHandler implements JobHandler<RepoValidateHandler.Outcome> {
             default -> { }
         }
         try {
-            GitHubBroker.Token token = broker.token(broker.installation(repo.owner(), repo.name()), repo.name());
-            RepositoryInfo info = broker.repository(repo.owner(), repo.name(), token);
+            RepositoryAccess.Session session = broker.open(repo.owner(), repo.name());
+            RepositoryInfo info = session.repository();
             if (repo.githubRepoId() == null || info.id() != repo.githubRepoId()) {
                 throw JobFailure.fatal("REPOSITORY_IDENTITY_CHANGED", null);
             }
-            String sha = broker.branchHead(repo.owner(), repo.name(), info.defaultBranch(), token);
+            String sha = session.branchHead(info.defaultBranch());
             return new Outcome(row.requirementRepositoryId(), sha, info.defaultBranch());
         } catch (GitHubException e) {
             throw RepoJobs.failure(e);

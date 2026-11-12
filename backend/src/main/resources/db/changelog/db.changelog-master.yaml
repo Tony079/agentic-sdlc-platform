@@ -49,3 +49,5 @@ databaseChangeLog:
   - include: { file: changes/0028-security-alerting.sql, relativeToChangelogFile: true }
   # C-09/C-16 (2026-11-08): change requests, approved scope versions, prioritised scope diff.
   - include: { file: changes/0029-change-requests.sql, relativeToChangelogFile: true }
+  # Working prototype (2026-11-12): development mock model provider registration.
+  - include: { file: changes/0030-development-mock-model.sql, relativeToChangelogFile: true }

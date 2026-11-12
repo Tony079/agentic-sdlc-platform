@@ -1,0 +1,9 @@
+# Files of the development sample repository (DEVELOPMENT ADAPTER; see DevelopmentRepositoryAccess).
+README.md
+pom.xml
+src/main/java/com/example/orders/Order.java
+src/main/java/com/example/orders/OrderController.java
+src/main/java/com/example/orders/OrderService.java
+src/main/java/com/example/orders/OrderRepository.java
+src/main/java/com/example/orders/RefundPolicy.java
+src/main/resources/application.properties

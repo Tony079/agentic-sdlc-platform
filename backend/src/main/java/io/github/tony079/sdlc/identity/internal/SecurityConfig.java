@@ -114,6 +114,9 @@ class SecurityConfig {
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
                         .requestMatchers("/api/v1/me", "/api/v1/auth/logout")
                                 .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
+                        // Which adapters this deployment runs with (names only), so the UI can label mock output.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/runtime")
+                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER", "STAFF")
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, e) ->
