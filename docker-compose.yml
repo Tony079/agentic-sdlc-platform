@@ -36,8 +36,8 @@ services:
   migrate:
     build: ./backend
     image: sdlc-platform-backend:local
-    command: ["--spring.profiles.active=migrate"]
     environment:
+      SPRING_PROFILES_ACTIVE: migrate
       SDLC_DB_URL: jdbc:postgresql://db:5432/sdlc
       SDLC_DB_MIGRATOR_PASSWORD: ${SDLC_DB_MIGRATOR_PASSWORD}
       SDLC_DEV_SEED: ${SDLC_DEV_SEED:-false}
@@ -70,8 +70,10 @@ services:
   retention:
     image: sdlc-platform-backend:local
     profiles: ["tools"]
-    command: ["--spring.profiles.active=retention"]
     environment:
+      # The profile is set here, not as a command: "docker compose run SERVICE ARGS" replaces the command, which
+      # would drop the profile and start the full API instead of this one-shot process.
+      SPRING_PROFILES_ACTIVE: retention
       SDLC_DB_URL: jdbc:postgresql://db:5432/sdlc
       SDLC_DB_RETENTION_PASSWORD: ${SDLC_DB_RETENTION_PASSWORD}
       SDLC_STORAGE_KEY: ${SDLC_STORAGE_KEY}
@@ -89,8 +91,10 @@ services:
   provision:
     image: sdlc-platform-backend:local
     profiles: ["tools"]
-    command: ["--spring.profiles.active=provision"]
     environment:
+      # The profile is set here, not as a command: "docker compose run SERVICE ARGS" replaces the command, which
+      # would drop the profile and start the full API instead of this one-shot process.
+      SPRING_PROFILES_ACTIVE: provision
       SDLC_DB_URL: jdbc:postgresql://db:5432/sdlc
       SDLC_DB_PROVISIONER_PASSWORD: ${SDLC_DB_PROVISIONER_PASSWORD}
       SDLC_MFA_KEY: ${SDLC_MFA_KEY}
@@ -107,8 +111,8 @@ services:
   # Same image, no HTTP port. Healthy while its poll loop keeps the liveness file fresh.
   worker:
     image: sdlc-platform-backend:local
-    command: ["--spring.profiles.active=worker"]
     environment:
+      SPRING_PROFILES_ACTIVE: worker
       SDLC_DB_URL: jdbc:postgresql://db:5432/sdlc
       SDLC_DB_WORKER_PASSWORD: ${SDLC_DB_WORKER_PASSWORD}
       SDLC_STORAGE_KEY: ${SDLC_STORAGE_KEY}
