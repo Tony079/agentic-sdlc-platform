@@ -69,7 +69,20 @@ sdlc:
     # Encrypts staff TOTP secrets (O-11). 32 random bytes, base64 (openssl rand -base64 32); required by the api and
     # provision processes. Never stored in the database.
     mfa-key: ${SDLC_MFA_KEY:}
+  # Garuda (GD-04): the address people open from invitation and password-reset emails, e.g. https://garuda.example.com.
+  public-base-url: ${SDLC_PUBLIC_BASE_URL:http://localhost:8080}
+  mail:
+    # Account email (invitations, password resets) over SMTPS. Gmail: host smtp.gmail.com, port 465, username = the
+    # Google account, password = an App Password (needs 2-Step Verification) supplied as the secret mail.smtp-password
+    # (SDLC_SECRET_MAIL_SMTP_PASSWORD or a mounted secret file). Without a host, admins copy links instead.
+    host: ${SDLC_MAIL_HOST:}
+    port: ${SDLC_MAIL_PORT:465}
+    username: ${SDLC_MAIL_USERNAME:}
+    from: ${SDLC_MAIL_FROM:}
+    from-name: ${SDLC_MAIL_FROM_NAME:Garuda}
   security:
+    # GD-08: Organisation Admins complete sign-in with TOTP. Refused as false in production.
+    org-admin-mfa-required: ${SDLC_ORG_ADMIN_MFA_REQUIRED:true}
     # Absolute session lifetime (TDD 22.2): sessions older than this are invalidated regardless of activity.
     absolute-session-timeout: 8h
     login-throttle:

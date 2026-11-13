@@ -19,7 +19,8 @@ import org.springframework.stereotype.Component;
  *   <li>secrets come from mounted files of a secrets service ({@code sdlc.secrets.provider=file}), not environment;</li>
  *   <li>document extraction, if enabled, requires its sandbox;</li>
  *   <li>session cookies are secure;</li>
- *   <li>at least one security-alert channel is configured.</li>
+ *   <li>at least one security-alert channel is configured;</li>
+ *   <li>Organisation Admins must use MFA (Garuda GD-08), and account links point at an HTTPS address.</li>
  * </ul>
  * Only the names of failed checks are reported, never values. Development and test environments are not checked.
  */
@@ -65,6 +66,12 @@ class ProductionConfigurationValidator implements SmartInitializingSingleton {
         if (environment.getProperty("sdlc.alerts.webhook.url", "").isBlank()
                 && environment.getProperty("sdlc.alerts.email.host", "").isBlank()) {
             failures.add("NO_SECURITY_ALERT_CHANNEL");
+        }
+        if (!environment.getProperty("sdlc.security.org-admin-mfa-required", Boolean.class, true)) {
+            failures.add("ORG_ADMIN_MFA_DISABLED");
+        }
+        if (!environment.getProperty("sdlc.public-base-url", "").startsWith("https://")) {
+            failures.add("PUBLIC_BASE_URL_NOT_HTTPS");
         }
         if (!failures.isEmpty()) {
             log.error("Production configuration checks failed: {}", failures);

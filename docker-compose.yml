@@ -57,6 +57,13 @@ services:
       SDLC_COOKIE_SECURE: "false"
       SDLC_STORAGE_KEY: ${SDLC_STORAGE_KEY:?set SDLC_STORAGE_KEY in .env}
       SDLC_MFA_KEY: ${SDLC_MFA_KEY:?set SDLC_MFA_KEY in .env}
+      # Garuda account email (GD-04). Leave SDLC_MAIL_HOST empty to use copy-link only.
+      SDLC_PUBLIC_BASE_URL: ${SDLC_PUBLIC_BASE_URL:-http://localhost:8080}
+      SDLC_MAIL_HOST: ${SDLC_MAIL_HOST:-}
+      SDLC_MAIL_PORT: ${SDLC_MAIL_PORT:-465}
+      SDLC_MAIL_USERNAME: ${SDLC_MAIL_USERNAME:-}
+      SDLC_MAIL_FROM: ${SDLC_MAIL_FROM:-}
+      SDLC_SECRET_MAIL_SMTP_PASSWORD: ${SDLC_MAIL_APP_PASSWORD:-}
     volumes:
       - doc-store:/var/lib/sdlc/documents
     depends_on:

@@ -29,6 +29,9 @@ public interface StaffAccess {
      */
     UUID requirePlatformCapability(StaffCapability capability);
 
+    /** As {@link #requirePlatformCapability}, holding at least one of the capabilities (Garuda dashboard, FR-DSH-01). */
+    UUID requireAnyPlatformCapability(StaffCapability... capabilities);
+
     record StaffContext(UUID staffId, UUID tenantId) {
     }
 }

@@ -37,10 +37,12 @@ class ProductionConfigurationValidatorTest {
         MockEnvironment env = new MockEnvironment().withProperty("sdlc.environment", "production")
                 .withProperty("sdlc.documents.extraction.enabled", "true")
                 .withProperty("server.servlet.session.cookie.secure", "false")
-                .withProperty("sdlc.alerts.webhook.secret", "do-not-print-this-secret");
+                .withProperty("sdlc.alerts.webhook.secret", "do-not-print-this-secret")
+                .withProperty("sdlc.security.org-admin-mfa-required", "false");
         var validator = new ProductionConfigurationValidator(env, provider("env"));
         assertThat(validator.check()).containsExactly("STORAGE_KMS_LOCAL", "SECRETS_PROVIDER_NOT_MANAGED",
-                "EXTRACTION_SANDBOX_NOT_REQUIRED", "COOKIE_NOT_SECURE", "NO_SECURITY_ALERT_CHANNEL");
+                "EXTRACTION_SANDBOX_NOT_REQUIRED", "COOKIE_NOT_SECURE", "NO_SECURITY_ALERT_CHANNEL",
+                "ORG_ADMIN_MFA_DISABLED", "PUBLIC_BASE_URL_NOT_HTTPS");
         assertThatThrownBy(validator::afterSingletonsInstantiated).hasMessageContaining("STORAGE_KMS_LOCAL")
                 .hasMessageNotContaining("do-not-print-this-secret");
     }
@@ -51,7 +53,8 @@ class ProductionConfigurationValidatorTest {
                 .withProperty("sdlc.storage.kms.provider", "managed-kms")
                 .withProperty("sdlc.documents.extraction.enabled", "true")
                 .withProperty("sdlc.documents.extraction.sandbox-required", "true")
-                .withProperty("sdlc.alerts.webhook.url", "https://alerts.example.test/hook");
+                .withProperty("sdlc.alerts.webhook.url", "https://alerts.example.test/hook")
+                .withProperty("sdlc.public-base-url", "https://garuda.example.test");
         assertThat(new ProductionConfigurationValidator(env, provider("file")).check()).isEmpty();
     }
 }

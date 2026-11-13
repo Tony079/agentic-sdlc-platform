@@ -20,5 +20,9 @@ public enum StaffCapability {
     /** Owner decision O-27: retries a failed job of the active tenant after reviewing the failure. */
     JOB_RETRY,
     /** Owner decision C-09: assesses client change requests (scope, effort, timeline, technical impact). */
-    BUSINESS_ANALYST
+    BUSINESS_ANALYST,
+    /** Garuda GD-03: requests or approves the onboarding, suspension or reactivation of an organisation (two people). */
+    ORG_ONBOARD,
+    /** PRD section 4 Auditor: read-only view of the Garuda dashboard and platform audit history. */
+    AUDITOR
 }

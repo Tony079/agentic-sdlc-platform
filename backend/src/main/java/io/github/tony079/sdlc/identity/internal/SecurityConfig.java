@@ -89,6 +89,7 @@ class SecurityConfig {
                         // Invitation acceptance and password reset (FR-ORG-07/08): the token is in the POST body only.
                         .requestMatchers(HttpMethod.POST, "/api/v1/public/invitations/lookup",
                                 "/api/v1/public/invitations/accept", "/api/v1/public/password-resets",
+                                "/api/v1/public/password-resets/lookup",
                                 "/api/v1/public/password-resets/complete").permitAll()
                         // GD-08: an Organisation Admin signs in with password, then TOTP; nothing else before MFA.
                         .requestMatchers("/api/v1/auth/mfa/**").hasRole("CLIENT_MFA_PENDING")
