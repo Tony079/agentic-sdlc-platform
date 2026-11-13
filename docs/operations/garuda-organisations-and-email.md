@@ -2,22 +2,28 @@
 
 Owner decisions GD-03, GD-04 and GD-08 (decision register §15). This runbook covers the operator steps. The model is described in `docs/architecture/garuda-platform-model.md`.
 
-## 1. Staff who onboard organisations
+## 1. Garuda staff
 
-Onboarding, suspension and reactivation each need two Garuda staff members who both hold `ORG_ONBOARD`: one requests, the other approves. The database refuses a single-person approval.
+**Once per deployment (command line):** create the first two staff administrators with the two-person bootstrap (`create-staff` for each, authenticator set-up at `/staff/login`, then `bootstrap-admins` or the production ceremony).
 
-Grant the capability through the provisioning tool. Two staff administrators approve each grant.
+**Everyone else (console only, GD-15):** a staff administrator opens **Console → Team → Invite staff member**, enters the name and email, and ticks capabilities. A different staff administrator approves the request in **Team → Requests**. The new person:
+1. receives a single-use link (emailed, and also shown to the approver);
+2. sets a password;
+3. sets up an authenticator at first sign-in.
 
-```bash
-docker compose run --rm -T provision grant-capability --staff=olive@garuda.example --capability=ORG_ONBOARD \
-  --requester=admin.one@garuda.example --requester-code=123456 --approver=admin.two@garuda.example --approver-code=654321
-```
+The same screen handles every later change. Each is approved by a second administrator, and nobody can change their own account:
+- grant or revoke capabilities;
+- assign or remove organisations;
+- disable or reactivate someone;
+- reset an authenticator or a password.
 
 | Capability | Gives access to |
 |---|---|
+| `STAFF_ADMIN` | The Team screen, plus the dashboard |
 | `ORG_ONBOARD` | Onboarding and status requests, plus the dashboard |
 | `AUDITOR` | The dashboard only |
-| `STAFF_ADMIN` | The dashboard (and its existing staff-administration rights) |
+
+Onboarding an organisation needs two people who both hold `ORG_ONBOARD` (one requests, the other approves).
 
 ## 2. Onboarding flow
 

@@ -549,3 +549,55 @@ export interface TenantLifecycleRequest {
   reason: string;
   requestedAt: string;
 }
+
+// Garuda console staff administration (GD-15)
+
+export type StaffRequestKind =
+  | 'INVITE'
+  | 'GRANT_CAPABILITY'
+  | 'REVOKE_CAPABILITY'
+  | 'ASSIGN_TENANT'
+  | 'REVOKE_ASSIGNMENT'
+  | 'DISABLE'
+  | 'REACTIVATE'
+  | 'RESET_MFA'
+  | 'RESET_PASSWORD';
+
+export interface StaffMember {
+  id: string;
+  email: string;
+  displayName: string;
+  status: 'INVITED' | 'ACTIVE' | 'DISABLED';
+  mfaEnrolled: boolean;
+  createdAt: string;
+  capabilities: string[];
+  assignments: { tenantId: string; tenantName: string }[];
+  pendingLink: { purpose: 'INVITE' | 'PASSWORD_RESET'; expiresAt: string; emailStatus: 'NOT_SENT' | 'SENT' | 'FAILED' } | null;
+}
+
+export interface StaffRequest {
+  id: string;
+  kind: StaffRequestKind;
+  subjectStaffId: string | null;
+  subjectName: string | null;
+  inviteEmail: string | null;
+  inviteDisplayName: string | null;
+  inviteCapabilities: string[];
+  capability: string | null;
+  tenantId: string | null;
+  tenantName: string | null;
+  reason: string;
+  status: 'REQUESTED' | 'EXECUTED' | 'REJECTED' | 'CANCELLED';
+  requestedBy: string;
+  requestedByName: string;
+  requestedAt: string;
+  approvedBy: string | null;
+  approvedByName: string | null;
+  executedAt: string | null;
+}
+
+export interface StaffApproved {
+  request: StaffRequest | null;
+  link: string | null;
+  emailStatus: 'NOT_SENT' | 'SENT' | 'FAILED' | null;
+}

@@ -24,7 +24,7 @@ function strength(password: string): { label: string; percent: number; tone: str
  * Invitation acceptance and password reset (FR-ORG-07/08). The token is read from the URL fragment, which browsers do
  * not send to servers, and is sent only in a POST body.
  */
-export function AccountLinkPage({ purpose }: { purpose: 'INVITE' | 'PASSWORD_RESET' }) {
+export function AccountLinkPage({ purpose, staff = false }: { purpose: 'INVITE' | 'PASSWORD_RESET'; staff?: boolean }) {
   const { slug = '' } = useParams();
   const location = useLocation();
   const token = location.hash.replace(/^#/, '');
@@ -43,16 +43,22 @@ export function AccountLinkPage({ purpose }: { purpose: 'INVITE' | 'PASSWORD_RES
       return;
     }
     api
-      .post<AccountLinkDetails>(invite ? '/api/v1/public/invitations/lookup' : '/api/v1/public/password-resets/lookup', {
-        organisation: slug,
-        token,
-      })
+      .post<AccountLinkDetails>(
+        staff
+          ? invite
+            ? '/api/v1/public/staff-invitations/lookup'
+            : '/api/v1/public/staff-password-resets/lookup'
+          : invite
+            ? '/api/v1/public/invitations/lookup'
+            : '/api/v1/public/password-resets/lookup',
+        staff ? { token } : { organisation: slug, token },
+      )
       .then((d) => !cancelled && setDetails(d))
       .catch(() => !cancelled && setUnusable(true));
     return () => {
       cancelled = true;
     };
-  }, [invite, slug, token]);
+  }, [invite, slug, staff, token]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -63,11 +69,18 @@ export function AccountLinkPage({ purpose }: { purpose: 'INVITE' | 'PASSWORD_RES
     }
     setBusy(true);
     try {
-      await api.post(invite ? '/api/v1/public/invitations/accept' : '/api/v1/public/password-resets/complete', {
-        organisation: slug,
-        token,
-        password,
-      });
+      if (staff) {
+        await api.post(invite ? '/api/v1/public/staff-invitations/accept' : '/api/v1/public/staff-password-resets/complete', {
+          token,
+          password,
+        });
+      } else {
+        await api.post(invite ? '/api/v1/public/invitations/accept' : '/api/v1/public/password-resets/complete', {
+          organisation: slug,
+          token,
+          password,
+        });
+      }
       setDone(true);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'LINK_UNUSABLE') {
@@ -83,8 +96,10 @@ export function AccountLinkPage({ purpose }: { purpose: 'INVITE' | 'PASSWORD_RES
   }
 
   const s = strength(password);
+  const signIn = staff ? '/staff/login' : `/o/${slug}/login`;
+  const orgName = staff ? 'the Garuda console' : details?.organisationName;
   return (
-    <AuthLayout>
+    <AuthLayout variant={staff ? 'staff' : 'client'}>
       {done ? (
         <>
           <div className="stat-icon" style={{ width: 40, height: 40, marginBottom: '1rem' }}>
@@ -93,10 +108,12 @@ export function AccountLinkPage({ purpose }: { purpose: 'INVITE' | 'PASSWORD_RES
           <h1>{invite ? 'Your account is ready' : 'Password changed'}</h1>
           <p className="lead">
             {invite
-              ? 'You can now sign in to your organisation. Organisation Admins will set up two-step verification at first sign-in.'
+              ? staff
+                ? 'Sign in to the console and set up your authenticator app (required within 72 hours).'
+                : 'You can now sign in to your organisation. Organisation Admins will set up two-step verification at first sign-in.'
               : 'Sign in with your new password.'}
           </p>
-          <Link to={`/o/${slug}/login`} className="btn btn-primary btn-lg btn-block">
+          <Link to={signIn} className="btn btn-primary btn-lg btn-block">
             Continue to sign in
           </Link>
         </>
@@ -104,25 +121,26 @@ export function AccountLinkPage({ purpose }: { purpose: 'INVITE' | 'PASSWORD_RES
         <>
           <h1>This link can&apos;t be used</h1>
           <Callout tone="warning">
-            The link has expired, was already used or was replaced by a newer one. Ask your Organisation Admin for a new{' '}
+            The link has expired, was already used or was replaced by a newer one. Ask{' '}
+            {staff ? 'a Garuda staff administrator' : 'your Organisation Admin'} for a new{' '}
             {invite ? 'invitation' : 'password reset link'}
-            {invite ? '.' : ', or request one yourself.'}
+            {invite || staff ? '.' : ', or request one yourself.'}
           </Callout>
           <div className="auth-links">
-            <Link to={`/o/${slug}/login`}>Back to sign in</Link>
-            {!invite && <Link to={`/o/${slug}/forgot`}>Request a new link</Link>}
+            <Link to={signIn}>Back to sign in</Link>
+            {!invite && !staff && <Link to={`/o/${slug}/forgot`}>Request a new link</Link>}
           </div>
         </>
       ) : !details ? (
         <Loading label="Checking your link…" />
       ) : (
         <>
-          <div className="eyebrow">{details.organisationName}</div>
+          <div className="eyebrow">{staff ? 'Garuda staff' : details.organisationName}</div>
           <h1>{invite ? `Welcome, ${details.displayName}` : 'Choose a new password'}</h1>
           <p className="lead">
             {invite ? (
               <>
-                You were invited to <strong>{details.organisationName}</strong> on Garuda. Set a password for{' '}
+                You were invited to <strong>{orgName}</strong>{staff ? '' : ' on Garuda'}. Set a password for{' '}
                 <strong>{details.email}</strong> to activate your account.
               </>
             ) : (

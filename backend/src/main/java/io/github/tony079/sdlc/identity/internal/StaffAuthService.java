@@ -47,7 +47,8 @@ class StaffAuthService {
     public Optional<StaffRecord> authenticate(String email, String password) {
         Optional<StaffRecord> found = staff.findByEmail(email.trim());
         StaffRecord record = found.orElse(null);
-        boolean matches = passwordEncoder.matches(password, record == null ? dummyHash : record.passwordHash());
+        boolean matches = passwordEncoder.matches(password,
+                record == null || record.passwordHash() == null ? dummyHash : record.passwordHash());
         if (record == null || !matches || !record.active()) {
             return Optional.empty();
         }

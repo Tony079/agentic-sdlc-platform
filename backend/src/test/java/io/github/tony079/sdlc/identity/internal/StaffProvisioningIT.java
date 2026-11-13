@@ -205,15 +205,18 @@ class StaffProvisioningIT {
                     "DELETE FROM app.staff_capability_grant",
                     "DELETE FROM app.platform_audit_event",
                     "UPDATE app.platform_audit_event SET result = 'SUCCESS'"}) {
+                // GD-15: the API login may now write staff rows, but only as the execution of a two-person request
+                // approved in the same transaction; outside one it is refused by a privilege or by a database guard.
                 assertThatThrownBy(() -> statement.execute(sql)).as(sql).isInstanceOf(SQLException.class)
-                        .hasMessageContaining("permission denied");
+                        .hasMessageMatching("(?s).*(permission denied|approved staff request|approved invitation"
+                                + "|only through a staff link|already revoked|opens only through).*");
             }
             // An enrolled MFA secret cannot be replaced or cleared by the API login (trigger).
             assertThatThrownBy(() -> statement.execute("UPDATE app.staff_user SET mfa_secret_enc = 'abc' WHERE id = '"
-                    + target.id() + "'")).hasMessageContaining("provisioning path");
+                    + target.id() + "'")).hasMessageContaining("approved request");
             assertThatThrownBy(() -> statement.execute(
                     "UPDATE app.staff_user SET mfa_secret_enc = NULL, mfa_enrolled_at = NULL WHERE id = '"
-                            + target.id() + "'")).hasMessageContaining("provisioning path");
+                            + target.id() + "'")).hasMessageContaining("approved request");
         }
     }
 

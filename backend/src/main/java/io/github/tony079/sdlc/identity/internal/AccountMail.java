@@ -49,6 +49,10 @@ class AccountMail {
     }
 
     String link(Message m) {
+        if (m.tenantId() == null) {
+            // Garuda staff (GD-15): links to the staff console.
+            return baseUrl + "/staff/" + (m.kind() == Kind.INVITE ? "invite#" : "reset#") + m.token();
+        }
         return baseUrl + "/o/" + m.organisationSlug() + (m.kind() == Kind.INVITE ? "/invite#" : "/reset#") + m.token();
     }
 
@@ -69,15 +73,21 @@ class AccountMail {
             status = "FAILED";
         }
         String recorded = status;
-        TenantContext.callAs(m.tenantId(), () -> tx.execute(s -> jdbc.sql(
-                "UPDATE app.user_invitation SET email_status = :status WHERE id = :id AND used_at IS NULL")
-                .param("status", recorded).param("id", m.invitationId()).update()));
+        if (m.tenantId() == null) {
+            tx.execute(s -> jdbc.sql(
+                    "UPDATE app.staff_invitation SET email_status = :status WHERE id = :id AND used_at IS NULL")
+                    .param("status", recorded).param("id", m.invitationId()).update());
+        } else {
+            TenantContext.callAs(m.tenantId(), () -> tx.execute(s -> jdbc.sql(
+                    "UPDATE app.user_invitation SET email_status = :status WHERE id = :id AND used_at IS NULL")
+                    .param("status", recorded).param("id", m.invitationId()).update()));
+        }
         return status;
     }
 
     private String subject(Message m) {
         return m.kind() == Kind.INVITE
-                ? "You are invited to " + m.organisationName() + " on Garuda"
+                ? (m.tenantId() == null ? "You are invited to the Garuda console" : "You are invited to " + m.organisationName() + " on Garuda")
                 : "Reset your Garuda password";
     }
 

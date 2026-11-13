@@ -27,6 +27,7 @@ import { StaffOnboardingPage } from './pages/staff/StaffOnboardingPage';
 import { StaffOperationsPage } from './pages/staff/StaffOperationsPage';
 import { StaffOrganisationDetailPage, StaffOrganisationsPage } from './pages/staff/StaffOrganisationsPage';
 import { StaffReviewPage } from './pages/staff/StaffReviewPage';
+import { StaffTeamPage } from './pages/staff/StaffTeamPage';
 
 /** Redirects to sign-in when there is no session. A convenience only: the API enforces authentication. */
 function RequireSession({ children }: { children: ReactNode }) {
@@ -57,12 +58,15 @@ export function App() {
 
       {/* Garuda staff console (separate login with TOTP; never a client role). */}
       <Route path="/staff/login" element={<StaffLoginPage />} />
+      <Route path="/staff/invite" element={<AccountLinkPage purpose="INVITE" staff />} />
+      <Route path="/staff/reset" element={<AccountLinkPage purpose="PASSWORD_RESET" staff />} />
       <Route path="/staff" element={<StaffLayout />}>
         <Route index element={<StaffIndex dashboard={<StaffDashboardPage />} workspace={<StaffHomePage />} />} />
         <Route path="workspace" element={<StaffHomePage />} />
         <Route path="organisations" element={<StaffOrganisationsPage />} />
         <Route path="organisations/:id" element={<StaffOrganisationDetailPage />} />
         <Route path="onboarding" element={<StaffOnboardingPage />} />
+        <Route path="team" element={<StaffTeamPage />} />
         <Route path="reviews/:versionId" element={<StaffReviewPage />} />
         <Route path="inbox" element={<StaffClarificationsPage />} />
         <Route path="operations" element={<StaffOperationsPage />} />

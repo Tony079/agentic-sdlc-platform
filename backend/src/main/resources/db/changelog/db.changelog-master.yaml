@@ -52,3 +52,5 @@ databaseChangeLog:
   # Garuda (GD-01..GD-14, 2026-11-13): organisations, onboarding, suspension, Organisation Admins, project roles,
   # invitations, restricted requirements and project row-level security for client users.
   - include: { file: changes/0030-garuda-organisations.sql, relativeToChangelogFile: true }
+  # GD-15 (2026-11-13): staff administration in the Garuda console, two-person requests, staff invitations.
+  - include: { file: changes/0031-staff-administration.sql, relativeToChangelogFile: true }

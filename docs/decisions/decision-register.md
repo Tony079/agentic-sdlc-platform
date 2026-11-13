@@ -440,3 +440,17 @@ The product is named **Garuda**. The model is `docs/architecture/garuda-platform
 - For production the same SMTP adapter can point at Google Workspace or a transactional email service. That is a configuration change, not a code change.
 
 **Owner direction:** the UI is built to enterprise standard from the start, not as a later polish step.
+
+### GD-15. Staff administration in the console (owner, 2026-11-13)
+
+**Owner decision:** apart from the first two staff administrators, every Garuda staff member is created and managed through the console, not the command line.
+
+**What is built** (migration `0031-staff-administration`, **Console → Team**):
+- **What is handled in the console:** invite a staff member with capabilities, grant or revoke a capability, assign an organisation or remove the assignment, disable, reactivate, reset the authenticator, and reset the password.
+- **Two people for every change:** each change is a request by one staff administrator, approved by a different one. Neither may be the person being changed. The change is applied in the approving transaction and recorded in the platform audit.
+- **Invited staff:** they start as INVITED, without a password. They set their own password through a single-use link that expires after 72 hours (emailed, and always shown to the approver). They then enrol an authenticator within 72 hours.
+- **What stays on the command line:** only the one-time two-person bootstrap of the first administrators (O-13).
+
+**Effect on S-02:** the API login may now write staff identities, grants and assignments. Database guards allow this only as the execution of an approved two-person request in the same transaction, approved by an active, MFA-enrolled staff administrator acting as themselves. Outside such a request, the database still refuses these writes (`StaffAdministrationIT`, `StaffProvisioningIT`).
+
+**Residual risk** (accepted, as for organisation onboarding): the database cannot verify a staff member's TOTP itself. A fully compromised API process could therefore forge actor identities. The provisioning path stays available for recovery.

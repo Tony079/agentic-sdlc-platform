@@ -100,6 +100,11 @@ export function StaffLayout() {
               Onboarding &amp; status
             </Item>
           )}
+          {hasAny(staff, 'STAFF_ADMIN') && (
+            <Item to="/staff/team" icon="users">
+              Team
+            </Item>
+          )}
           <div className="nav-section">Delivery</div>
           <Item to="/staff/workspace" icon="layers" end={!oversight}>
             Workspace
