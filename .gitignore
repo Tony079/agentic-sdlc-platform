@@ -16,3 +16,4 @@ frontend/coverage/
 
 # Prototype demo staff credentials (scripts/prototype_demo_setup.py)
 .prototype-demo/
+__pycache__/

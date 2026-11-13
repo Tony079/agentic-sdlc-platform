@@ -16,7 +16,7 @@ Accounts (organisation "acme" from the development seed):
   release@prototype.test                           RELEASE_APPROVE (must differ from the reviewer: separation of duties)
 
 Passwords and TOTP secrets are random, generated here, and written to .prototype-demo/credentials.json (mode 0600,
-git-ignored). Use scripts/totp.py to print a current code, or add the secrets to an authenticator app.
+git-ignored). Progress is saved after every step, so an interrupted run can simply be started again. Use scripts/totp.py to print a current code, or add the secrets to an authenticator app.
 
 Requires Python 3.9+ (standard library only) and either Docker Compose or SDLC_PROVISION_CMD.
 
@@ -116,31 +116,85 @@ class Session:
         return json.loads(raw) if raw else {}
 
 
+COMPOSE_NOISE = ("Container ", "Network ", "Volume ", "[+]", " Creating", " Created", " Starting", " Started",
+                 " Waiting", " Exited", " Running", " Healthy")
+
+
+def failure_detail(output: str) -> str:
+    """The provisioning error from the process output, without Docker Compose's progress lines."""
+    lines = [l for l in output.splitlines() if l.strip() and not l.strip().startswith(COMPOSE_NOISE)]
+    for marker in ("ProvisioningException:", "Caused by:", "IllegalStateException:", "IllegalArgumentException:"):
+        hits = [l for l in lines if marker in l]
+        if hits:
+            return hits[-1].strip()[:500]
+    return "\n".join(lines[-12:]) or "(no output)"
+
+
 def provision(args: list[str], stdin: str | None = None) -> None:
     result = subprocess.run(PROVISION + args, input=stdin, text=True, capture_output=True, cwd=ROOT)
     if result.returncode != 0:
-        tail = "\n".join((result.stdout + result.stderr).strip().splitlines()[-6:])
         shown = " ".join(a if "-code=" not in a else a.split("=")[0] + "=******" for a in args)
-        raise SystemExit(f"provision {shown} failed (exit {result.returncode}):\n{tail}")
+        detail = failure_detail(result.stdout + "\n" + result.stderr)
+        hint = ""
+        if "already exists" in detail:
+            hint = ("\n\nThe account exists from an earlier, interrupted run whose passwords were not saved. "
+                    "Reset the local stack and run this script again:\n"
+                    "  docker compose -f docker-compose.yml -f docker-compose.prototype.yml down -v\n"
+                    "  rm -rf .prototype-demo\n"
+                    "  docker compose -f docker-compose.yml -f docker-compose.prototype.yml up")
+        raise SystemExit(f"provision {shown} failed (exit {result.returncode}):\n  {detail}{hint}")
+
+
+def save(state: dict) -> None:
+    """Writes progress after every step (mode 0600), so an interrupted run resumes instead of starting over."""
+    OUT_DIR.mkdir(mode=0o700, exist_ok=True)
+    temporary = OUT_FILE.with_suffix(".tmp")
+    temporary.touch(mode=0o600)
+    temporary.write_text(json.dumps(state, indent=2) + "\n")
+    temporary.replace(OUT_FILE)
 
 
 def main() -> None:
+    # Fail before creating anything if the web/API is not answering: an account created now could not be enrolled.
+    Session()
+
     if OUT_FILE.exists():
-        raise SystemExit(f"{OUT_FILE} already exists: the demo accounts were created before.\n"
-                         "To start again, reset the stack (docker compose down -v) and delete that file.")
-    OUT_DIR.mkdir(mode=0o700, exist_ok=True)
+        state = json.loads(OUT_FILE.read_text())
+        if state.get("complete"):
+            raise SystemExit(f"{OUT_FILE} says the demo accounts are already set up.\n"
+                             "To start again, reset the stack (docker compose down -v) and delete that file.")
+        print(f"Resuming the unfinished setup recorded in {OUT_FILE}")
+    else:
+        state = {"baseUrl": BASE_URL, "tenant": TENANT, "accounts": {}, "done": [], "lastSteps": {}}
+    accounts: dict[str, dict] = state["accounts"]
+    done: list[str] = state["done"]
     codes = Codes()
-    accounts: dict[str, dict] = {}
+    codes.last = {k: int(v) for k, v in state.get("lastSteps", {}).items()}
+
+    def mark(step: str) -> None:
+        done.append(step)
+        state["lastSteps"] = codes.last
+        save(state)
 
     print("1/4 Creating staff accounts (provision create-staff)")
     for email, spec in ACCOUNTS.items():
+        if email in accounts:
+            print(f"    {email} (already created)")
+            continue
         password = secrets.token_urlsafe(18)
+        # Saved first: if the command succeeds but this script is interrupted, the password is not lost.
+        accounts[email] = {"password": password, "capabilities": spec["capabilities"], "created": False}
+        save(state)
         provision(["create-staff", f"--email={email}", f"--display-name={spec['name']}"], stdin=password + "\n")
-        accounts[email] = {"password": password, "capabilities": spec["capabilities"]}
+        accounts[email]["created"] = True
+        save(state)
         print(f"    {email}")
 
     print("2/4 Enrolling an authenticator for each account (staff sign-in API)")
     for email, account in accounts.items():
+        if account.get("totpSecret") and f"enrolled:{email}" in done:
+            print(f"    {email} (already enrolled)")
+            continue
         session = Session()
         status = session.call("POST", "/api/v1/staff/auth/login", {"email": email, "password": account["password"]})
         if status.get("status") != "MFA_ENROLMENT_REQUIRED":
@@ -148,30 +202,40 @@ def main() -> None:
         enrolment = session.call("POST", "/api/v1/staff/auth/mfa/enrolment")
         account["totpSecret"] = enrolment["secret"]
         account["otpauthUri"] = enrolment["otpauthUri"]
+        save(state)
         session.call("POST", "/api/v1/staff/auth/mfa/enrolment/confirm", {"code": codes.next(email, enrolment["secret"])})
+        mark(f"enrolled:{email}")
         print(f"    {email}")
-    # Saved before the slow part, so the secrets are not lost if a later step fails.
-    OUT_FILE.touch(mode=0o600)
-    OUT_FILE.write_text(json.dumps({"baseUrl": BASE_URL, "tenant": TENANT, "accounts": accounts}, indent=2) + "\n")
 
     def admin_codes(first_flag: str, second_flag: str) -> list[str]:
         return [f"--{first_flag}={ADMIN_A}", f"--{first_flag}-code={codes.next(ADMIN_A, accounts[ADMIN_A]['totpSecret'])}",
                 f"--{second_flag}={ADMIN_B}", f"--{second_flag}-code={codes.next(ADMIN_B, accounts[ADMIN_B]['totpSecret'])}"]
 
     print("3/4 Bootstrapping the two administrators (development environments only)")
-    provision(["bootstrap-admins"] + admin_codes("first", "second"))
+    if "bootstrap" in done:
+        print("    (already done)")
+    else:
+        provision(["bootstrap-admins"] + admin_codes("first", "second"))
+        mark("bootstrap")
 
     print("4/4 Two-person grants and tenant assignments")
     for email, account in accounts.items():
         if not account["capabilities"]:
             continue
-        provision(["assign-tenant", f"--staff={email}", f"--tenant={TENANT}"] + admin_codes("requester", "approver"))
-        print(f"    {email}: assigned to {TENANT}")
+        if f"assign:{email}" not in done:
+            provision(["assign-tenant", f"--staff={email}", f"--tenant={TENANT}"] + admin_codes("requester", "approver"))
+            mark(f"assign:{email}")
+            print(f"    {email}: assigned to {TENANT}")
         for capability in account["capabilities"]:
+            if f"grant:{email}:{capability}" in done:
+                continue
             provision(["grant-capability", f"--staff={email}", f"--capability={capability}"]
                       + admin_codes("requester", "approver"))
+            mark(f"grant:{email}:{capability}")
             print(f"    {email}: {capability}")
 
+    state["complete"] = True
+    save(state)
     print(f"\nDone. Credentials: {OUT_FILE}")
     print("Staff sign-in: " + BASE_URL + "/staff/login")
     print("Current code:  python3 scripts/totp.py reviewer@prototype.test")
