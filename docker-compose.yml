@@ -132,8 +132,10 @@ services:
 
   # Development malware scanner (clamd on 3310, internal network only). Downloads signatures at start-up; until it is
   # ready, uploads stay QUARANTINED (fail closed).
+  # clamav/clamav-debian: the same official ClamAV 1.4 release as clamav/clamav, but published for amd64 and arm64
+  # (Apple Silicon); clamav/clamav:1.4 is amd64 only.
   clamav:
-    image: clamav/clamav:1.4
+    image: clamav/clamav-debian:1.4
     restart: unless-stopped
 
   web:
