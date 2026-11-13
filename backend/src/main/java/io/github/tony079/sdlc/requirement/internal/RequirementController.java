@@ -82,8 +82,18 @@ class RequirementController {
     SummaryPage list(@RequestParam(required = false) WorkflowState state,
                      @RequestParam(required = false) UUID projectId,
                      @RequestParam(required = false) String cursor,
-                     @RequestParam(required = false) Integer limit) {
-        return requirements.list(state, projectId, cursor, limit);
+                     @RequestParam(required = false) Integer limit,
+                     @RequestParam(defaultValue = "false") boolean mine) {
+        return requirements.list(state, projectId, cursor, limit, mine);
+    }
+
+    /** GD-05: restrict a requirement to its owner and the project's Approvers, or lift the restriction. */
+    @PutMapping("/{id}/restricted")
+    ResponseEntity<Detail> restrict(@PathVariable UUID id, @RequestBody RestrictedRequest body) {
+        return withETag(requirements.setRestricted(id, body.restricted()));
+    }
+
+    record RestrictedRequest(boolean restricted) {
     }
 
     @GetMapping("/{id}")

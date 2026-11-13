@@ -84,8 +84,9 @@ class ClientBrdService {
         }
     }
 
+    /** Every member who may see the requirement may see its released BRD (GD-05). */
     private void owned(UUID requirementId) {
-        if (requirements.findOwned(requirementId).isEmpty()) {
+        if (requirements.findVisible(requirementId).isEmpty()) {
             securityEvents.record(SecurityEventType.RESOURCE_NOT_FOUND, Severity.LOW,
                     TenantContext.currentActor().map(UUID::toString).orElse(null), "REQUIREMENT:" + requirementId);
             throw ApiException.notFound();

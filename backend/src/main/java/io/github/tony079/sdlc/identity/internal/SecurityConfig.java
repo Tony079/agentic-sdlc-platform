@@ -86,6 +86,12 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        // Invitation acceptance and password reset (FR-ORG-07/08): the token is in the POST body only.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/public/invitations/lookup",
+                                "/api/v1/public/invitations/accept", "/api/v1/public/password-resets",
+                                "/api/v1/public/password-resets/complete").permitAll()
+                        // GD-08: an Organisation Admin signs in with password, then TOTP; nothing else before MFA.
+                        .requestMatchers("/api/v1/auth/mfa/**").hasRole("CLIENT_MFA_PENDING")
                         // Internal staff (O-06, O-11): password first, then TOTP; nothing else before MFA.
                         .requestMatchers(HttpMethod.POST, "/api/v1/staff/auth/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/staff/auth/logout")
@@ -94,26 +100,29 @@ class SecurityConfig {
                         .requestMatchers("/api/v1/staff/**").hasRole("STAFF")
                         // C-18: issue/revoke by the requirement owner, redeem by a Client Approver (checked in the service).
                         .requestMatchers("/api/v1/repository-link-requests/**")
-                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
+                                .hasRole("CLIENT")
                         // C-01: final registration by staff with REPOSITORY_REGISTER (checked per call); status for both.
                         .requestMatchers(HttpMethod.POST, "/api/v1/projects/*/repositories").hasRole("STAFF")
                         .requestMatchers(HttpMethod.GET, "/api/v1/projects/*/repositories")
-                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER", "STAFF")
+                                .hasAnyRole("CLIENT", "STAFF")
                         .requestMatchers("/api/v1/projects", "/api/v1/projects/**",
                                         "/api/v1/requirements", "/api/v1/requirements/**")
-                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
+                                .hasRole("CLIENT")
                         // In-app notifications of client users (AC-EXT-40).
                         .requestMatchers("/api/v1/clarifications", "/api/v1/clarifications/**")
-                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
+                                .hasRole("CLIENT")
                         .requestMatchers("/api/v1/notifications", "/api/v1/notifications/**")
-                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
+                                .hasRole("CLIENT")
                         // O-25: only a Client Approver may request the organisation's deletion (re-checked per call).
-                        .requestMatchers("/api/v1/tenant/**").hasRole("CLIENT_APPROVER")
+                        .requestMatchers("/api/v1/tenant/**").hasRole("ORG_ADMIN")
+                        // Garuda (FR-ORG-04..06): membership and user administration (re-checked per call).
+                        .requestMatchers("/api/v1/project-members/**", "/api/v1/organisation/**").hasRole("ORG_ADMIN")
                         // C-09: change requests (submitter, approver decision; re-checked per call).
                         .requestMatchers("/api/v1/change-requests", "/api/v1/change-requests/**")
-                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
-                        .requestMatchers("/api/v1/me", "/api/v1/auth/logout")
-                                .hasAnyRole("CLIENT_USER", "CLIENT_APPROVER")
+                                .hasRole("CLIENT")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout")
+                                .hasAnyRole("CLIENT", "CLIENT_MFA_PENDING")
+                        .requestMatchers("/api/v1/me").hasRole("CLIENT")
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, e) ->

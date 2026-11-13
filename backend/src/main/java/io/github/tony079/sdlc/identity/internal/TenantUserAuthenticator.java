@@ -54,7 +54,9 @@ class TenantUserAuthenticator {
         Optional<UserRecord> user = TenantContext.callAs(ref.id(),
                 () -> readOnlyTx.execute(status -> users.findByEmail(email.trim())));
         UserRecord record = user == null ? null : user.orElse(null);
-        boolean passwordMatches = passwordEncoder.matches(password, record == null ? dummyHash : record.passwordHash());
+        // Invited users have no password yet: compare against the dummy hash so timing and result stay uniform.
+        boolean passwordMatches = passwordEncoder.matches(password,
+                record == null || record.passwordHash() == null ? dummyHash : record.passwordHash());
         if (record == null || !passwordMatches || !record.active()) {
             return Optional.empty();
         }

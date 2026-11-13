@@ -46,9 +46,8 @@ class WorkflowConsistencyIT {
         tx = new TransactionTemplate(new TenantAwareTransactionManager(dataSource));
         tenant = db.tenantId("acme");
         user = db.admin().queryForObject("SELECT id FROM app.app_user WHERE email = 'alice@acme.test'", UUID.class);
-        project = inTenant(() -> jdbc.queryForObject(
-                "INSERT INTO app.project (tenant_id, name, created_by) VALUES (?, ?, ?) RETURNING id",
-                UUID.class, tenant, "wf-consistency-" + UUID.randomUUID(), user));
+        project = io.github.tony079.sdlc.support.RequirementFixtures.projectFor(tenant, user,
+                "wf-consistency-" + UUID.randomUUID());
     }
 
     @AfterAll

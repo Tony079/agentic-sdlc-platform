@@ -135,7 +135,7 @@ class ChangeRequestService {
 
     @Transactional(readOnly = true)
     public List<ChangeRequestView> ownerList(UUID requirementId) {
-        if (requirements.findOwned(requirementId).isEmpty()) {
+        if (requirements.findVisible(requirementId).isEmpty()) {
             throw ApiException.notFound();
         }
         return jdbc.sql("SELECT id FROM app.change_request WHERE requirement_id = :r ORDER BY submitted_at DESC")
@@ -224,16 +224,21 @@ class ChangeRequestService {
 
     @Transactional(readOnly = true)
     public List<ChangeRequestView> approverQueue() {
-        clientApprover();
+        CurrentUser user = clientUser();
+        // GD-02: only change requests of projects where the caller is an Approver (row-level security already limits
+        // the rows to requirements they may see).
         return jdbc.sql("""
-                SELECT id FROM app.change_request WHERE status IN ('AWAITING_CLIENT_DECISION', 'ACCEPTED', 'DECLINED')
-                  AND reviewed_by IS NOT NULL ORDER BY submitted_at DESC
-                """).query(UUID.class).list().stream().map(this::view).toList();
+                SELECT c.id FROM app.change_request c JOIN app.requirement r ON r.id = c.requirement_id
+                WHERE c.status IN ('AWAITING_CLIENT_DECISION', 'ACCEPTED', 'DECLINED') AND c.reviewed_by IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM app.project_member m WHERE m.project_id = r.project_id AND m.user_id = :me
+                              AND m.role = 'APPROVER' AND m.removed_at IS NULL)
+                ORDER BY c.submitted_at DESC
+                """).param("me", user.userId()).query(UUID.class).list().stream().map(this::view).toList();
     }
 
     @Transactional
     public ChangeRequestView decide(UUID id, boolean accept, String note) {
-        CurrentUser approver = clientApprover();
+        CurrentUser approver = clientUser();
         record Row(UUID requirementId, UUID submittedBy, String proposed, String status) {
         }
         Row row = jdbc.sql("""
@@ -241,6 +246,12 @@ class ChangeRequestService {
                 WHERE id = :id FOR UPDATE
                 """).param("id", id).query((rs, n) -> new Row(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class),
                 rs.getString(3), rs.getString(4))).optional().orElseThrow(ApiException::notFound);
+        // Authorisation before state: only an Approver of the project may learn anything more about it.
+        if (!requirements.findVisible(row.requirementId()).map(RequirementDirectory.VisibleRequirement::canApprove)
+                .orElse(false)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "PROJECT_APPROVER_REQUIRED",
+                    "Only an Approver of this project can decide on the change request.");
+        }
         if (!"AWAITING_CLIENT_DECISION".equals(row.status())) {
             throw ApiException.conflict("CHANGE_REQUEST_STATE", "This change request does not await a decision.");
         }
@@ -345,13 +356,8 @@ class ChangeRequestService {
                 """).param("s", staff.staffId()).param("c", capability.name()).query(Integer.class).single() > 0;
     }
 
-    private static CurrentUser clientApprover() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !(authentication.getPrincipal() instanceof CurrentUser user)
-                || user.role() != CurrentUser.TenantRole.CLIENT_APPROVER) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Only a Client Approver can decide on changes.");
-        }
-        return user;
+    private static CurrentUser clientUser() {
+        return io.github.tony079.sdlc.identity.api.ClientUsers.require();
     }
 
     private static void requireText(String field, String value, int min, int max) {

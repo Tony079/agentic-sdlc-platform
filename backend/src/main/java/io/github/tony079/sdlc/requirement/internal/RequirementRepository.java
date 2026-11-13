@@ -38,7 +38,7 @@ class RequirementRepository {
     }
 
     record Row(UUID id, String key, UUID projectId, UUID createdBy, int currentRevisionNo, long version,
-               OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+               OffsetDateTime createdAt, OffsetDateTime updatedAt, boolean restricted) {
     }
 
     record Cursor(OffsetDateTime updatedAt, UUID id) {
@@ -93,7 +93,7 @@ class RequirementRepository {
     /** Any requirement of the current tenant (RLS); for staff paths that are authorised by capability. */
     Optional<Row> find(UUID id) {
         return jdbc.sql("""
-                SELECT id, key, project_id, created_by, current_revision_no, version, created_at, updated_at
+                SELECT id, key, project_id, created_by, current_revision_no, version, created_at, updated_at, restricted
                 FROM app.requirement WHERE id = :id
                 """)
                 .param("id", id)
@@ -130,13 +130,23 @@ class RequirementRepository {
     }
 
     Optional<Row> findOwned(UUID id, UUID owner) {
+        return findVisible(id).filter(r -> r.createdBy().equals(owner));
+    }
+
+    /** A requirement the caller may see. For client users, row-level security applies project visibility (GD-05). */
+    Optional<Row> findVisible(UUID id) {
         return jdbc.sql("""
-                SELECT id, key, project_id, created_by, current_revision_no, version, created_at, updated_at
-                FROM app.requirement WHERE id = :id AND created_by = :owner
+                SELECT id, key, project_id, created_by, current_revision_no, version, created_at, updated_at, restricted
+                FROM app.requirement WHERE id = :id
                 """)
-                .param("id", id).param("owner", owner)
+                .param("id", id)
                 .query(RequirementRepository::row)
                 .optional();
+    }
+
+    boolean setRestricted(UUID id, boolean restricted) {
+        return jdbc.sql("UPDATE app.requirement SET restricted = :restricted WHERE id = :id")
+                .param("id", id).param("restricted", restricted).update() == 1;
     }
 
     /**
@@ -180,13 +190,13 @@ class RequirementRepository {
      * The owner's requirements, newest first, keyset-paginated on (updated_at, id). Reads the workflow projection
      * for the state filter; writes to workflow tables happen only in the workflow module.
      */
-    List<Summary> listOwned(UUID owner, WorkflowState state, UUID projectId, Cursor after, int limit) {
+    List<Summary> listVisible(UUID owner, WorkflowState state, UUID projectId, Cursor after, int limit) {
         StringBuilder sql = new StringBuilder("""
                 SELECT r.id, r.key, rev.title, wi.projected_state, r.project_id, r.current_revision_no, r.updated_at
                 FROM app.requirement r
                 JOIN app.requirement_revision rev ON rev.requirement_id = r.id AND rev.revision_no = r.current_revision_no
                 JOIN app.workflow_instance wi ON wi.requirement_id = r.id
-                WHERE r.created_by = :owner
+                WHERE (CAST(:owner AS uuid) IS NULL OR r.created_by = :owner)
                 """);
         if (state != null) {
             sql.append(" AND wi.projected_state = :state");
@@ -218,7 +228,8 @@ class RequirementRepository {
     private static Row row(ResultSet rs, int n) throws SQLException {
         return new Row(rs.getObject("id", UUID.class), rs.getString("key"), rs.getObject("project_id", UUID.class),
                 rs.getObject("created_by", UUID.class), rs.getInt("current_revision_no"), rs.getLong("version"),
-                rs.getObject("created_at", OffsetDateTime.class), rs.getObject("updated_at", OffsetDateTime.class));
+                rs.getObject("created_at", OffsetDateTime.class), rs.getObject("updated_at", OffsetDateTime.class),
+                rs.getBoolean("restricted"));
     }
 
     private static Content content(ResultSet rs) throws SQLException {

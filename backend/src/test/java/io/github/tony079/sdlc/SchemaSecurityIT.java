@@ -38,10 +38,17 @@ class SchemaSecurityIT {
                 "document", "document_chunk", "document_decision",
                 "document_extraction", "document_version",
                 "idempotency_record", "job", "job_attempt", "model_call_record", "notification",
-                "outbox_event", "processed_event", "project", "project_repository", "release_approval", "repository",
+                "outbox_event", "processed_event", "project", "project_member", "project_repository", "release_approval", "repository",
                 "repository_file", "repository_link_request", "repository_snapshot", "requirement",
                 "requirement_closure", "requirement_key_counter", "requirement_repository", "requirement_repository_link", "requirement_revision", "retention_policy", "security_finding", "security_scan_run", "stage_execution",
-                "workflow_instance", "workflow_transition");
+                "user_invitation", "workflow_instance", "workflow_transition");
+        // Garuda GD-13: project-scoped tables carry one extra RESTRICTIVE policy for signed-in client users.
+        java.util.Set<String> projectScoped = java.util.Set.of("admin_retry_request", "analysis_input_set",
+                "approved_scope_version", "ba_result_pending", "brd", "brd_version", "change_request", "clarification",
+                "client_change_request", "document", "document_decision", "document_version", "model_call_record",
+                "notification", "project", "project_member", "release_approval", "repository_link_request",
+                "requirement", "requirement_closure", "requirement_repository", "requirement_repository_link",
+                "requirement_revision", "workflow_instance");
 
         for (String table : tenantTables) {
             Map<String, Object> rls = admin.queryForMap("""
@@ -56,11 +63,22 @@ class SchemaSecurityIT {
             List<Map<String, Object>> policies = admin.queryForList(
                     "SELECT policyname, permissive, cmd, qual, with_check FROM pg_policies WHERE schemaname = 'app' AND tablename = ?",
                     table);
-            assertThat(policies).as(table).hasSize(1);
-            assertThat(policies.get(0)).containsEntry("policyname", "tenant_isolation")
-                    .containsEntry("permissive", "PERMISSIVE").containsEntry("cmd", "ALL");
-            assertThat((String) policies.get(0).get("qual")).contains("tenant_id = app.current_tenant()");
-            assertThat((String) policies.get(0).get("with_check")).contains("tenant_id = app.current_tenant()");
+            List<Map<String, Object>> permissive = policies.stream()
+                    .filter(policy -> "PERMISSIVE".equals(policy.get("permissive"))).toList();
+            List<Map<String, Object>> restrictive = policies.stream()
+                    .filter(policy -> "RESTRICTIVE".equals(policy.get("permissive"))).toList();
+            assertThat(permissive).as(table).hasSize(1);
+            assertThat(permissive.get(0)).containsEntry("policyname", "tenant_isolation").containsEntry("cmd", "ALL");
+            assertThat((String) permissive.get(0).get("qual")).contains("tenant_id = app.current_tenant()");
+            assertThat((String) permissive.get(0).get("with_check")).contains("tenant_id = app.current_tenant()");
+            if (projectScoped.contains(table)) {
+                assertThat(restrictive).as(table).hasSize(1);
+                assertThat(restrictive.get(0)).containsEntry("policyname", "project_access").containsEntry("cmd", "ALL");
+                // Inactive without a signed-in client member (staff, worker): it only ever narrows the tenant policy.
+                assertThat((String) restrictive.get(0).get("qual")).contains("app.current_member() IS NULL");
+            } else {
+                assertThat(restrictive).as(table).isEmpty();
+            }
         }
     }
 
@@ -141,7 +159,7 @@ class SchemaSecurityIT {
                 WHERE grantee = 'sdlc_app' AND table_schema = 'app' AND table_name = 'requirement'
                   AND privilege_type = 'UPDATE' ORDER BY column_name
                 """, String.class);
-        assertThat(requirementColumns).containsExactly("current_revision_no", "updated_at", "version");
+        assertThat(requirementColumns).containsExactly("current_revision_no", "restricted", "updated_at", "version");
         List<String> instanceColumns = admin.queryForList("""
                 SELECT column_name FROM information_schema.column_privileges
                 WHERE grantee = 'sdlc_app' AND table_schema = 'app' AND table_name = 'workflow_instance'

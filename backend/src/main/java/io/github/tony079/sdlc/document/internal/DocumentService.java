@@ -160,7 +160,7 @@ class DocumentService {
 
     ItemList list(UUID requirementId) {
         return tx.execute(status -> {
-            ownedOrNotFound(requirementId);
+            visibleOrNotFound(requirementId);
             return new ItemList(documents.list(requirementId), limits);
         });
     }
@@ -171,7 +171,7 @@ class DocumentService {
     /** Content of the current version, only after a clean scan (PRD FR-UPL-11, FR-STO-06). Audited. */
     Download download(UUID requirementId, UUID documentId) {
         DocumentRepository.Current current = tx.execute(status -> {
-            ownedOrNotFound(requirementId);
+            visibleOrNotFound(requirementId);
             DocumentRepository.Current found = documents.current(requirementId, documentId)
                     .orElseThrow(() -> notFound("DOCUMENT:" + documentId));
             if (!DocumentRepository.DOWNLOADABLE.contains(found.state())) {
@@ -214,8 +214,18 @@ class DocumentService {
         }
     }
 
+    /** Every member who may see the requirement may list and download its documents (GD-05). */
+    private void visibleOrNotFound(UUID requirementId) {
+        requirements.findVisible(requirementId).orElseThrow(() -> notFound("REQUIREMENT:" + requirementId));
+    }
+
+    /** Only the requirement's owner adds and removes documents; other members who see it get 403, others 404. */
     private void ownedOrNotFound(UUID requirementId) {
-        requirements.findOwned(requirementId).orElseThrow(() -> notFound("REQUIREMENT:" + requirementId));
+        var visible = requirements.findVisible(requirementId).orElseThrow(() -> notFound("REQUIREMENT:" + requirementId));
+        if (!visible.ownedByMe()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "OWNER_REQUIRED",
+                    "Only the person who created this requirement can change its attachments.");
+        }
     }
 
     private ApiException notFound(String target) {

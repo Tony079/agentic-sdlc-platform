@@ -25,6 +25,9 @@ public abstract class ApiIntegrationTest {
         registry.add("sdlc.storage.root", TestStorage.ROOT::toString);
         registry.add("sdlc.storage.encryption-key", () -> TestStorage.KEY);
         registry.add("sdlc.staff.mfa-key", () -> TestDatabase.MFA_KEY);
+        // GD-08 is on by default and in production; the shared context signs the seeded admins in many times per
+        // second, which TOTP replay protection would (rightly) refuse. OrganisationAdminIT covers MFA with it on.
+        registry.add("sdlc.security.org-admin-mfa-required", () -> "false");
     }
 
     protected ApiClient client() {

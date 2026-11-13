@@ -24,6 +24,19 @@ public record CurrentUser(UUID userId, UUID tenantId, String tenantName, String 
         return userId.toString();
     }
 
-    /** Tenant roles of PRD section 4. Platform/staff roles are not part of Milestone 1 (decision O-06). */
-    public enum TenantRole { CLIENT_USER, CLIENT_APPROVER }
+    /** True for an Organisation Admin (GD-02). What a member may do inside a project comes from project roles. */
+    public boolean orgAdmin() {
+        return role == TenantRole.ORG_ADMIN;
+    }
+
+    /**
+     * Organisation-level role (Garuda decision GD-02): ORG_ADMIN administers the organisation; MEMBER has only the
+     * project roles assigned to them. Both carry the Spring authority ROLE_CLIENT; admins also ROLE_ORG_ADMIN.
+     */
+    public enum TenantRole { ORG_ADMIN, MEMBER }
+
+    /** Spring authorities of this user. */
+    public java.util.List<String> authorities() {
+        return orgAdmin() ? java.util.List.of("ROLE_CLIENT", "ROLE_ORG_ADMIN") : java.util.List.of("ROLE_CLIENT");
+    }
 }

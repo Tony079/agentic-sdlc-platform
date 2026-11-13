@@ -82,6 +82,10 @@ public final class ApiClient {
     }
 
     /** PUT with the current CSRF token and extra headers (for example If-Match). */
+    public Response put(String path, Object body) {
+        return put(path, body, Map.of());
+    }
+
     public Response put(String path, Object body, Map<String, String> headers) {
         if (csrfCookie().isEmpty()) {
             get("/api/v1/auth/csrf");

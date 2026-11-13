@@ -50,10 +50,8 @@ class RequirementTransactionIT extends ApiIntegrationTest {
         UUID tenant = db.tenantId("acme");
         UUID userId = db.admin().queryForObject("SELECT id FROM app.app_user WHERE email = 'alice@acme.test'", UUID.class);
         alice = new CurrentUser(userId, tenant, "Acme Corporation", "alice@acme.test", "Alice Client",
-                TenantRole.CLIENT_USER);
-        project = db.admin().queryForObject(
-                "INSERT INTO app.project (tenant_id, name, created_by) VALUES (?, ?, ?) RETURNING id",
-                UUID.class, tenant, "tx-" + UUID.randomUUID(), userId);
+                TenantRole.MEMBER);
+        project = io.github.tony079.sdlc.support.RequirementFixtures.projectFor(tenant, userId, "tx-" + UUID.randomUUID());
     }
 
     @AfterEach

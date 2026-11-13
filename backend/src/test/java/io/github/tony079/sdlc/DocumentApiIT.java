@@ -244,13 +244,18 @@ class DocumentApiIT extends ApiIntegrationTest {
         assertThat(refused.errorCode()).isEqualTo("DOCUMENTS_LOCKED");
     }
 
-    /** Owner-only and tenant isolation (AC-DOC-05, AC-DOC-06, FR-UPL-14): every miss is a 404 and a security event. */
+    /**
+     * Project and tenant isolation (AC-DOC-05, AC-DOC-06, FR-UPL-14, Garuda GD-05): another tenant and an organisation
+     * member outside the project get 404 everywhere (recorded); a project Approver may list and download but only the
+     * owner adds or removes attachments (403).
+     */
     @Test
     void otherUsersAndTenantsCannotListUploadDownloadOrRemove() {
         String id = upload("private.txt", "text/plain", Samples.text("private " + UUID.randomUUID()))
                 .body().path("documentId").asString();
         process();
-        for (ApiClient intruder : new ApiClient[] {loggedIn("globex", "gina@globex.test"), loggedIn("acme", "aaron@acme.test")}) {
+        ApiClient outsider = loggedIn("acme", io.github.tony079.sdlc.support.RequirementFixtures.newMember("acme", "doc"));
+        for (ApiClient intruder : new ApiClient[] {loggedIn("globex", "gina@globex.test"), outsider}) {
             assertThat(intruder.get(documents()).status()).isEqualTo(404);
             assertThat(intruder.download(documents() + "/" + id + "/content").status()).isEqualTo(404);
             assertThat(intruder.upload(documents(), "x.txt", "text/plain", Samples.text("x")).status()).isEqualTo(404);
@@ -259,6 +264,13 @@ class DocumentApiIT extends ApiIntegrationTest {
         assertThat(admin.queryForObject("""
                 SELECT count(*) FROM app.platform_security_event WHERE type = 'RESOURCE_NOT_FOUND' AND target_ref = ?
                 """, Integer.class, "REQUIREMENT:" + requirement)).isGreaterThanOrEqualTo(8);
+
+        ApiClient approver = loggedIn("acme", "aaron@acme.test");
+        assertThat(approver.get(documents()).status()).isEqualTo(200);
+        assertThat(approver.download(documents() + "/" + id + "/content").status()).isEqualTo(200);
+        assertThat(approver.upload(documents(), "x.txt", "text/plain", Samples.text("x")).errorCode())
+                .isEqualTo("OWNER_REQUIRED");
+        assertThat(approver.delete(documents() + "/" + id).errorCode()).isEqualTo("OWNER_REQUIRED");
         assertThat(alice.download(documents() + "/" + id + "/content").status()).isEqualTo(200);
     }
 

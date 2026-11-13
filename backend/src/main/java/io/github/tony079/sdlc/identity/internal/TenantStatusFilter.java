@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.UUID;
 
 import io.github.tony079.sdlc.identity.api.CurrentUser;
+import io.github.tony079.sdlc.tenancy.api.TenantContext;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -20,9 +21,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Immediate access revocation for tenant soft deletion (O-25): every request of a client session re-reads its tenant's
- * status (the tenant table is global, read without tenant scope). Anything but ACTIVE invalidates the session and
- * answers 401 before any controller runs. Logins of such a tenant are already refused by the authenticator.
+ * Immediate access revocation: every request of a client session re-reads its organisation's status (soft deletion
+ * O-25, suspension FR-ORG-03) and the user's own status and organisation role (deactivation and role changes by an
+ * Organisation Admin, FR-ORG-06). An organisation that is not ACTIVE, a user who is not ACTIVE, or a role different
+ * from the one signed in with invalidates the session and answers 401 before any controller runs.
  */
 class TenantStatusFilter extends OncePerRequestFilter {
 
@@ -42,16 +44,21 @@ class TenantStatusFilter extends OncePerRequestFilter {
         if (authentication != null && authentication.getPrincipal() instanceof CurrentUser user) {
             UUID tenant = user.tenantId();
             SecurityContextHolder.clearContext();
-            String status;
+            boolean valid;
             try {
-                status = readOnlyTx.execute(s -> jdbc.sql("SELECT status FROM app.tenant WHERE id = :id")
+                String status = readOnlyTx.execute(s -> jdbc.sql("SELECT status FROM app.tenant WHERE id = :id")
                         .param("id", tenant).query(String.class).optional().orElse(null));
+                // The user row is tenant-scoped (RLS): read it inside the user's own tenant.
+                String current = "ACTIVE".equals(status) ? TenantContext.callAs(tenant, () -> readOnlyTx.execute(s ->
+                        jdbc.sql("SELECT status || ':' || role FROM app.app_user WHERE id = :id")
+                                .param("id", user.userId()).query(String.class).optional().orElse(null))) : null;
+                valid = ("ACTIVE:" + user.role().name()).equals(current);
             } finally {
                 SecurityContext restored = SecurityContextHolder.createEmptyContext();
                 restored.setAuthentication(authentication);
                 SecurityContextHolder.setContext(restored);
             }
-            if (!"ACTIVE".equals(status)) {
+            if (!valid) {
                 HttpSession session = request.getSession(false);
                 if (session != null) {
                     session.invalidate();

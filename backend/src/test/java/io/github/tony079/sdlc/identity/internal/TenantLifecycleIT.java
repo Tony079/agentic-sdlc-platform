@@ -39,8 +39,8 @@ class TenantLifecycleIT extends ApiIntegrationTest {
         String slug = admin.queryForObject("SELECT slug FROM app.tenant WHERE id = ?", String.class, id);
         String hash = admin.queryForObject("SELECT password_hash FROM app.app_user WHERE email = 'alice@acme.test'",
                 String.class);
-        for (String[] u : new String[][] {{"approver@" + slug + ".test", "CLIENT_APPROVER"},
-                {"user@" + slug + ".test", "CLIENT_USER"}}) {
+        for (String[] u : new String[][] {{"approver@" + slug + ".test", "ORG_ADMIN"},
+                {"user@" + slug + ".test", "MEMBER"}}) {
             admin.update("""
                     INSERT INTO app.app_user (tenant_id, email, display_name, password_hash, role, status)
                     VALUES (?, ?, 'Test', ?, ?, 'ACTIVE')
@@ -169,7 +169,7 @@ class TenantLifecycleIT extends ApiIntegrationTest {
             assertThat(catchThrowable(() -> st.executeUpdate(
                     "UPDATE app.tenant SET status = 'DELETED' WHERE id = '" + org.id() + "'")))
                     .hasMessageContaining("approved lifecycle request");
-            UUID user = admin.queryForObject("SELECT id FROM app.app_user WHERE tenant_id = ? AND role = 'CLIENT_APPROVER'",
+            UUID user = admin.queryForObject("SELECT id FROM app.app_user WHERE tenant_id = ? AND role = 'ORG_ADMIN'",
                     UUID.class, org.id());
             UUID staffId = StaffFixtures.createEnrolled(StaffFixtures.uniqueEmail("solo"), AnalysisScenario.PASSWORD)
                     .id();

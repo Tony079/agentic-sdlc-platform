@@ -38,11 +38,11 @@ class DevSeeder implements ApplicationRunner {
 
     static final List<SeedTenant> TENANTS = List.of(
             new SeedTenant("acme", "Acme Corporation", List.of(
-                    new SeedUser("alice@acme.test", "Alice Client", "CLIENT_USER"),
-                    new SeedUser("aaron@acme.test", "Aaron Approver", "CLIENT_APPROVER"))),
+                    new SeedUser("alice@acme.test", "Alice Client", "MEMBER"),
+                    new SeedUser("aaron@acme.test", "Aaron Approver", "ORG_ADMIN"))),
             new SeedTenant("globex", "Globex Limited", List.of(
-                    new SeedUser("gina@globex.test", "Gina Client", "CLIENT_USER"),
-                    new SeedUser("gary@globex.test", "Gary Approver", "CLIENT_APPROVER"))));
+                    new SeedUser("gina@globex.test", "Gina Client", "MEMBER"),
+                    new SeedUser("gary@globex.test", "Gary Approver", "ORG_ADMIN"))));
 
     private final JdbcClient jdbc;
     private final PasswordEncoder passwordEncoder;

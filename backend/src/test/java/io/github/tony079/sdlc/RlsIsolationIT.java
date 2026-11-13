@@ -68,9 +68,14 @@ class RlsIsolationIT {
     void cannotWriteRowsForAnotherTenant() {
         UUID acmeUser = TenantContext.callAs(acme, () -> tx.execute(s ->
                 jdbc.queryForObject("SELECT id FROM app.app_user LIMIT 1", UUID.class)));
-        assertThatThrownBy(() -> TenantContext.callAs(acme, () -> tx.execute(s ->
-                jdbc.update("INSERT INTO app.project (tenant_id, name, created_by) VALUES (?, ?, ?)",
-                        globex, "cross-" + UUID.randomUUID(), acmeUser))))
+        UUID acmeAdmin = TestDatabase.get().admin().queryForObject(
+                "SELECT id FROM app.app_user WHERE email = 'aaron@acme.test'", UUID.class);
+        // Acting as a real Organisation Admin, so the project guard (Garuda) passes and RLS is what refuses the row.
+        assertThatThrownBy(() -> TenantContext.callAs(acme, () -> tx.execute(s -> {
+            jdbc.queryForObject("SELECT set_config('app.actor_id', ?, true)", String.class, acmeAdmin.toString());
+            return jdbc.update("INSERT INTO app.project (tenant_id, name, created_by) VALUES (?, ?, ?)",
+                    globex, "cross-" + UUID.randomUUID(), acmeUser);
+        })))
                 .rootCause().hasMessageContaining("new row violates row-level security policy for table \"project\"");
     }
 

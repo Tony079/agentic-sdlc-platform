@@ -20,7 +20,6 @@ import io.github.tony079.sdlc.audit.api.AuditWriter.AuditResult;
 import io.github.tony079.sdlc.common.api.ApiError.FieldError;
 import io.github.tony079.sdlc.common.api.ApiException;
 import io.github.tony079.sdlc.identity.api.CurrentUser;
-import io.github.tony079.sdlc.identity.api.CurrentUser.TenantRole;
 import io.github.tony079.sdlc.requirement.api.RequirementDirectory;
 import io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder;
 import io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder.SecurityEventType;
@@ -152,13 +151,15 @@ class LinkRequestService {
                 || url.group(2).equals("..")) {
             throw ApiException.validation(java.util.List.of(new FieldError("repositoryUrl", "INVALID_URL")));
         }
-        if (user.role() != TenantRole.CLIENT_APPROVER) {
-            throw rejected(user, "WRONG_ROLE");
-        }
         if (token == null || !TOKEN.matcher(token).matches()) {
             throw rejected(user, "MALFORMED");
         }
         LinkRequest found = links.findByTokenHash(sha256(token)).orElseThrow(() -> rejected(user, "UNKNOWN"));
+        // C-18 with Garuda GD-02: an Approver of the requirement's project authorises the repository.
+        if (!requirements.findVisible(found.requirementId()).map(RequirementDirectory.VisibleRequirement::canApprove)
+                .orElse(false)) {
+            throw rejected(user, "WRONG_ROLE");
+        }
         // Lock order: workflow instance, then the request (as when issuing).
         WorkflowState state = workflow.lockState(found.requirementId());
         LinkRequest request = links.lockById(found.id()).orElseThrow(() -> rejected(user, "UNKNOWN"));

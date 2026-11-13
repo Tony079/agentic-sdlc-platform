@@ -15,6 +15,8 @@ import io.github.tony079.sdlc.audit.api.AuditWriter.AuditAction;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditResult;
 import io.github.tony079.sdlc.common.api.ApiError.FieldError;
 import io.github.tony079.sdlc.common.api.ApiException;
+import io.github.tony079.sdlc.project.api.ProjectAccess;
+import io.github.tony079.sdlc.project.api.ProjectRole;
 import io.github.tony079.sdlc.requirement.api.RequirementView.Detail;
 import io.github.tony079.sdlc.requirement.api.RequirementView.Revision;
 import io.github.tony079.sdlc.requirement.api.RequirementView.Summary;
@@ -56,9 +58,12 @@ class RequirementService {
     private final WorkflowEngine workflow;
     private final AuditWriter audit;
     private final SecurityEventRecorder securityEvents;
+    private final ProjectAccess projects;
 
     RequirementService(RequirementRepository requirements, RequirementKeyGenerator keys, IdempotencyStore idempotency,
-                       WorkflowEngine workflow, AuditWriter audit, SecurityEventRecorder securityEvents) {
+                       WorkflowEngine workflow, AuditWriter audit, SecurityEventRecorder securityEvents,
+                       ProjectAccess projects) {
+        this.projects = projects;
         this.requirements = requirements;
         this.keys = keys;
         this.idempotency = idempotency;
@@ -84,8 +89,16 @@ class RequirementService {
             throw ApiException.validation(errors);
         }
         if (!requirements.projectExists(projectId)) {
-            // Unknown and other-tenant projects are indistinguishable under RLS.
+            // Unknown, other-tenant and invisible projects are indistinguishable under RLS.
             throw ApiException.validation(List.of(new FieldError("projectId", "INVALID_VALUE")));
+        }
+        // FR-ACC-01: creating a requirement needs the REQUESTER or APPROVER role in an active project (GD-02).
+        if (!projects.roleOf(projectId).map(ProjectRole::canRequest).orElse(false)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ROLE_REQUIRED",
+                    "You need the Requester or Approver role in this project to create requirements.");
+        }
+        if (!projects.isActive(projectId)) {
+            throw ApiException.conflict("PROJECT_ARCHIVED", "Requirements cannot be created in an archived project.");
         }
 
         UUID id = UUID.randomUUID();
@@ -117,13 +130,34 @@ class RequirementService {
         return detail(id, actor());
     }
 
+    /**
+     * GD-05 / FR-ACC-02: the owner or an Approver of the project marks a requirement restricted (visible only to its
+     * owner and the project's Approvers) or lifts the restriction.
+     */
+    @Transactional
+    public Detail setRestricted(UUID id, boolean restricted) {
+        RequirementRepository.Row row = visible(id);
+        boolean approver = projects.roleOf(row.projectId()).map(ProjectRole::canApprove).orElse(false);
+        if (!row.createdBy().equals(actor()) && !approver) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "OWNER_OR_APPROVER_REQUIRED",
+                    "Only the owner or an Approver of the project can change who sees this requirement.");
+        }
+        if (row.restricted() != restricted) {
+            requirements.setRestricted(id, restricted);
+            audit.record(AuditAction.REQUIREMENT_RESTRICTION_CHANGED, "REQUIREMENT", id, AuditResult.SUCCESS);
+        }
+        return detail(id, actor());
+    }
+
     @Transactional(readOnly = true)
-    public SummaryPage list(WorkflowState state, UUID projectId, String cursor, Integer limit) {
+    public SummaryPage list(WorkflowState state, UUID projectId, String cursor, Integer limit, boolean mine) {
         int pageSize = limit == null ? DEFAULT_LIMIT : limit;
         if (pageSize < 1 || pageSize > MAX_LIMIT) {
             throw ApiException.validation(List.of(new FieldError("limit", "INVALID_VALUE")));
         }
-        List<Summary> rows = requirements.listOwned(actor(), state, projectId, decodeCursor(cursor), pageSize + 1);
+        // GD-05: every requirement the caller may see in their projects; "mine" narrows to their own.
+        List<Summary> rows = requirements.listVisible(mine ? actor() : null, state, projectId, decodeCursor(cursor),
+                pageSize + 1);
         if (rows.size() <= pageSize) {
             return new SummaryPage(rows, null);
         }
@@ -134,13 +168,13 @@ class RequirementService {
 
     @Transactional(readOnly = true)
     public Revision revision(UUID id, int revisionNo) {
-        owned(id);
+        visible(id);
         return requirements.findRevision(id, revisionNo).orElseThrow(ApiException::notFound);
     }
 
     @Transactional(readOnly = true)
     public List<TimelineEntry> timeline(UUID id) {
-        owned(id);
+        visible(id);
         return workflow.timeline(id);
     }
 
@@ -224,16 +258,30 @@ class RequirementService {
         return detail(id, actor());
     }
 
-    private Detail detail(UUID id, UUID owner) {
-        RequirementRepository.Row row = requirements.findOwned(id, owner).orElseThrow(() -> notFound(id));
+    private Detail detail(UUID id, UUID me) {
+        RequirementRepository.Row row = requirements.findVisible(id).orElseThrow(() -> notFound(id));
         Revision current = requirements.findRevision(id, row.currentRevisionNo()).orElseThrow();
         return new Detail(row.id(), row.key(), row.projectId(), workflow.state(id), row.version(),
                 row.currentRevisionNo(), current.content(), requirements.revisions(id), row.createdAt(),
-                row.updatedAt());
+                row.updatedAt(), row.restricted(), row.createdBy().equals(me), projects.roleOf(row.projectId()).orElse(null));
     }
 
+    /** A requirement the caller may see (project visibility, GD-05). */
+    private RequirementRepository.Row visible(UUID id) {
+        return requirements.findVisible(id).orElseThrow(() -> notFound(id));
+    }
+
+    /**
+     * A requirement the caller owns: only the owner edits, submits and cancels it. A visible requirement owned by
+     * someone else is refused with 403 (the caller may see it); an invisible one is 404.
+     */
     private RequirementRepository.Row owned(UUID id) {
-        return requirements.findOwned(id, actor()).orElseThrow(() -> notFound(id));
+        RequirementRepository.Row row = visible(id);
+        if (!row.createdBy().equals(actor())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "OWNER_REQUIRED",
+                    "Only the person who created this requirement can change it.");
+        }
+        return row;
     }
 
     /**

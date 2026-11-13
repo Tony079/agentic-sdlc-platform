@@ -231,9 +231,12 @@ class ReviewIT extends ApiIntegrationTest {
                 .isEqualTo(AnalysisScenario.CONTROLLER);
         assertThat(released.body().toString()).doesNotContain("RequestMapping(\\\"/loans\\\")")
                 .doesNotContain("\"quote\":\"");
-        // Other client users of the tenant cannot read it (owner-only, C-18).
+        // GD-05: the project's Approver reads the released BRD; a member of the organisation outside the project
+        // cannot (404).
         assertThat(loggedIn("acme", "aaron@acme.test").get("/api/v1/requirements/" + s.requirementId + "/brd").status())
-                .isEqualTo(404);
+                .isEqualTo(200);
+        assertThat(loggedIn("acme", io.github.tony079.sdlc.support.RequirementFixtures.newMember("acme", "brd"))
+                .get("/api/v1/requirements/" + s.requirementId + "/brd").status()).isEqualTo(404);
         Response notifications = s.alice.get("/api/v1/notifications");
         assertThat(notifications.body().valueStream().filter(n -> n.path("requirementId").asString()
                 .equals(s.requirementId)).map(n -> n.path("kind").asString())).contains("BRD_RELEASED");
@@ -285,10 +288,10 @@ class ReviewIT extends ApiIntegrationTest {
                 .errorCode()).isEqualTo("SEPARATION_OF_DUTIES");
         assertThat(reviewer.post("/api/v1/staff/change-requests/" + cr + "/review", Map.of("decision", "APPROVE"))
                 .status()).isEqualTo(200);
-        // The Client Approver sees the change request (not the requirement) and accepts it.
+        // The project's Approver sees the change request (and, under GD-05, the requirement) and accepts it.
         assertThat(aaron.get("/api/v1/change-requests").body().valueStream()
                 .anyMatch(n -> n.path("id").asString().equals(cr))).isTrue();
-        assertThat(aaron.get("/api/v1/requirements/" + s.requirementId).status()).isEqualTo(404);
+        assertThat(aaron.get("/api/v1/requirements/" + s.requirementId).status()).isEqualTo(200);
         Response accepted = aaron.post("/api/v1/change-requests/" + cr + "/decision",
                 Map.of("decision", "ACCEPT", "note", "Agreed with finance."));
         assertThat(accepted.status()).as(accepted.body().toString()).isEqualTo(200);

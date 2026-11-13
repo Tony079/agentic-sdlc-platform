@@ -24,7 +24,8 @@ import org.springframework.transaction.TransactionDefinition;
 public class TenantAwareTransactionManager extends JdbcTransactionManager {
 
     private static final String SET_CONTEXT = "SELECT set_config('app.tenant_id', ?, true), "
-            + "set_config('app.actor_id', ?, true), set_config('app.correlation_id', ?, true)";
+            + "set_config('app.actor_id', ?, true), set_config('app.correlation_id', ?, true), "
+            + "set_config('app.member_id', ?, true)";
 
     public TenantAwareTransactionManager(DataSource dataSource) {
         super(dataSource);
@@ -38,6 +39,10 @@ public class TenantAwareTransactionManager extends JdbcTransactionManager {
             statement.setString(1, TenantContext.currentTenant().map(UUID::toString).orElse(""));
             statement.setString(2, TenantContext.currentActor().map(UUID::toString).orElse(""));
             statement.setString(3, CorrelationId.current().orElse(""));
+            // GD-13: a signed-in client user is also the project "member" for row-level security. Staff, the worker
+            // and system work set none, so only the tenant policy applies to them (unchanged).
+            statement.setString(4, "USER".equals(TenantContext.currentActorType())
+                    ? TenantContext.currentActor().map(UUID::toString).orElse("") : "");
             statement.execute();
         }
     }

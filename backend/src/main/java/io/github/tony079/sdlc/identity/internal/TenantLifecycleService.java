@@ -209,8 +209,8 @@ class TenantLifecycleService {
     private static CurrentUser clientApprover() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof CurrentUser user)
-                || user.role() != CurrentUser.TenantRole.CLIENT_APPROVER) {
-            throw forbidden("FORBIDDEN", "Only a Client Approver can request deletion of the organisation.");
+                || !user.orgAdmin()) {
+            throw forbidden("FORBIDDEN", "Only an Organisation Admin can request deletion of the organisation.");
         }
         return user;
     }

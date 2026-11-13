@@ -76,12 +76,13 @@ class LinkRequestIT extends ApiIntegrationTest {
                 .doesNotContain(issued.created().body().path("key").asString())
                 .doesNotContain(issued.created().body().path("content").path("title").asString());
 
-        // The approver still cannot see the requirement in any way.
-        assertThat(aaron.get("/api/v1/requirements/" + issued.requirementId()).status()).isEqualTo(404);
+        // Garuda GD-05 supersedes C-18 inside a project: the project's Approver sees the requirement (the redeem
+        // response above still reveals nothing); the link status stays the owner's view.
+        assertThat(aaron.get("/api/v1/requirements/" + issued.requirementId()).status()).isEqualTo(200);
         assertThat(aaron.get("/api/v1/requirements/" + issued.requirementId() + "/repository-link").status())
                 .isEqualTo(404);
         assertThat(aaron.get("/api/v1/requirements").body().path("items").valueStream()
-                .map(n -> n.path("id").asString())).doesNotContain(issued.requirementId());
+                .map(n -> n.path("id").asString())).contains(issued.requirementId());
 
         // The owner sees the authorised link.
         Response status = issued.owner().get("/api/v1/requirements/" + issued.requirementId() + "/repository-link");
@@ -240,7 +241,7 @@ class LinkRequestIT extends ApiIntegrationTest {
             assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> statement.execute("""
                     UPDATE app.repository_link_request SET status = 'USED', used_at = now(), used_by = '%s'
                     WHERE id = '%s'
-                    """.formatted(alice, issued.requestId())))).hasMessageContaining("only an active Client Approver");
+                    """.formatted(alice, issued.requestId())))).hasMessageContaining("only an active Approver of the project");
             assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> statement.execute(
                     "DELETE FROM app.repository_link_request"))).hasMessageContaining("permission denied");
             assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> statement.execute(

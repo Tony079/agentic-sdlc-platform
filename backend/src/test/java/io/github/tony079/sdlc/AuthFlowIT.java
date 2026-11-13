@@ -21,7 +21,7 @@ class AuthFlowIT extends ApiIntegrationTest {
         Response login = client.login("acme", "alice@acme.test", TestDatabase.SEED_PASSWORD);
         assertThat(login.status()).isEqualTo(200);
         assertThat(login.body().path("tenant").path("name").asString()).isEqualTo("Acme Corporation");
-        assertThat(login.body().path("roles").get(0).asString()).isEqualTo("CLIENT_USER");
+        assertThat(login.body().path("roles").get(0).asString()).isEqualTo("MEMBER");
 
         Response me = client.get("/api/v1/me");
         assertThat(me.status()).isEqualTo(200);
