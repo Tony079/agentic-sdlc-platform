@@ -412,3 +412,31 @@ The owner's master implementation prompt of 2026-11-08 approved the decisions be
 | Closure vs Release 1 states | No COMPLETED state | Closure = CANCELLED or REJECTED only (D-R8-03) |
 | O-25 temporary period vs FR-RET-15 | 30 days vs 24 h for abandoned workspaces | Both kept: 24 h workspace sweep; 30 days for snapshots and extracted text after closure |
 | O-27 vs PRD transitions | Only T26 exists for retry | Manual retry only for BA analysis through T26 |
+
+## 15. Garuda platform decisions (owner, 2026-11-13; branch `feature/garuda-platform`)
+
+The product is named **Garuda**. The model is `docs/architecture/garuda-platform-model.md`. The owner accepted every recommendation in its §11, except GD-04 and GD-07, which were changed as stated below. The PRD changes are recorded in `docs/product/PRD-v0.8-delta.md` (PRD v0.7 itself stays frozen).
+
+| ID | Decision (APPROVED) | Consequence |
+|---|---|---|
+| GD-01 | Organisation onboarding and user administration screens are **in Release 1 scope** | Reverses the PRD v0.7 §10 exclusion of the "multi-tenant onboarding UI" |
+| GD-02 | Client roles are assigned **per project** (Requester, Approver, Viewer), plus an organisation-wide **Organisation Admin** | Replaces organisation-wide CLIENT_USER / CLIENT_APPROVER; existing users are migrated |
+| GD-03 | Creating an organisation needs a **second Garuda approver** | New staff capability `ORG_ONBOARD`; two-person rule enforced in the database |
+| GD-04 | **Invitations are sent by email through Gmail SMTP** (free with an App Password), and the link can also be copied | Changes AC-EXT-40 for invitation and password-reset email only; user notifications stay in-app. Without configured SMTP the platform falls back to copy-link. See the caveats below |
+| GD-05 | Requirement visibility: **all members of the project** by default, plus an optional **restricted** flag (owner and Approvers only) | Supersedes C-18 owner-only visibility within a project |
+| GD-06 | An Organisation Admin **does not** see content of projects they are not a member of; they can add themselves as a member, which is audited | — |
+| GD-07 | The Garuda dashboard **shows requirement titles** (owner change from the recommendation). Client user emails are shown only for Organisation Admins | Titles are metadata visible to Garuda staff assigned to, or onboarding, that organisation. Descriptions, documents, code and BRDs stay hidden (FR-AUTH-14) |
+| GD-08 | MFA (TOTP) is **mandatory for Organisation Admins**, optional for other client users | — |
+| GD-09 | Garuda delivery staff are assigned **per organisation** (unchanged) | Per-project assignment can come later |
+| GD-10 | Invitation and reset links expire after **72 hours** | — |
+| GD-11 | Each organisation has its own sign-in address **`/o/{slug}/login`** | The organisation field disappears from the sign-in form |
+| GD-12 | Staff and client accounts of the same person are **linked by verified email** for separation-of-duties checks | — |
+| GD-13 | Project membership is enforced **in the database (RLS)** as well as in the application | — |
+| GD-14 | "Garuda" in the UI and documents; code, packages and image names stay unchanged | — |
+
+**GD-04 caveats (recorded, not blocking):**
+- Gmail sending is free, but it needs a Google account with 2-Step Verification and an **App Password**, kept as a secret, never in the repository.
+- Google applies daily sending limits per account, and the sender shows as that Gmail address. That suits a pilot.
+- For production the same SMTP adapter can point at Google Workspace or a transactional email service. That is a configuration change, not a code change.
+
+**Owner direction:** the UI is built to enterprise standard from the start, not as a later polish step.

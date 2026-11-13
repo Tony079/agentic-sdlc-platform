@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| Status | **DRAFT for owner review.** Nothing in this document is implemented yet |
+| Status | **APPROVED by the owner on 2026-11-13** (decision register §15), with two changes to the recommendations: GD-04 invitations by Gmail email, GD-07 titles shown on the dashboard. PRD changes: `docs/product/PRD-v0.8-delta.md` |
 | Product name | **Garuda** (the platform previously called "Agentic SDLC Platform") |
 | Branch | `feature/garuda-platform`, from `cc05322` |
 | Authorities | PRD v0.7 (frozen), TDD v1.0.4, `docs/decisions/decision-register.md` |
-| Decisions needed | §11 (GD-01 to GD-14). Implementation starts only after they are answered |
+| Decisions | §11; recorded as approved in the decision register §15 |
 
 ## 1. Purpose
 
@@ -124,9 +124,9 @@ The dashboard is for Garuda staff. Per FR-AUTH-14 it shows **metadata, never con
 
 | Shows | Does not show |
 |---|---|
-| Organisations: status, created date, number of users, projects, repositories | Requirement titles or text (GD-07) |
+| Organisations: status, created date, number of users, projects, repositories | Requirement descriptions or other text (titles **are** shown, GD-07) |
 | Per organisation: projects (name, status), user count by role, last activity | Documents, extracted text, source code |
-| Requirements by **state** and **age** per organisation and project (counts) | BRD content, clarification text, answers |
+| Requirements by **state** and **age** per organisation and project, with **titles** (GD-07) | BRD content, clarification text, answers |
 | Bottlenecks: waiting for clarification longer than N days, failed analyses, BRDs waiting for review or release | User email addresses of client users (GD-07) |
 | Delivery workload: what each Garuda reviewer has open | Anything from an unassigned organisation in detail (counts only) |
 | Security: alerts, locked accounts, pending invitations, MFA enrolment of Organisation Admins | |
@@ -158,11 +158,7 @@ Whether the second approval is required is GD-03. It follows the existing two-pe
 1. The invitation is a single-use link holding a random token (only its hash is stored). It expires after 72 hours (the TDD default; GD-10).
 2. The invitee opens it, sets their own password (and TOTP if Organisation Admin), and becomes ACTIVE. Nobody else ever knows the password.
 3. Expired or revoked links show a neutral message.
-4. **Email delivery:** Release 1 sends no email (AC-EXT-40). Two options:
-   - the admin copies the link and sends it themselves (works now);
-   - Garuda sends invitation emails, which needs an email service and a change to AC-EXT-40.
-
-   This is GD-04.
+4. **Email delivery (GD-04):** Garuda emails the link through SMTP (Gmail with an App Password, or any SMTP service), and the admin can always copy it. Without SMTP configured, copy-link is the only path. AC-EXT-40 is changed for invitation and reset email only.
 5. Password reset uses the same one-time-link mechanism, started by the user or an Organisation Admin.
 
 ### 8.4 Sign-in
@@ -203,17 +199,17 @@ This does not reveal which organisations an email belongs to (that would leak cl
 
 Each step ends with tests, including cross-organisation and cross-project access tests, before the next starts.
 
-## 11. Decisions needed from the owner
+## 11. Decisions (approved 2026-11-13; all recommendations accepted except where marked)
 
 | ID | Decision | Recommendation |
 |---|---|---|
 | **GD-01** | Bring organisation onboarding and user administration into Release 1 scope (PRD v0.8) | Yes |
 | **GD-02** | Roles per project rather than per organisation | Yes |
 | **GD-03** | Creating an organisation needs a second Garuda approver | Yes, consistent with other platform-level actions |
-| **GD-04** | Invitations: copy-link only (no email), or Garuda sends email (changes AC-EXT-40) | Copy-link now; email when an email service is chosen |
+| **GD-04** | Invitations: copy-link only (no email), or Garuda sends email (changes AC-EXT-40) | Copy-link now; email when an email service is chosen. **Owner decision: email through Gmail SMTP, plus copy-link** |
 | **GD-05** | Requirement visibility in a project: all members (Requester, Approver, Viewer), or owner and Approvers only, or per-requirement "restricted" flag | All members by default, plus an optional restricted flag |
 | **GD-06** | May an Organisation Admin see content of projects they are not a member of? | No; they can add themselves as a member, which is audited |
-| **GD-07** | May the Garuda dashboard show requirement titles and client user emails? | Titles: no, by default. Emails: only of Organisation Admins |
+| **GD-07** | May the Garuda dashboard show requirement titles and client user emails? | Titles: no, by default. Emails: only of Organisation Admins. **Owner decision: titles shown; emails only of Organisation Admins** |
 | **GD-08** | MFA for Organisation Admins (mandatory) and other client users (optional) | Mandatory for admins, optional for others |
 | **GD-09** | Garuda delivery staff assigned per organisation (today) or per project | Per organisation now; per project later if needed |
 | **GD-10** | Invitation lifetime | 72 hours (TDD default) |
