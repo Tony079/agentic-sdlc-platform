@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { NotificationItem } from '../api/types';
+import { PageHeader } from '../ui/components';
 
 const KINDS: Record<string, string> = {
   BRD_RELEASED: 'A business requirements document was shared with you.',
@@ -19,7 +20,7 @@ export function NotificationsPage() {
 
   return (
     <section>
-      <h1>Notifications</h1>
+      <PageHeader title="Notifications" description="Updates on the requirements you work on." />
       {list.isPending && <p>Loading…</p>}
       {list.data?.length === 0 && <p>No notifications.</p>}
       <ul>

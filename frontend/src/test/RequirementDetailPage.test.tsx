@@ -51,7 +51,7 @@ describe('RequirementDetailPage', () => {
       url.endsWith('/timeline') ? { status: 200, body: timeline } : { status: 200, body: detail({ state: 'MANUAL_INTAKE' }) },
     );
     renderDetail();
-    expect(await screen.findByRole('status')).toHaveTextContent('kept for manual intake');
+    expect(await screen.findByText(/kept for manual intake/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel requirement' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
@@ -62,15 +62,16 @@ describe('RequirementDetailPage', () => {
       url.endsWith('/timeline') ? { status: 200, body: timeline } : { status: 200, body: detail({ state: 'SUBMITTED' }) },
     );
     renderDetail();
-    expect(await screen.findByRole('status')).toHaveTextContent('routing the requirement');
+    expect(await screen.findByText(/routing the requirement/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Edit' })).toBeInTheDocument();
   });
 
   it('shows key, state, content and actions for a draft', async () => {
     mockFetch((url) => (url.endsWith('/timeline') ? { status: 200, body: timeline } : url.endsWith('/documents') ? { status: 200, body: { items: [] } } : { status: 200, body: detail() }));
     renderDetail();
-    expect(await screen.findByRole('heading', { name: 'REQ-000042: Loyalty programme' })).toBeInTheDocument();
-    expect(screen.getByText('DRAFT', { selector: '.state' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Loyalty programme' })).toBeInTheDocument();
+    expect(screen.getByText('REQ-000042')).toBeInTheDocument();
+    expect(screen.getByTitle('DRAFT')).toBeInTheDocument();
     expect(screen.getByText('Not applicable')).toBeInTheDocument();
     expect(screen.queryByText('Repository URL')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
@@ -86,7 +87,7 @@ describe('RequirementDetailPage', () => {
     });
     renderDetail();
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Submit' }));
-    expect(await screen.findByText('SUBMITTED', { selector: '.state' })).toBeInTheDocument();
+    expect(await screen.findByTitle('SUBMITTED')).toBeInTheDocument();
     const submit = calls.find((c) => c.url.endsWith('/submit'));
     expect((submit?.init.headers as Record<string, string>)['If-Match']).toBe('"3"');
     expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
@@ -123,7 +124,7 @@ describe('RequirementDetailPage', () => {
     expect(confirm).toBeDisabled();
     await user.type(screen.getByLabelText(/Reason for cancelling/), ' and now long enough');
     await user.click(confirm);
-    expect(await screen.findByText('CANCELLED', { selector: '.state' })).toBeInTheDocument();
+    expect(await screen.findByTitle('CANCELLED')).toBeInTheDocument();
     const cancel = calls.find((c) => c.url.endsWith('/cancel'));
     expect(JSON.parse(cancel?.init.body as string)).toEqual({ reason: 'too short and now long enough' });
     expect(screen.queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument();

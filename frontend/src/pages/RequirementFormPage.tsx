@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiError, ifMatch } from '../api/client';
 import type { FieldError, ProjectList, RequirementDetail } from '../api/types';
 import { RequirementForm, type RequirementFormValues } from '../components/RequirementForm';
+import { Loading, PageHeader } from '../ui/components';
 
 const EMPTY: RequirementFormValues = {
   projectId: '',
@@ -36,6 +37,7 @@ function contentPayload(values: RequirementFormValues) {
 export function RequirementFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [search] = useSearchParams();
   const queryClient = useQueryClient();
   // One key per form: a repeated create (double click, retry) replays instead of duplicating.
   const idempotencyKey = useRef(crypto.randomUUID());
@@ -52,7 +54,7 @@ export function RequirementFormPage() {
   });
 
   if (projects.isPending || (id && existing.isPending)) {
-    return <p>Loading…</p>;
+    return <Loading />;
   }
   if (projects.isError || (id && existing.isError)) {
     return (
@@ -63,7 +65,14 @@ export function RequirementFormPage() {
   }
 
   const current = saved ?? existing.data ?? null;
-  const initial: RequirementFormValues = current ? { projectId: current.projectId, ...current.content } : EMPTY;
+  const initial: RequirementFormValues = current
+    ? { projectId: current.projectId, ...current.content }
+    : { ...EMPTY, projectId: search.get('projectId') ?? EMPTY.projectId };
+  // GD-02: new requirements only in active projects where the user is a Requester or Approver (checked again by the
+  // server). Projects without a role are absent for members; legacy responses without roles keep every project.
+  const requestable = (projects.data?.items ?? []).filter(
+    (p) => p.status !== 'ARCHIVED' && (p.myRole === undefined || p.myRole === 'REQUESTER' || p.myRole === 'APPROVER'),
+  );
 
   async function onSave(values: RequirementFormValues, submitAfterSave: boolean) {
     setBusy(true);
@@ -122,22 +131,24 @@ export function RequirementFormPage() {
 
   return (
     <section>
-      <h1>{current ? `Edit ${current.key}` : 'New requirement'}</h1>
+      <PageHeader title={current ? `Edit ${current.key}` : 'New requirement'} description={current ? undefined : 'Describe the business need. You can save a draft and submit it when it is complete.'} />
       {message && (
         <p role="alert" className="error">
           {message}
         </p>
       )}
+      <div className="card requirement-form">
       <RequirementForm
         key={current?.id ?? 'new'}
         initial={initial}
-        projects={projects.data?.items ?? []}
+        projects={current ? (projects.data?.items ?? []) : requestable}
         projectLocked={Boolean(current)}
         kindLocked={current?.state === 'SUBMITTED'}
         fieldErrors={fieldErrors}
         busy={busy}
         onSave={onSave}
       />
+      </div>
       <p>
         <Link to={current ? `/requirements/${current.id}` : '/requirements'}>Back</Link>
       </p>

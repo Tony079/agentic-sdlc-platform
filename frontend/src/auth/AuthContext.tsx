@@ -1,12 +1,18 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { Me } from '../api/types';
+import type { LoginResult, Me, MfaEnrolment } from '../api/types';
+
+export type LoginOutcome = { kind: 'signed-in'; me: Me } | { kind: 'mfa'; enrolled: boolean };
 
 interface AuthState {
   me: Me | null;
   loading: boolean;
-  login: (organisation: string, email: string, password: string) => Promise<Me>;
+  isOrgAdmin: boolean;
+  login: (organisation: string, email: string, password: string) => Promise<LoginOutcome>;
+  startEnrolment: () => Promise<MfaEnrolment>;
+  confirmEnrolment: (code: string) => Promise<Me>;
+  verifyMfa: (code: string) => Promise<Me>;
   logout: () => Promise<void>;
 }
 
@@ -14,7 +20,14 @@ const AuthContext = createContext<AuthState | null>(null);
 
 const ME_KEY = ['me'];
 
-/** Session state from GET /api/v1/me. A 401 simply means "not signed in". */
+function isMe(result: LoginResult): result is Me {
+  return (result as Me).userId !== undefined;
+}
+
+/**
+ * Session state from GET /api/v1/me. A 401 simply means "not signed in". Organisation Admins complete sign-in with a
+ * TOTP code (Garuda GD-08); until then the session reaches nothing but the MFA endpoints.
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
 
@@ -24,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         return await api.get<Me>('/api/v1/me');
       } catch (error) {
-        if (error instanceof ApiError && error.status === 401) {
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
           return null;
         }
         throw error;
@@ -33,11 +46,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
   });
 
-  const loginMutation = useMutation({
-    mutationFn: (input: { organisation: string; email: string; password: string }) =>
-      api.post<Me>('/api/v1/auth/login', input),
-    onSuccess: (me) => queryClient.setQueryData(ME_KEY, me),
-  });
+  const signedIn = (me: Me) => {
+    queryClient.setQueryData(ME_KEY, me);
+    return me;
+  };
 
   const logoutMutation = useMutation({
     mutationFn: () => api.post<void>('/api/v1/auth/logout'),
@@ -47,10 +59,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const me = meQuery.data ?? null;
   const value: AuthState = {
-    me: meQuery.data ?? null,
+    me,
     loading: meQuery.isPending,
-    login: (organisation, email, password) => loginMutation.mutateAsync({ organisation, email, password }),
+    isOrgAdmin: !!me && Array.isArray(me.roles) && me.roles.includes('ORG_ADMIN'),
+    login: async (organisation, email, password) => {
+      const result = await api.post<LoginResult>('/api/v1/auth/login', { organisation, email, password });
+      if (isMe(result)) {
+        return { kind: 'signed-in', me: signedIn(result) };
+      }
+      return { kind: 'mfa', enrolled: result.status === 'MFA_REQUIRED' };
+    },
+    startEnrolment: () => api.post<MfaEnrolment>('/api/v1/auth/mfa/enrolment'),
+    confirmEnrolment: async (code) => signedIn(await api.post<Me>('/api/v1/auth/mfa/enrolment/confirm', { code })),
+    verifyMfa: async (code) => signedIn(await api.post<Me>('/api/v1/auth/mfa/verify', { code })),
     logout: () => logoutMutation.mutateAsync(),
   };
 

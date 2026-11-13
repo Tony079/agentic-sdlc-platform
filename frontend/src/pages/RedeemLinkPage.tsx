@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { api, ApiError } from '../api/client';
 import type { RedeemedLink } from '../api/types';
+import { PageHeader } from '../ui/components';
 
 /**
  * C-18 (Client Approver): attach a repository with a one-time code from the requirement owner. Records the client's
@@ -36,7 +37,7 @@ export function RedeemLinkPage() {
 
   return (
     <section>
-      <h1>Link a repository</h1>
+      <PageHeader eyebrow="Approvals" title="Link a repository" description="Authorise a repository for a requirement using the code its owner shared with you." />
       <p>
         By submitting, you authorise the platform to analyse this GitHub repository for the requirement the code was
         issued for. The platform team registers it next; the GitHub App must also be installed on the repository.

@@ -33,7 +33,7 @@ import org.springframework.transaction.PlatformTransactionManager;
  * bootstrap-ceremony-open --purpose=INITIAL|RECOVERY --first=E --second=E [--ttl-minutes=60]
  *                                                    (O-13; one-time authorisation read from standard input)
  * bootstrap-ceremony-approve --ceremony=ID --staff=E --code=C  (participant's own password from standard input)
- * grant-capability --staff=E --capability=REPOSITORY_REGISTER|STAFF_ADMIN --requester=E --requester-code=C
+ * grant-capability --staff=E --capability=<any StaffCapability, e.g. ORG_ONBOARD> --requester=E --requester-code=C
  *                  --approver=E --approver-code=C
  * assign-tenant --staff=E --tenant=SLUG --requester=E --requester-code=C --approver=E --approver-code=C
  * revoke-capability --staff=E --capability=X --admin=E --admin-code=C

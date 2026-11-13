@@ -13,6 +13,20 @@ import { fieldMessage } from '../components/RequirementForm';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { BrdPanel } from '../components/BrdPanel';
 import { RepositoryLinkPanel } from '../components/RepositoryLinkPanel';
+import { Icon } from '../ui/Icon';
+import {
+  BackLink,
+  Badge,
+  Card,
+  Loading,
+  Modal,
+  PageHeader,
+  RoleBadge,
+  StatePill,
+  formatDateTime,
+  relativeTime,
+  stateLabel,
+} from '../ui/components';
 
 const CONTENT_LABELS: [keyof RequirementContent, string][] = [
   ['description', 'Description'],
@@ -95,7 +109,7 @@ export function RequirementDetailPage() {
   });
 
   if (requirement.isPending) {
-    return <p>Loading…</p>;
+    return <Loading />;
   }
   if (requirement.isError) {
     return (
@@ -145,18 +159,67 @@ export function RequirementDetailPage() {
     setViewedRevision(await api.get<RequirementRevision>(`/api/v1/requirements/${detail.id}/revisions/${revisionNo}`));
   }
 
+  async function toggleRestricted() {
+    const next = !detail.restricted;
+    const text = next
+      ? 'Restrict this requirement? Only you and the project Approvers will see it.'
+      : 'Open this requirement to every member of the project?';
+    if (!window.confirm(text)) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await api.put(`/api/v1/requirements/${detail.id}/restricted`, { restricted: next });
+      await queryClient.invalidateQueries({ queryKey: ['requirement', id] });
+    } catch {
+      setActionError('The visibility could not be changed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const owner = detail.ownedByMe !== false;
+  const canRestrict = owner || detail.myRole === 'APPROVER';
   return (
-    <section>
-      <p>
-        <Link to="/requirements">All requirements</Link>
-      </p>
-      <h1>
-        {detail.key}: {detail.content.title}
-      </h1>
-      <p>
-        State: <span className={`state state-${detail.state.toLowerCase()}`}>{detail.state}</span> · Revision{' '}
-        {detail.currentRevisionNo}
-      </p>
+    <>
+      <BackLink to="/requirements">All requirements</BackLink>
+      <PageHeader
+        eyebrow={<span className="mono">{detail.key}</span>}
+        title={detail.content.title}
+        description={
+          <span className="row">
+            <span className="sr-only">State:</span>
+            <StatePill state={detail.state} />
+            <span className="small">Revision {detail.currentRevisionNo}</span>
+            {detail.restricted && (
+              <Badge tone="warning">
+                <Icon name="lock" size={12} /> Restricted
+              </Badge>
+            )}
+            {!owner && <Badge tone="neutral">Read only</Badge>}
+          </span>
+        }
+        actions={
+          owner && (
+            <>
+              {editable && (
+                <Link to={`/requirements/${detail.id}/edit`} className="btn btn-secondary">
+                  Edit
+                </Link>
+              )}
+              {cancellable && !cancelling && (
+                <button type="button" className="btn-secondary" onClick={() => setCancelling(true)} disabled={busy}>
+                  Cancel requirement
+                </button>
+              )}
+              {detail.state === 'DRAFT' && (
+                <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
+                  Submit
+                </button>
+              )}
+            </>
+          )
+        }
+      />
       {note && (
         <p className="notice" role="status">
           {note}
@@ -165,78 +228,105 @@ export function RequirementDetailPage() {
       {actionError && (
         <p role="alert" className="error">
           {actionError}{' '}
-          <button type="button" onClick={() => requirement.refetch()}>
+          <button type="button" className="btn-sm" onClick={() => requirement.refetch()}>
             Reload
           </button>
         </p>
       )}
 
-      <div className="actions">
-        {editable && <Link to={`/requirements/${detail.id}/edit`}>Edit</Link>}
-        {detail.state === 'DRAFT' && (
-          <button type="button" onClick={submit} disabled={busy}>
-            Submit
-          </button>
-        )}
-        {cancellable && !cancelling && (
-          <button type="button" onClick={() => setCancelling(true)} disabled={busy}>
-            Cancel requirement
-          </button>
-        )}
-      </div>
-
       {cancelling && (
-        <form onSubmit={cancel} className="cancel-form">
-          <label>
-            Reason for cancelling (10 to 500 characters)
-            <textarea value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={3} />
-          </label>
-          <button type="submit" disabled={busy || reason.trim().length < 10}>
-            Confirm cancellation
-          </button>
-          <button type="button" onClick={() => setCancelling(false)}>
-            Keep requirement
-          </button>
-        </form>
-      )}
-
-      <ContentView content={detail.content} />
-
-      <BrdPanel requirementId={detail.id} requirementState={detail.state} />
-
-      <RepositoryLinkPanel requirementId={detail.id} requirementState={detail.state} />
-
-      <DocumentsPanel requirementId={detail.id} requirementState={detail.state} />
-
-      <h2>Revisions</h2>
-      <ul>
-        {detail.revisions.map((r) => (
-          <li key={r.revisionNo}>
-            Revision {r.revisionNo} · {new Date(r.createdAt).toLocaleString()}{' '}
-            <button type="button" onClick={() => void viewRevision(r.revisionNo)}>
-              View
-            </button>
-          </li>
-        ))}
-      </ul>
-      {viewedRevision && (
-        <div className="revision" aria-label={`Revision ${viewedRevision.revisionNo}`}>
-          <h3>
-            Revision {viewedRevision.revisionNo}: {viewedRevision.content.title}
-          </h3>
-          <ContentView content={viewedRevision.content} />
+        <div className="card">
+          <form onSubmit={cancel} className="cancel-form">
+            <label>
+              Reason for cancelling (10 to 500 characters)
+              <textarea value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={3} />
+            </label>
+            <div className="row">
+              <button type="submit" className="btn-danger" disabled={busy || reason.trim().length < 10}>
+                Confirm cancellation
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => setCancelling(false)}>
+                Keep requirement
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
-      <h2>History</h2>
-      <ol>
-        {timeline.data?.map((t) => (
-          <li key={t.seq}>
-            {t.fromState ? `${t.fromState} → ` : ''}
-            {t.toState} · {new Date(t.occurredAt).toLocaleString()}
-          </li>
-        ))}
-      </ol>
-    </section>
+      <div className="grid grid-main-side">
+        <div>
+          <Card title="Requirement">
+            <ContentView content={detail.content} />
+          </Card>
+          <div className="card">
+            <BrdPanel requirementId={detail.id} requirementState={detail.state} />
+          </div>
+          <div className="card">
+            <RepositoryLinkPanel requirementId={detail.id} requirementState={detail.state} />
+          </div>
+          <div className="card">
+            <DocumentsPanel requirementId={detail.id} requirementState={detail.state} />
+          </div>
+        </div>
+        <div>
+          <Card title="Details">
+            <dl className="details" style={{ gridTemplateColumns: '110px minmax(0, 1fr)' }}>
+              <dt>Created</dt>
+              <dd>{formatDateTime(detail.createdAt)}</dd>
+              <dt>Updated</dt>
+              <dd>{relativeTime(detail.updatedAt)}</dd>
+              <dt>Your role</dt>
+              <dd>{owner ? 'Owner' : <RoleBadge role={detail.myRole} />}</dd>
+              <dt>Visibility</dt>
+              <dd>{detail.restricted ? 'Owner and project Approvers' : 'All project members'}</dd>
+            </dl>
+            {canRestrict && (
+              <button type="button" className="btn-secondary btn-sm" style={{ marginTop: '1rem' }} onClick={() => void toggleRestricted()} disabled={busy}>
+                <Icon name={detail.restricted ? 'eye' : 'lock'} size={15} />
+                {detail.restricted ? 'Open to the project' : 'Restrict visibility'}
+              </button>
+            )}
+          </Card>
+          <Card title="Revisions" flush>
+            <ul className="list">
+              {detail.revisions.map((r) => (
+                <li key={r.revisionNo}>
+                  <div className="grow">
+                    <div className="title">Revision {r.revisionNo}</div>
+                    <span className="small">{formatDateTime(r.createdAt)}</span>
+                  </div>
+                  <button type="button" className="btn-ghost btn-sm" onClick={() => void viewRevision(r.revisionNo)}>
+                    View
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Card>
+          <Card title="History" flush>
+            <ol className="list">
+              {timeline.data?.map((t) => (
+                <li key={t.seq}>
+                  <Icon name="activity" size={15} />
+                  <div className="grow">
+                    <div>
+                      {t.fromState ? `${stateLabel(t.fromState)} → ` : ''}
+                      <strong>{stateLabel(t.toState)}</strong>
+                    </div>
+                    <span className="small">{formatDateTime(t.occurredAt)}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </Card>
+        </div>
+      </div>
+      {viewedRevision && (
+        <Modal wide title={`Revision ${viewedRevision.revisionNo}: ${viewedRevision.content.title}`} onClose={() => setViewedRevision(null)}>
+          <div className="revision" aria-label={`Revision ${viewedRevision.revisionNo}`}>
+            <ContentView content={viewedRevision.content} />
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }

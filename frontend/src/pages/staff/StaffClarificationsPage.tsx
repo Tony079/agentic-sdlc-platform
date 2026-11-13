@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { Clarification, PendingDocumentDecision } from '../../api/types';
 import { ClarificationCard } from '../../components/ClarificationCard';
+import { PageHeader } from '../../ui/components';
 
 /**
  * Business Reviewer inbox (FR-UI-02): clarifications assigned to reviewers, and documents that need a decision
@@ -38,7 +39,7 @@ export function StaffClarificationsPage() {
       <p>
         <Link to="/staff">Staff workspace</Link>
       </p>
-      <h1>Reviewer inbox</h1>
+      <PageHeader eyebrow="Delivery" title="Reviewer inbox" />
       {message && (
         <p className="notice" role="status">
           {message}

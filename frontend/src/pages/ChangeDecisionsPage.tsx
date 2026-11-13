@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import type { ChangeRequest } from '../api/types';
 import { ScopeDiffTable } from '../components/ScopeDiffTable';
+import { PageHeader } from '../ui/components';
 
 const ERRORS: Record<string, string> = {
   SELF_APPROVAL_FORBIDDEN: 'You submitted this change; another Client Approver must decide.',
@@ -33,7 +34,7 @@ export function ChangeDecisionsPage() {
 
   return (
     <section>
-      <h1>Change decisions</h1>
+      <PageHeader eyebrow="Approvals" title="Change decisions" description="Decide on change requests assessed by Garuda analysts for the projects you approve." />
       {list.isPending && <p>Loading…</p>}
       {list.isError && <p role="alert">The change requests could not be loaded.</p>}
       {message && (

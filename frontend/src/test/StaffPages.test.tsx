@@ -36,7 +36,7 @@ describe('Staff sign-in', () => {
     expect(await screen.findByLabelText('Authenticator key')).toHaveTextContent('JBSWY3DPEHPK3PXP');
     await user.type(screen.getByLabelText('Authenticator code'), '123456');
     await user.click(screen.getByRole('button', { name: 'Verify' }));
-    expect(await screen.findByRole('heading', { name: 'Staff workspace' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Workspace' })).toBeInTheDocument();
     const confirm = calls.find((c) => c.url.endsWith('/mfa/enrolment/confirm'));
     expect(JSON.parse(String(confirm?.init.body))).toEqual({ code: '123456' });
   });

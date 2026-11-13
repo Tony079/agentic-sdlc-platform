@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { ChangeRequest, StaffMe, TenantLifecycleRequest } from '../../api/types';
 import { ScopeDiffTable } from '../../components/ScopeDiffTable';
+import { PageHeader } from '../../ui/components';
 
 interface ManualIntakeEntry {
   id: string;
@@ -314,7 +315,7 @@ export function StaffOperationsPage() {
       <p>
         <Link to="/staff">Staff workspace</Link>
       </p>
-      <h1>Operations</h1>
+      <PageHeader eyebrow="Platform" title="Operations" />
       {message && (
         <p className="notice" role="status">
           {message}

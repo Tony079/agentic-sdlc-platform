@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom';
+import { PageHeader } from '../ui/components';
 
 export function NotFoundPage() {
   return (
     <section>
-      <h1>Page not found</h1>
+      <PageHeader title="Page not found" />
       <p>
         <Link to="/projects">Go to projects</Link>
       </p>

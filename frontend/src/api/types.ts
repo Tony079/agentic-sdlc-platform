@@ -8,10 +8,182 @@ export interface Me {
   roles: string[];
 }
 
+export type OrgRole = 'ORG_ADMIN' | 'MEMBER';
+export type ProjectRole = 'REQUESTER' | 'APPROVER' | 'VIEWER';
+
 export interface Project {
   id: string;
   name: string;
+  description?: string | null;
+  status?: 'ACTIVE' | 'ARCHIVED';
+  /** The caller's project role, or null when not a member (an Organisation Admin sees every project). */
+  myRole?: ProjectRole | null;
+  memberCount?: number;
   createdAt: string;
+  archivedAt?: string | null;
+}
+
+export interface ProjectMember {
+  id: string;
+  projectId: string;
+  projectName: string;
+  userId: string;
+  displayName: string;
+  email: string;
+  userStatus: 'INVITED' | 'ACTIVE' | 'DISABLED';
+  role: ProjectRole;
+  addedAt: string;
+}
+
+export type LoginResult = Me | { status: 'MFA_REQUIRED' | 'MFA_ENROLMENT_REQUIRED' };
+
+export interface MfaEnrolment {
+  secret: string;
+  otpauthUri: string;
+}
+
+export interface OrganisationSummary {
+  id: string;
+  name: string;
+  slug: string;
+  activeUsers: number;
+  invitedUsers: number;
+  deactivatedUsers: number;
+  organisationAdmins: number;
+  emailConfigured: boolean;
+}
+
+export interface Membership {
+  memberId: string;
+  projectId: string;
+  projectName: string;
+  role: ProjectRole;
+}
+
+export interface OrgUser {
+  id: string;
+  email: string;
+  displayName: string;
+  role: OrgRole;
+  status: 'INVITED' | 'ACTIVE' | 'DISABLED';
+  mfaEnrolled: boolean;
+  createdAt: string;
+  activatedAt: string | null;
+  invitation: {
+    id: string;
+    purpose: 'INVITE' | 'PASSWORD_RESET';
+    createdAt: string;
+    expiresAt: string;
+    emailStatus: 'NOT_SENT' | 'SENT' | 'FAILED';
+  } | null;
+  memberships: Membership[];
+}
+
+export interface LinkResult {
+  userId: string;
+  invitationId: string;
+  link: string;
+  emailStatus: 'NOT_SENT' | 'SENT' | 'FAILED';
+  expiresAt: string;
+}
+
+export interface AccountLinkDetails {
+  organisationName: string;
+  organisationSlug: string;
+  email: string;
+  displayName: string;
+  purpose: 'INVITE' | 'PASSWORD_RESET';
+  expiresAt: string;
+}
+
+// Garuda staff console
+
+export interface DashboardRequirement {
+  organisationId: string;
+  organisationName: string;
+  projectId: string;
+  projectName: string;
+  key: string;
+  title: string;
+  state: string;
+  createdAt: string;
+  stateSince: string;
+  daysInState: number;
+  bottleneck: 'FAILED' | 'WAITING_FOR_CLIENT' | 'WAITING_FOR_REVIEW' | 'WAITING_FOR_RELEASE' | 'WAITING_FOR_INTAKE' | null;
+}
+
+export interface DashboardOrganisation {
+  id: string;
+  name: string;
+  slug: string;
+  status: 'ACTIVE' | 'SUSPENDED';
+  createdAt: string;
+  activeUsers: number;
+  invitedUsers: number;
+  projects: number;
+  repositories: number;
+  requirements: number;
+  openRequirements: number;
+  bottlenecks: number;
+  lastActivityAt: string | null;
+  admins: { displayName: string; email: string; status: string }[];
+}
+
+export interface DashboardOverview {
+  organisations: number;
+  activeOrganisations: number;
+  suspendedOrganisations: number;
+  users: number;
+  projects: number;
+  repositories: number;
+  requirements: number;
+  requirementsByState: Record<string, number>;
+  organisationRows: DashboardOrganisation[];
+  bottlenecks: DashboardRequirement[];
+  staleDays: number;
+}
+
+export interface OrganisationDetail {
+  organisation: DashboardOrganisation;
+  projects: { id: string; name: string; status: string; members: number; requirements: number }[];
+  requirements: DashboardRequirement[];
+}
+
+export interface OnboardingRequest {
+  id: string;
+  organisationName: string;
+  organisationSlug: string;
+  adminEmail: string;
+  adminDisplayName: string;
+  status: 'REQUESTED' | 'EXECUTED' | 'REJECTED' | 'CANCELLED';
+  requestedBy: string;
+  requestedByName: string;
+  requestedAt: string;
+  approvedBy: string | null;
+  approvedByName: string | null;
+  executedAt: string | null;
+  createdTenantId: string | null;
+  decisionNote: string | null;
+}
+
+export interface OnboardingApproved {
+  request: OnboardingRequest;
+  invitationLink: string;
+  emailStatus: 'NOT_SENT' | 'SENT' | 'FAILED';
+}
+
+export interface OrganisationStatusRequest {
+  id: string;
+  tenantId: string;
+  organisationName: string;
+  kind: 'SUSPEND' | 'REACTIVATE';
+  status: 'REQUESTED' | 'EXECUTED' | 'REJECTED' | 'CANCELLED';
+  reason: string;
+  requestedBy: string;
+  requestedByName: string;
+  requestedAt: string;
+  approvedBy: string | null;
+  executedAt: string | null;
 }
 
 export interface ProjectList {
@@ -78,6 +250,10 @@ export interface RequirementDetail {
   revisions: RevisionSummary[];
   createdAt: string;
   updatedAt: string;
+  /** Restricted requirements are visible to their owner and the project's Approvers only (GD-05). */
+  restricted?: boolean;
+  ownedByMe?: boolean;
+  myRole?: ProjectRole | null;
 }
 
 export interface RequirementRevision {

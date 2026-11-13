@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ChangeDecisionsPage } from '../pages/ChangeDecisionsPage';
@@ -89,10 +89,11 @@ describe('Owner-decision workflows', () => {
       if (url.endsWith('/tenant/deletion-requests')) return { status: 200, body: [] };
       return { status: 404 };
     });
+    vi.stubGlobal('confirm', () => true);
     renderWithProviders(<OrganisationPage />, '/organisation');
     const user = userEvent.setup();
     await user.type(await screen.findByLabelText('Reason (at least 10 characters)'), 'Contract ended in October.');
     await user.click(screen.getByRole('button', { name: 'Request deletion' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Two authorised staff members must verify and approve');
+    expect(await screen.findByText(/Two authorised staff members must verify and approve/)).toBeInTheDocument();
   });
 });
