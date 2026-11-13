@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError, ifMatch } from '../api/client';
@@ -109,6 +109,13 @@ export function RequirementDetailPage() {
     queryFn: () => api.get<TimelineEntry[]>(`/api/v1/requirements/${id}/timeline`),
     refetchInterval: requirement.data && IN_MOTION.includes(requirement.data.state) ? 4000 : false,
   });
+  // The history must follow the state: when polling sees a new state, fetch the transitions again.
+  const currentState = requirement.data?.state;
+  useEffect(() => {
+    if (currentState) {
+      void queryClient.invalidateQueries({ queryKey: ['requirement', id, 'timeline'] });
+    }
+  }, [currentState, id, queryClient]);
 
   if (requirement.isPending) {
     return <p>Loading…</p>;

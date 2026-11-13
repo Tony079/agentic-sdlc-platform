@@ -96,8 +96,9 @@ sdlc:
     encryption-key: ${SDLC_STORAGE_KEY:}
   model:
     # Model gateway (TDD 13). O-01 (provider selection) is OPEN: no provider is configured by default, so every model
-    # call fails with CONFIGURATION_ERROR and no data leaves the platform. "fake" (deterministic, no network) is for
-    # local development and tests only. Never accepted from a request.
+    # call fails with CONFIGURATION_ERROR and no data leaves the platform. "fake" (deterministic, scripted) is for
+    # tests; "development-mock" (rule-based, visibly marked output) is for local prototypes. Production mode refuses
+    # both. Never accepted from a request.
     provider: ${SDLC_MODEL_PROVIDER:none}
     model-id: ${SDLC_MODEL_ID:}
     timeout: 120s
@@ -109,6 +110,10 @@ sdlc:
       # FR-LLM-05 caps; values are owner decision O-09 (open). Empty = no cap.
       tenant-monthly-usd: ${SDLC_MODEL_BUDGET_TENANT_MONTHLY_USD:}
       requirement-usd: ${SDLC_MODEL_BUDGET_REQUIREMENT_USD:}
+  repository:
+    # Repository adapter of the worker: "github" (GitHub App broker) or "development" (bundled sample repository for
+    # local prototypes; owner "sdlc-dev" only). Production mode refuses "development". Never accepted from a request.
+    source: ${SDLC_REPOSITORY_SOURCE:github}
   scanner:
     clamd:
       host: ${SDLC_SCANNER_HOST:localhost}

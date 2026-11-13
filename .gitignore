@@ -13,3 +13,6 @@ frontend/coverage/
 .vscode/
 *.iml
 .DS_Store
+
+# Prototype demo staff credentials (scripts/prototype_demo_setup.py)
+.prototype-demo/

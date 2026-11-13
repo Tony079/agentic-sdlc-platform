@@ -5,6 +5,13 @@ Product scope: [`docs/product/PRD-v0.7.md`](docs/product/PRD-v0.7.md) (authority
 Architecture: [`docs/architecture/TDD-v1.0.4.md`](docs/architecture/TDD-v1.0.4.md).
 Open decisions, conflicts and security gates: [`docs/decisions/decision-register.md`](docs/decisions/decision-register.md).
 
+## Try the working prototype
+
+The whole Release 1 workflow runs locally with Docker Compose: requirement, documents, analysis, clarification, BRD,
+review, approval, release and audit history. Start here: [`docs/operations/prototype-guide.md`](docs/operations/prototype-guide.md).
+The prototype uses a **mock model provider** and a **bundled sample repository**, both labelled in the UI; what is
+postponed is tracked in [`docs/operations/prototype-deferred-work-register.md`](docs/operations/prototype-deferred-work-register.md).
+
 ## Status
 
 **Milestone 1 — foundation.** Tenant-aware sign-in, projects, audit trail and security events, on a modular

@@ -76,7 +76,13 @@ function ReasonButton({ label, onSubmit }: { label: string; onSubmit: (reason: s
   const [reason, setReason] = useState('');
   return (
     <span className="inline-form">
-      <input aria-label={`${label} reason`} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} />
+      <input
+        aria-label={`${label} reason`}
+        placeholder="Reason (at least 10 characters)"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        maxLength={1000}
+      />
       <button type="button" disabled={reason.trim().length < 10} onClick={() => onSubmit(reason.trim())}>
         {label}
       </button>

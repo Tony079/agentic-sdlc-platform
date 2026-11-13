@@ -47,9 +47,10 @@ from stdin; codes are the current TOTP codes of the named administrators.
    ```
 
 ## External services in development
-- **GitHub:** off (`SDLC_GITHUB_ENABLED=false`). Registered repositories stay PENDING_VERIFICATION and validation waits. To use a real GitHub App, see `secrets-and-key-management.md`.
-- **Model provider:** `SDLC_MODEL_PROVIDER=none` by default, so analysis waits (no data leaves the machine). `fake` is for tests only and returns empty output unless a test scripts it.
-- **Extraction:** the Compose worker enables it for synthetic documents only (O-15).
+- **Working prototype:** to run the whole workflow without external accounts, use the prototype overlay and the staff setup script described in `prototype-guide.md`. It enables two development adapters (mock model output, bundled sample repository), both labelled in the UI and refused in production mode.
+- **GitHub:** off (`SDLC_GITHUB_ENABLED=false`). Without the prototype overlay, registered repositories stay PENDING_VERIFICATION and validation waits. To use a real GitHub App, see `secrets-and-key-management.md`.
+- **Model provider:** `SDLC_MODEL_PROVIDER=none` by default, so analysis waits (no data leaves the machine). `development-mock` is the prototype provider; `fake` is for tests only and returns empty output unless a test scripts it.
+- **Extraction:** the Compose worker enables it for synthetic documents only (`extraction-isolation.md`).
 
 ## Tests without Docker
 Run each command on its own:

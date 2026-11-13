@@ -21,7 +21,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (me) {
-    return <Navigate to="/projects" replace />;
+    return <Navigate to="/" replace />;
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -30,7 +30,7 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await login(organisation, email, password);
-      navigate('/projects', { replace: true });
+      navigate('/', { replace: true });
     } catch (e) {
       setError(messageFor(e));
     } finally {

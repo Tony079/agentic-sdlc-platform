@@ -1,0 +1,22 @@
+# Working-prototype overlay. LOCAL DEMONSTRATION ONLY; never use it for a shared or production environment.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prototype.yml up --build
+#
+# It switches on the two development adapters so the whole workflow runs without external accounts:
+#   * model provider "development-mock": BRD content is assembled by fixed rules and marked [DEVELOPMENT MOCK]
+#     everywhere it is shown. No language model is called (owner decision O-01 selects none yet).
+#   * repository source "development": repositories of owner "sdlc-dev" are served from a bundled sample, not GitHub.
+# Everything else is the real code path: PostgreSQL with RLS, job queue, outbox, ClamAV, extraction, evidence
+# verification, approvals. Production mode refuses to start with either adapter.
+services:
+  api:
+    environment:
+      # Names only, read by GET /api/v1/runtime so the UI shows the prototype banner.
+      SDLC_MODEL_PROVIDER: development-mock
+      SDLC_MODEL_ID: development-mock-1
+      SDLC_REPOSITORY_SOURCE: development
+  worker:
+    environment:
+      SDLC_MODEL_PROVIDER: development-mock
+      SDLC_MODEL_ID: development-mock-1
+      SDLC_REPOSITORY_SOURCE: development
