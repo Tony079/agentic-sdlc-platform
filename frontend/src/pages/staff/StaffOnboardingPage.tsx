@@ -53,7 +53,10 @@ function message(error: unknown, fallback: string): string {
     if (error.status === 403 && !ERRORS[error.code]) {
       return 'You need the “Organisation onboarding” capability. Ask a staff administrator to grant it in Team.';
     }
-    return ERRORS[error.code] ?? (error.status === 422 || error.status === 409 ? error.message : fallback);
+    if (ERRORS[error.code]) return ERRORS[error.code]!;
+    if (error.status === 422 || error.status === 409) return error.message;
+    // Show the server's reason so the failure can be diagnosed from a screenshot.
+    return `${fallback} (${error.status} ${error.code}: ${error.message})`;
   }
   return fallback;
 }
