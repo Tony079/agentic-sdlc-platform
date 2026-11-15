@@ -71,9 +71,11 @@ class EnvironmentVerifyHandler implements JobHandler<EnvironmentVerifyHandler.Ou
         if (repo == null) {
             throw JobFailure.fatal("REPOSITORY_NOT_FOUND", null);
         }
+        // A refresh (GD-23, scheduled) re-reads every branch head so that moved branches can be shown.
+        boolean refresh = "true".equals(String.valueOf(job.payload().get("refresh")));
         List<Branch> pending = readOnly.execute(s -> jdbc.sql("""
-                SELECT id, branch FROM app.environment_branch WHERE repository_id = :repo AND status <> 'VERIFIED'
-                """).param("repo", repositoryId).query((rs, n) -> new Branch(rs.getObject(1, UUID.class), rs.getString(2)))
+                SELECT id, branch FROM app.environment_branch WHERE repository_id = :repo AND (status <> 'VERIFIED' OR :all)
+                """).param("repo", repositoryId).param("all", refresh).query((rs, n) -> new Branch(rs.getObject(1, UUID.class), rs.getString(2)))
                 .list());
         Map<UUID, Result> results = new LinkedHashMap<>();
         try {
@@ -131,14 +133,16 @@ class EnvironmentVerifyHandler implements JobHandler<EnvironmentVerifyHandler.Ou
             repositories.markRepository(repositoryId, status, outcome.repoReason());
         }
         boolean repoOk = "VERIFIED".equals(status);
+        boolean refresh = "true".equals(String.valueOf(job.payload().get("refresh")));
         for (Map.Entry<UUID, Result> e : outcome.branches().entrySet()) {
             Result r = repoOk ? e.getValue() : new Result(status.equals("ACCESS_DENIED") ? "ACCESS_DENIED" : "UNAVAILABLE", null,
                     e.getValue().code() == null ? "REPOSITORY_UNAVAILABLE" : e.getValue().code());
             jdbc.sql("""
                     UPDATE app.environment_branch SET status = :status, head_sha = :sha, failure_code = :code,
                            verified_at = CASE WHEN :status = 'VERIFIED' THEN clock_timestamp() END
-                    WHERE id = :id AND status <> 'VERIFIED'
+                    WHERE id = :id AND (status <> 'VERIFIED' OR :all)
                     """).param("status", r.status()).param("sha", r.sha()).param("code", r.code()).param("id", e.getKey())
+                    .param("all", refresh)
                     .update();
         }
     }

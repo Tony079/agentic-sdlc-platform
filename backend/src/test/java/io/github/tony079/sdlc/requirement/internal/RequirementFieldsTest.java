@@ -41,10 +41,10 @@ class RequirementFieldsTest {
     }
 
     @Test
-    void repositoryUrlIsRequiredAtSubmissionOnlyForExistingRepository() {
+    void repositoryUrlIsOptionalAtSubmissionSinceProductsUseEnvironments() {
         RequirementFields draft = complete("EXISTING_REPOSITORY", null);
         assertThat(draft.draftErrors()).isEmpty();
-        assertThat(codes(draft.submitErrors())).containsExactly("repositoryUrl:REQUIRED");
+        assertThat(codes(draft.submitErrors())).isEmpty();
     }
 
     @Test

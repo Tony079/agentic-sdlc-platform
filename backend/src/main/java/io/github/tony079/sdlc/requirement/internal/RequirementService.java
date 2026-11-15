@@ -14,6 +14,7 @@ import io.github.tony079.sdlc.audit.api.AuditWriter;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditAction;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditResult;
 import io.github.tony079.sdlc.billing.api.BrdQuotes;
+import io.github.tony079.sdlc.sourcerepo.api.EnvironmentSources;
 import io.github.tony079.sdlc.common.api.ApiError.FieldError;
 import io.github.tony079.sdlc.common.api.ApiException;
 import io.github.tony079.sdlc.project.api.ProjectAccess;
@@ -62,12 +63,14 @@ class RequirementService {
     private final ProjectAccess projects;
 
     private final BrdQuotes quotes;
+    private final EnvironmentSources environments;
 
     RequirementService(RequirementRepository requirements, RequirementKeyGenerator keys, IdempotencyStore idempotency,
                        WorkflowEngine workflow, AuditWriter audit, SecurityEventRecorder securityEvents,
-                       ProjectAccess projects, BrdQuotes quotes) {
+                       ProjectAccess projects, BrdQuotes quotes, EnvironmentSources environments) {
         this.projects = projects;
         this.quotes = quotes;
+        this.environments = environments;
         this.requirements = requirements;
         this.keys = keys;
         this.idempotency = idempotency;
@@ -228,7 +231,19 @@ class RequirementService {
             throw ApiException.versionChanged();
         }
         Revision current = requirements.findRevision(id, row.currentRevisionNo()).orElseThrow();
-        List<FieldError> errors = RequirementFields.of(current.content()).submitErrors();
+        List<FieldError> errors = new java.util.ArrayList<>(RequirementFields.of(current.content()).submitErrors());
+        // GD-23: an existing product is analysed against a project environment (PROD unless another is chosen). A
+        // requirement with a repository URL and no environment keeps the earlier repository-link flow.
+        UUID environment = null;
+        if (RequirementFields.EXISTING_REPOSITORY.equals(current.content().kind())) {
+            UUID chosen = requirements.targetEnvironment(id).orElse(null);
+            if (chosen != null || current.content().repositoryUrl() == null) {
+                environment = environments.resolve(row.projectId(), chosen).orElse(null);
+                if (environment == null) {
+                    errors.add(new FieldError("targetEnvironmentId", "REQUIRED"));
+                }
+            }
+        }
         if (!errors.isEmpty()) {
             throw ApiException.validation(errors);
         }
@@ -238,6 +253,11 @@ class RequirementService {
         // RequirementSubmitted is written to the outbox in this transaction; routing follows in the worker.
         Route route = RequirementFields.EXISTING_REPOSITORY.equals(current.content().kind()) ? Route.REPOSITORY
                 : Route.MANUAL_INTAKE;
+        int sourceCount = 0;
+        if (environment != null) {
+            requirements.setTargetEnvironment(id, environment);
+            sourceCount = environments.openRound(id, environment);
+        }
         workflow.submit(id, route);
         // GD-22: a project with a billing plan quotes the BRD; analysis waits until the quote is accepted.
         var c = current.content();
@@ -246,7 +266,7 @@ class RequirementService {
                 c.acceptanceCriteria(), c.constraints(), c.integrations()}) {
             chars += text == null ? 0 : text.length();
         }
-        quotes.open(id, row.projectId(), new BrdQuotes.Basis(0, route == Route.REPOSITORY, chars));
+        quotes.open(id, row.projectId(), new BrdQuotes.Basis(0, route == Route.REPOSITORY ? Math.max(1, sourceCount) : 0, chars));
         audit.record(AuditAction.REQUIREMENT_SUBMITTED, "REQUIREMENT", id, AuditResult.SUCCESS);
         return detail(id, actor());
     }

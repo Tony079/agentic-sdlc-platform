@@ -133,7 +133,7 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         }
         Map<String, String> files;
         try {
-            files = repositories.readFiles(loaded.inputSet().snapshotId(), cited);
+            files = repositories.readFiles(loaded.inputSet().sources(), cited);
         } catch (IOException e) {
             throw JobFailure.retryable("SNAPSHOT_READ_FAILED", e);
         }
@@ -161,7 +161,7 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
             sources.put(versionId, new DocumentSource(versionId, extraction, chunks));
         }
         Set<String> paths = new HashSet<>();
-        repositories.inventory(set.snapshotId(), 100_000, 0).files().forEach(f -> paths.add(f.path()));
+        repositories.inventory(set.sources(), 100_000, 0).files().forEach(f -> paths.add(f.path()));
         return new Loaded(pending, set, sources, paths);
     }
 
@@ -223,7 +223,7 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         String excluded = excludedDocuments(set.documentsJson());
         UUID version = repository.insertVersion(job.tenantId(), brd, requirementId, pending,
                 contentHash(pending.understanding(), outcome.items(), excluded), excluded);
-        repository.insertItems(job.tenantId(), version, set.repositoryId(), set.commitSha(), outcome.items());
+        repository.insertItems(job.tenantId(), version, set, outcome.items());
         repository.decidePending(pending.id(), "COMMITTED", null);
         if (outcome.items().stream().anyMatch(i -> i.rejectedCitations() > 0)) {
             audit.record(AuditAction.CITATION_REJECTED, "BRD_VERSION", version, AuditResult.DENIED);

@@ -87,6 +87,6 @@ class AnalysisStarter {
             chars += text == null ? 0 : text.length();
         }
         int documents = (int) draft.documents().stream().filter(InputSets.DocumentEntry::included).count();
-        return new BrdQuotes.Basis(documents, draft.repository() != null, chars);
+        return new BrdQuotes.Basis(documents, draft.repositories().size(), chars);
     }
 }

@@ -80,18 +80,23 @@ class ReviewConsumers implements EventConsumer {
         UUID requirementId = event.uuid("requirementId");
         switch (event.eventType()) {
             case EventTypes.RELEASE_APPROVED -> release(requirementId, event.uuid("releaseApprovalId"));
-            case EventTypes.REVISION_REQUESTED -> {
-                if (workflow.lockState(requirementId) == WorkflowState.REVISION_REQUESTED) {
-                    starter.start(requirementId, withClarifications(requirementId,
-                            reviews.latestRevisionNotes(requirementId).orElse("[]")));
-                }
-            }
-            case EventTypes.CLIENT_CHANGES_REQUESTED -> {
-                if (workflow.lockState(requirementId) == WorkflowState.CLIENT_CHANGES_REQUESTED) {
-                    String text = reviews.latestClientChange(requirementId).orElse("");
-                    starter.start(requirementId, json.writeValueAsString(
-                            List.of(Map.of("source", "CLIENT", "instruction", text))));
-                }
+            case EventTypes.REVISION_REQUESTED, EventTypes.CLIENT_CHANGES_REQUESTED -> reanalyseIfWaiting(requirementId);
+            default -> { }
+        }
+    }
+
+    /**
+     * Starts the re-analysis of a requirement waiting in REVISION_REQUESTED or CLIENT_CHANGES_REQUESTED, if its inputs
+     * are ready. Also called when new sources become ready (GD-23 re-analysis after branches moved).
+     */
+    void reanalyseIfWaiting(UUID requirementId) {
+        switch (workflow.lockState(requirementId)) {
+            case REVISION_REQUESTED -> starter.start(requirementId, withClarifications(requirementId,
+                    reviews.latestRevisionNotes(requirementId).orElse("[]")));
+            case CLIENT_CHANGES_REQUESTED -> {
+                String text = reviews.latestClientChange(requirementId).orElse("");
+                starter.start(requirementId, json.writeValueAsString(
+                        List.of(Map.of("source", "CLIENT", "instruction", text))));
             }
             default -> { }
         }

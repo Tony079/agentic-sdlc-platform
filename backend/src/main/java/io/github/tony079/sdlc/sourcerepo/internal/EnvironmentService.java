@@ -65,10 +65,14 @@ class EnvironmentService {
     private final TransactionTemplate tx;
     private final OutboxPublisher outbox;
 
-    EnvironmentService(JdbcClient jdbc, PlatformTransactionManager transactionManager, OutboxPublisher outbox) {
+    private final io.github.tony079.sdlc.sourcerepo.api.EnvironmentSources sources;
+
+    EnvironmentService(JdbcClient jdbc, PlatformTransactionManager transactionManager, OutboxPublisher outbox,
+                       io.github.tony079.sdlc.sourcerepo.api.EnvironmentSources sources) {
         this.jdbc = jdbc;
         this.tx = new TransactionTemplate(transactionManager);
         this.outbox = outbox;
+        this.sources = sources;
     }
 
     Overview overview(UUID projectId) {
@@ -184,6 +188,7 @@ class EnvironmentService {
             if ((Boolean) env[1]) {
                 return new Result(false, request((UUID) env[0], environmentId, "REMOVE_ENVIRONMENT", null, null, null, reason, me));
             }
+            refuseIfAnalysed(environmentId);
             jdbc.sql("UPDATE app.requirement SET target_environment_id = NULL WHERE target_environment_id = :id")
                     .param("id", environmentId).update();
             jdbc.sql("DELETE FROM app.environment WHERE id = :id").param("id", environmentId).update();
@@ -344,9 +349,37 @@ class EnvironmentService {
                     .param("e", environmentId).param("p", project).query(Boolean.class).single()) {
                 throw ApiException.validation("Choose an environment of the requirement's project.");
             }
+            // GD-23: fixed once the BRD quote is accepted (or, without billing, once analysis has started).
+            boolean locked = jdbc.sql("""
+                    SELECT EXISTS (SELECT 1 FROM app.brd_quote WHERE requirement_id = :id AND status = 'ACCEPTED')
+                        OR EXISTS (SELECT 1 FROM app.analysis_input_set WHERE requirement_id = :id)
+                    """).param("id", requirementId).query(Boolean.class).single();
+            if (locked) {
+                throw ApiException.conflict("ENVIRONMENT_LOCKED",
+                        "The environment is fixed once the BRD quote is accepted or analysis has started.");
+            }
+            UUID current = jdbc.sql("SELECT target_environment_id::text FROM app.requirement WHERE id = :id")
+                    .param("id", requirementId).query(String.class).optional().map(UUID::fromString).orElse(null);
+            boolean submitted = sources.hasSources(requirementId);
+            if (submitted && environmentId == null) {
+                throw ApiException.validation("A submitted requirement needs an environment.");
+            }
             jdbc.sql("UPDATE app.requirement SET target_environment_id = :e WHERE id = :id").param("e", environmentId)
                     .param("id", requirementId).update();
+            if (submitted && !environmentId.equals(current)) {
+                sources.openRound(requirementId, environmentId); // the worker pins the new environment's heads
+            }
         });
+    }
+
+    /** An environment that a requirement was analysed against is part of that requirement's evidence. */
+    private void refuseIfAnalysed(UUID environmentId) {
+        if (Boolean.TRUE.equals(jdbc.sql(
+                "SELECT EXISTS (SELECT 1 FROM app.requirement_repository WHERE environment_id = :e)")
+                .param("e", environmentId).query(Boolean.class).single())) {
+            throw ApiException.conflict("ENVIRONMENT_IN_USE",
+                    "Requirements have been analysed against this environment, so it cannot be removed.");
+        }
     }
 
     // --- internals ------------------------------------------------------------------------------------------
@@ -358,6 +391,7 @@ class EnvironmentService {
             case "RENAME_ENVIRONMENT" -> jdbc.sql("UPDATE app.environment SET name = :n WHERE id = :id")
                     .param("n", r.newName()).param("id", r.environmentId()).update();
             case "REMOVE_ENVIRONMENT" -> {
+                refuseIfAnalysed(r.environmentId());
                 jdbc.sql("UPDATE app.requirement SET target_environment_id = NULL WHERE target_environment_id = :id")
                         .param("id", r.environmentId()).update();
                 jdbc.sql("DELETE FROM app.environment WHERE id = :id").param("id", r.environmentId()).update();

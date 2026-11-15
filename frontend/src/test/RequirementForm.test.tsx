@@ -6,6 +6,17 @@ import { RequirementFormPage } from '../pages/RequirementFormPage';
 import { mockFetch, renderWithProviders } from './render';
 
 const projects = { items: [{ id: 'p1', name: 'Loans', createdAt: '2026-11-03T10:00:00Z' }] };
+const branch = (repository: string, name: string) => ({ id: `b-${repository}`, repositoryId: repository, repository, branch: name,
+  status: 'VERIFIED', headSha: 'a'.repeat(40), failureCode: null, verifiedAt: null });
+const environments = {
+  projectId: 'p1', projectStatus: 'ACTIVE', environmentManagerId: 'em', environmentManagerName: 'Alice', canManage: false,
+  canApproveProduction: false, repositories: [], requests: [],
+  environments: [
+    { id: 'qc', name: 'QC', description: null, production: false, branches: [branch('acme/loans', 'release/qc')] },
+    { id: 'prod', name: 'PROD', description: null, production: true,
+      branches: [branch('acme/loans', 'main'), branch('acme/billing', 'main')] },
+  ],
+};
 
 function detail(overrides: Record<string, unknown> = {}) {
   return {
@@ -44,14 +55,47 @@ function renderNew() {
 }
 
 describe('RequirementForm', () => {
-  it('shows the repository URL only for existing repositories and the greenfield notice for new products', async () => {
-    mockFetch(() => ({ status: 200, body: projects }));
-    renderNew();
+  it('defaults an existing product to the PROD environment, lists what it analyses, and hides it for new products', async () => {
+    mockFetch((url) => ({ status: 200, body: url.endsWith('/environments') ? environments : projects }));
+    renderWithProviders(
+      <Routes>
+        <Route path="/requirements/new" element={<RequirementFormPage />} />
+      </Routes>,
+      '/requirements/new?projectId=p1',
+    );
     const user = userEvent.setup();
-    expect(await screen.findByLabelText('Repository URL')).toBeInTheDocument();
+    const select = await screen.findByLabelText('Environment to analyse');
+    await screen.findByText('Analyses acme/loans @ main, acme/billing @ main.');
+    expect(select).toHaveValue('prod');
+    expect(screen.queryByLabelText(/Repository URL/)).not.toBeInTheDocument();
+    await user.selectOptions(select, 'qc');
+    expect(screen.getByText('Analyses acme/loans @ release/qc.')).toBeInTheDocument();
     await user.click(screen.getByLabelText('New product'));
-    expect(screen.queryByLabelText('Repository URL')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Environment to analyse')).not.toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('Automated greenfield analysis and scaffolding are not supported yet');
+  });
+
+  it('saves the chosen environment with the draft', async () => {
+    document.cookie = 'XSRF-TOKEN=t1; path=/';
+    const calls = mockFetch((url, init) => {
+      if (url === '/api/v1/requirements' && init.method === 'POST') return { status: 201, body: detail() };
+      if (init.method === 'PUT') return { status: 204 };
+      return { status: 200, body: url.endsWith('/environments') ? environments : projects };
+    });
+    renderWithProviders(
+      <Routes>
+        <Route path="/requirements/new" element={<RequirementFormPage />} />
+        <Route path="/requirements/:id" element={<p>Detail page</p>} />
+      </Routes>,
+      '/requirements/new?projectId=p1',
+    );
+    const user = userEvent.setup();
+    await screen.findByText('Analyses acme/loans @ main, acme/billing @ main.');
+    await user.type(screen.getByLabelText('Title'), 'Repayment metadata');
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    expect(await screen.findByText('Detail page')).toBeInTheDocument();
+    const put = calls.find((c) => c.url === '/api/v1/requirements/r1/target-environment');
+    expect(JSON.parse(String(put?.init.body))).toEqual({ environmentId: 'prod' });
   });
 
   it('creates a draft with an Idempotency-Key and only the fields entered', async () => {
@@ -88,7 +132,7 @@ describe('RequirementForm', () => {
               message: 'x',
               correlationId: null,
               details: [
-                { field: 'repositoryUrl', code: 'INVALID_FORMAT' },
+                { field: 'targetEnvironmentId', code: 'REQUIRED' },
                 { field: 'title', code: 'REQUIRED' },
               ],
             },
@@ -99,11 +143,10 @@ describe('RequirementForm', () => {
     });
     renderNew();
     const user = userEvent.setup();
-    await user.type(await screen.findByLabelText('Repository URL'), 'http://example.com/x');
-    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    await user.click(await screen.findByRole('button', { name: 'Save draft' }));
 
-    expect(await screen.findByText('Use the form https://github.com/owner/repository.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Repository URL')).toHaveAttribute('aria-invalid', 'true');
+    expect(await screen.findByText('Choose the environment to analyse.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Title')).toHaveAttribute('aria-invalid', 'true');
     expect(within(screen.getByRole('alert')).getByText('Please correct the highlighted fields.')).toBeInTheDocument();
   });
 
@@ -153,7 +196,7 @@ describe('RequirementForm', () => {
     );
     const user = userEvent.setup();
     expect(await screen.findByLabelText('New product')).toBeDisabled();
-    expect(screen.getByLabelText('Enhancement to an existing repository')).toBeDisabled();
+    expect(screen.getByLabelText('Enhancement to an existing product')).toBeDisabled();
     expect(screen.getByText('The requirement type cannot be changed after submission.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('The requirement type cannot be changed after submission.');

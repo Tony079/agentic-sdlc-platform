@@ -66,3 +66,49 @@ describe('EnvironmentsTab', () => {
     expect(JSON.parse(String(post?.init.body))).toEqual({ repositoryId: 'r1', branch: 'main', reason: 'Go live.' });
   });
 });
+
+describe('SourcesPanel', () => {
+  const sources = (over: Record<string, unknown> = {}) => ({
+    environmentId: 'e2', environmentName: 'PROD', production: true, state: 'SHARED_WITH_CLIENT', locked: true,
+    canChangeEnvironment: false, analysedAt: '2026-11-15T10:00:00Z',
+    analysed: [
+      { repositoryId: 'r1', repository: 'acme/loans', branch: 'main', analysedCommit: 'a'.repeat(40), currentCommit: 'c'.repeat(40), moved: true },
+      { repositoryId: 'r2', repository: 'acme/billing', branch: 'main', analysedCommit: 'b'.repeat(40), currentCommit: 'b'.repeat(40), moved: false },
+    ],
+    preparing: [], branchesMoved: true, newRepositories: false, canReanalyse: true, reanalyseHint: null, ...over,
+  });
+
+  it('shows moved branches without changing anything and re-analyses on request', async () => {
+    document.cookie = 'XSRF-TOKEN=s1; path=/';
+    window.confirm = () => true;
+    const calls = mockFetch((url, init) => {
+      if (url === '/api/v1/me') return { status: 401 };
+      if (init.method === 'POST') return { status: 200, body: sources({ canReanalyse: false }) };
+      if (url.endsWith('/sources')) return { status: 200, body: sources() };
+      return { status: 200, body: overview() };
+    });
+    const { SourcesPanel } = await import('../components/SourcesPanel');
+    renderWithProviders(<ToastProvider><SourcesPanel requirementId="req1" projectId="p1" /></ToastProvider>);
+    expect(await screen.findByText(`Moved to ${'c'.repeat(12)}`)).toBeInTheDocument();
+    expect(screen.getByText('Unchanged')).toBeInTheDocument();
+    expect(screen.getByText('The code has changed since this analysis')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Re-analyse with the latest code' }));
+    expect(await screen.findByText(/Re-analysis started/)).toBeInTheDocument();
+    expect(calls.some((c) => c.url === '/api/v1/requirements/req1/reanalyse')).toBe(true);
+  });
+
+  it('explains why re-analysis is not available before release', async () => {
+    mockFetch((url) => {
+      if (url === '/api/v1/me') return { status: 401 };
+      if (url.endsWith('/sources')) {
+        return { status: 200, body: sources({ state: 'INTERNAL_REVIEW', canReanalyse: false,
+          reanalyseHint: 'Re-analysis is available once the BRD has been released to you.' }) };
+      }
+      return { status: 200, body: overview() };
+    });
+    const { SourcesPanel } = await import('../components/SourcesPanel');
+    renderWithProviders(<SourcesPanel requirementId="req1" projectId="p1" />);
+    expect(await screen.findByText('Re-analysis is available once the BRD has been released to you.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Re-analyse/ })).not.toBeInTheDocument();
+  });
+});

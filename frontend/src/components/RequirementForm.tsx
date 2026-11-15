@@ -1,5 +1,8 @@
 import { useState, type FormEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api/client';
 import type { FieldError, Project, RequirementContent, RequirementKind } from '../api/types';
+import type { EnvironmentOverview } from './EnvironmentsTab';
 
 /** Field limits from approved decision Q1 (the server enforces them; the UI only helps). */
 export const LIMITS = {
@@ -45,6 +48,8 @@ export function fieldMessage(field: string, code: string): string {
       return field === 'repositoryUrl'
         ? 'Use the form https://github.com/owner/repository.'
         : 'The format is not valid.';
+    case 'REQUIRED_ENVIRONMENT':
+      return 'Choose the environment to analyse.';
     case 'MUST_BE_ABSENT':
       return 'Not allowed for a new product.';
     case 'INVALID_VALUE':
@@ -56,6 +61,8 @@ export function fieldMessage(field: string, code: string): string {
 
 export interface RequirementFormValues extends RequirementContent {
   projectId: string;
+  /** GD-23: the project environment an existing product is analysed against (PROD by default). */
+  targetEnvironmentId?: string | null;
 }
 
 interface Props {
@@ -81,16 +88,22 @@ export function RequirementForm({ initial, projects, projectLocked, kindLocked =
   }
 
   function setKind(kind: RequirementKind) {
-    // A new product never carries a repository URL.
-    setValues((current) => ({ ...current, kind, repositoryUrl: kind === 'NEW_PRODUCT' ? null : current.repositoryUrl }));
+    // A new product never carries a repository URL or an environment.
+    setValues((current) => ({
+      ...current,
+      kind,
+      repositoryUrl: kind === 'NEW_PRODUCT' ? null : current.repositoryUrl,
+      targetEnvironmentId: kind === 'NEW_PRODUCT' ? null : current.targetEnvironmentId,
+    }));
   }
 
   function handle(submitAfterSave: boolean) {
     return (event: FormEvent) => {
       event.preventDefault();
-      onSave(values, submitAfterSave);
+      onSave({ ...values, targetEnvironmentId: environmentIdRef.current }, submitAfterSave);
     };
   }
+  const environmentIdRef = { current: values.targetEnvironmentId ?? null };
 
   function textField(field: TextField) {
     const error = errorFor(field);
@@ -117,6 +130,21 @@ export function RequirementForm({ initial, projects, projectLocked, kindLocked =
   }
 
   const projectError = errorFor('projectId');
+  const environmentError = errorFor('targetEnvironmentId');
+  const existingProduct = values.kind === 'EXISTING_REPOSITORY';
+  // Earlier requirements were linked by repository URL; they keep it (read-only) unless an environment is chosen.
+  const legacyUrl = Boolean(initial.repositoryUrl) && !initial.targetEnvironmentId;
+  const environments = useQuery({
+    queryKey: ['environments', values.projectId],
+    queryFn: () => api.get<EnvironmentOverview>(`/api/v1/projects/${values.projectId}/environments`),
+    enabled: Boolean(values.projectId) && existingProduct,
+  });
+  const envList = [...(environments.data?.environments ?? [])].sort((a, b) => Number(b.production) - Number(a.production));
+  const prodId = envList.find((e) => e.production)?.id;
+  // PROD is the default (GD-23) while nothing has been chosen.
+  const environmentId = values.targetEnvironmentId ?? (existingProduct && !legacyUrl ? prodId ?? null : null);
+  environmentIdRef.current = environmentId;
+  const chosen = envList.find((e) => e.id === environmentId);
 
   return (
     <form className="requirement-form" onSubmit={handle(false)} noValidate>
@@ -148,7 +176,7 @@ export function RequirementForm({ initial, projects, projectLocked, kindLocked =
             disabled={kindLocked}
             onChange={() => setKind('EXISTING_REPOSITORY')}
           />
-          Enhancement to an existing repository
+          Enhancement to an existing product
         </label>
         <label className="inline">
           <input
@@ -170,7 +198,49 @@ export function RequirementForm({ initial, projects, projectLocked, kindLocked =
       </fieldset>
 
       {textField('title')}
-      {values.kind === 'EXISTING_REPOSITORY' && textField('repositoryUrl')}
+      {existingProduct && (
+        <div className="field">
+          <label htmlFor="field-targetEnvironmentId">Environment to analyse</label>
+          {values.projectId && environments.data && envList.length === 0 ? (
+            <p className="notice" role="note">
+              This project has no environments yet. Its Environment Manager
+              {environments.data.environmentManagerName ? ` (${environments.data.environmentManagerName})` : ''} adds them on
+              the project&apos;s Environments tab. You can save a draft meanwhile.
+            </p>
+          ) : (
+            <select
+              id="field-targetEnvironmentId"
+              value={environmentId ?? ''}
+              disabled={!values.projectId || environments.isPending}
+              aria-invalid={environmentError ? true : undefined}
+              onChange={(e) => set('targetEnvironmentId', e.target.value || null)}
+            >
+              <option value="">{values.projectId ? 'Choose an environment' : 'Choose a project first'}</option>
+              {envList.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                  {e.production ? ' (PROD)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          {chosen && (
+            <p className="hint">
+              {chosen.branches.length === 0
+                ? 'This environment has no branches yet.'
+                : `Analyses ${chosen.branches.map((b) => `${b.repository} @ ${b.branch}`).join(', ')}.`}
+            </p>
+          )}
+          {environmentError && <p className="error">{fieldMessage('targetEnvironmentId', 'REQUIRED_ENVIRONMENT')}</p>}
+        </div>
+      )}
+      {existingProduct && legacyUrl && (
+        <div className="field">
+          <label htmlFor="field-repositoryUrl">Repository URL (earlier link)</label>
+          <input id="field-repositoryUrl" value={values.repositoryUrl ?? ''} readOnly />
+          <p className="hint">Choose an environment above to analyse the project&apos;s environment instead.</p>
+        </div>
+      )}
       {textField('description')}
       {textField('businessObjective')}
       {textField('expectedOutcomes')}

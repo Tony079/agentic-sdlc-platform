@@ -33,7 +33,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class BrdQuoteService {
 
     record Quote(UUID id, UUID requirementId, String status, String size, String sizingMethod, boolean estimated,
-                 int documents, boolean hasRepository, int textChars, String currency, BigDecimal listPrice,
+                 int documents, boolean hasRepository, int repositories, int textChars, String currency, BigDecimal listPrice,
                  String planName, int includedPerMonth, int includedUsedThisMonth, boolean wouldBeIncluded,
                  Boolean included, BigDecimal charge, LocalDate billingMonth, OffsetDateTime quotedAt,
                  String acceptedByName, OffsetDateTime acceptedAt, String declinedByName, OffsetDateTime declinedAt,
@@ -143,7 +143,7 @@ class BrdQuoteService {
     private Quote load(UUID requirementId, UUID me) {
         LocalDate month = LocalDate.now(ZoneOffset.UTC).withDayOfMonth(1);
         Quote q = jdbc.sql("""
-                SELECT q.id, q.status, q.size, q.sizing_method, q.documents, q.has_repository, q.text_chars, q.currency,
+                SELECT q.id, q.status, q.size, q.sizing_method, q.documents, q.has_repository, q.repositories, q.text_chars, q.currency,
                        q.list_price, b.name, b.included_brds, q.included, q.charge, q.billing_month, q.quoted_at,
                        au.display_name, q.accepted_at, du.display_name, q.declined_at,
                        (r.created_by = :me OR app.is_brd_approver(q.project_id)), q.project_id
@@ -155,17 +155,17 @@ class BrdQuoteService {
                 WHERE q.requirement_id = :r
                 """).param("me", me).param("r", requirementId).query((rs, n) -> new Quote(rs.getObject(1, UUID.class),
                         requirementId, rs.getString(2), rs.getString(3), rs.getString(4), true, rs.getInt(5),
-                        rs.getBoolean(6), rs.getInt(7), rs.getString(8), rs.getBigDecimal(9), rs.getString(10),
-                        rs.getInt(11), 0, false, (Boolean) rs.getObject(12), rs.getBigDecimal(13),
-                        rs.getObject(14, LocalDate.class), rs.getObject(15, OffsetDateTime.class), rs.getString(16),
-                        rs.getObject(17, OffsetDateTime.class), rs.getString(18), rs.getObject(19, OffsetDateTime.class),
-                        rs.getBoolean(20))).optional()
+                        rs.getBoolean(6), rs.getInt(7), rs.getInt(8), rs.getString(9), rs.getBigDecimal(10),
+                        rs.getString(11), rs.getInt(12), 0, false, (Boolean) rs.getObject(13), rs.getBigDecimal(14),
+                        rs.getObject(15, LocalDate.class), rs.getObject(16, OffsetDateTime.class), rs.getString(17),
+                        rs.getObject(18, OffsetDateTime.class), rs.getString(19), rs.getObject(20, OffsetDateTime.class),
+                        rs.getBoolean(21))).optional()
                 .orElseThrow(ApiException::notFound);
         UUID project = jdbc.sql("SELECT project_id FROM app.brd_quote WHERE id = :id").param("id", q.id())
                 .query(UUID.class).single();
         int used = used(project, month);
         return new Quote(q.id(), q.requirementId(), q.status(), q.size(), q.sizingMethod(), q.estimated(), q.documents(),
-                q.hasRepository(), q.textChars(), q.currency(), q.listPrice(), q.planName(), q.includedPerMonth(), used,
+                q.hasRepository(), q.repositories(), q.textChars(), q.currency(), q.listPrice(), q.planName(), q.includedPerMonth(), used,
                 used < q.includedPerMonth(), q.included(), q.charge(), q.billingMonth(), q.quotedAt(), q.acceptedByName(),
                 q.acceptedAt(), q.declinedByName(), q.declinedAt(), q.canDecide());
     }

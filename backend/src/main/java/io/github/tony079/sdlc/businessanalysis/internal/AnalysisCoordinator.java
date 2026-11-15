@@ -1,6 +1,7 @@
 package io.github.tony079.sdlc.businessanalysis.internal;
 
 import java.util.Set;
+import java.util.UUID;
 
 import io.github.tony079.sdlc.outbox.api.DomainEvent;
 import io.github.tony079.sdlc.outbox.api.EventConsumer;
@@ -21,10 +22,12 @@ class AnalysisCoordinator implements EventConsumer {
 
     private final AnalysisStarter starter;
     private final InputChangeConsumers inputChanges;
+    private final ReviewConsumers reviews;
 
-    AnalysisCoordinator(AnalysisStarter starter, InputChangeConsumers inputChanges) {
+    AnalysisCoordinator(AnalysisStarter starter, InputChangeConsumers inputChanges, ReviewConsumers reviews) {
         this.starter = starter;
         this.inputChanges = inputChanges;
+        this.reviews = reviews;
     }
 
     @Override
@@ -39,8 +42,12 @@ class AnalysisCoordinator implements EventConsumer {
 
     @Override
     public void handle(DomainEvent event) {
-        if (starter.tryStart(event.uuid("requirementId")).isEmpty()) {
-            inputChanges.resumeIfUnblocked(event.uuid("requirementId"));
+        UUID requirementId = event.uuid("requirementId");
+        if (starter.tryStart(requirementId).isEmpty()) {
+            inputChanges.resumeIfUnblocked(requirementId);
+            if (EventTypes.REPOSITORY_SNAPSHOT_INDEXED.equals(event.eventType())) {
+                reviews.reanalyseIfWaiting(requirementId); // GD-23: re-analysis waits for the new round's snapshots
+            }
         }
     }
 }

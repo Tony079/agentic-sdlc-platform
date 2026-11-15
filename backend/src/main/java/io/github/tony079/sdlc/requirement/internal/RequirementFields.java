@@ -105,9 +105,8 @@ record RequirementFields(String kind, String title, String description, String b
         required(errors, "expectedOutcomes", expectedOutcomes);
         required(errors, "constraints", constraints);
         required(errors, "integrations", integrations);
-        if (EXISTING_REPOSITORY.equals(kind)) {
-            required(errors, "repositoryUrl", repositoryUrl);
-        }
+        // GD-23: an existing product names a project environment (checked by the service); the repository URL is
+        // only kept for requirements of the earlier repository-link flow.
         return errors;
     }
 

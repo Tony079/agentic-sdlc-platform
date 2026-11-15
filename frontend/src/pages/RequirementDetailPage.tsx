@@ -13,7 +13,7 @@ import { fieldMessage } from '../components/RequirementForm';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { BrdPanel } from '../components/BrdPanel';
 import { RepositoryLinkPanel } from '../components/RepositoryLinkPanel';
-import { TargetEnvironmentPanel } from '../components/TargetEnvironmentPanel';
+import { SourcesPanel } from '../components/SourcesPanel';
 import { BrdQuotePanel } from '../components/BrdQuotePanel';
 import { Icon } from '../ui/Icon';
 import {
@@ -44,8 +44,8 @@ function ContentView({ content }: { content: RequirementContent }) {
   return (
     <dl className="content">
       <dt>Type</dt>
-      <dd>{content.kind === 'NEW_PRODUCT' ? 'New product' : 'Existing repository'}</dd>
-      {CONTENT_LABELS.filter(([field]) => content.kind === 'EXISTING_REPOSITORY' || field !== 'repositoryUrl').map(
+      <dd>{content.kind === 'NEW_PRODUCT' ? 'New product' : 'Enhancement to an existing product'}</dd>
+      {CONTENT_LABELS.filter(([field]) => field !== 'repositoryUrl' || Boolean(content.repositoryUrl)).map(
         ([field, label]) => (
           <div key={field}>
             <dt>{label}</dt>
@@ -263,16 +263,19 @@ export function RequirementDetailPage() {
           <div className="card">
             <BrdPanel requirementId={detail.id} requirementState={detail.state} />
           </div>
-          <div className="card">
-            <RepositoryLinkPanel requirementId={detail.id} requirementState={detail.state} />
-          </div>
+          {detail.content.repositoryUrl && (
+            // Earlier requirements linked one repository by URL (C-18); new ones analyse a project environment (GD-23).
+            <div className="card">
+              <RepositoryLinkPanel requirementId={detail.id} requirementState={detail.state} />
+            </div>
+          )}
           <div className="card">
             <DocumentsPanel requirementId={detail.id} requirementState={detail.state} />
           </div>
         </div>
         <div>
           <BrdQuotePanel requirementId={detail.id} />
-          {detail.content.kind === 'EXISTING_REPOSITORY' && <TargetEnvironmentPanel requirementId={detail.id} projectId={detail.projectId} />}
+          {detail.content.kind === 'EXISTING_REPOSITORY' && <SourcesPanel requirementId={detail.id} projectId={detail.projectId} />}
           <Card title="Details">
             <dl className="details" style={{ gridTemplateColumns: '110px minmax(0, 1fr)' }}>
               <dt>Created</dt>

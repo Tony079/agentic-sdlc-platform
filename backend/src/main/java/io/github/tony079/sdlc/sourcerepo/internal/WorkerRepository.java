@@ -23,7 +23,7 @@ class WorkerRepository {
     }
 
     record ValidationRow(UUID requirementRepositoryId, UUID requirementId, String status, String pinnedSha,
-                         RepositoryRow repository) {
+                         RepositoryRow repository, String branch, int round) {
     }
 
     record SnapshotRow(UUID id, String commitSha, String status, String storageKey, long archiveBytes) {
@@ -50,16 +50,29 @@ class WorkerRepository {
     }
 
     private static final String VALIDATION_SELECT = "SELECT rr.id, rr.requirement_id, rr.status, rr.pinned_sha, "
-            + REPO_COLUMNS + " FROM app.requirement_repository rr JOIN app.repository r ON r.id = rr.repository_id ";
+            + REPO_COLUMNS + ", rr.branch, rr.round FROM app.requirement_repository rr "
+            + "JOIN app.repository r ON r.id = rr.repository_id ";
 
     private static ValidationRow validation(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
         return new ValidationRow(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getString(3),
-                rs.getString(4), repo(rs, 5));
+                rs.getString(4), repo(rs, 5), rs.getString(11), rs.getInt(12));
     }
 
-    Optional<ValidationRow> validationForRequirement(UUID requirementId) {
-        return jdbc.sql(VALIDATION_SELECT + "WHERE rr.requirement_id = :id").param("id", requirementId)
-                .query(WorkerRepository::validation).optional();
+    /** The sources of the requirement's latest round (one legacy linked repository, or the environment's). */
+    List<ValidationRow> latestRound(UUID requirementId) {
+        return jdbc.sql(VALIDATION_SELECT + """
+                WHERE rr.requirement_id = :id
+                  AND rr.round = (SELECT max(round) FROM app.requirement_repository WHERE requirement_id = :id)
+                ORDER BY rr.id
+                """).param("id", requirementId).query(WorkerRepository::validation).list();
+    }
+
+    /** GD-23: marks the still pending sources of a round as failed (its pinning job is dead). */
+    void failRound(UUID requirementId, int round, String code) {
+        jdbc.sql("""
+                UPDATE app.requirement_repository SET status = 'FAILED', failure_code = :code
+                WHERE requirement_id = :id AND round = :round AND status = 'PENDING_VALIDATION'
+                """).param("code", code).param("id", requirementId).param("round", round).update();
     }
 
     Optional<ValidationRow> validationById(UUID requirementRepositoryId) {

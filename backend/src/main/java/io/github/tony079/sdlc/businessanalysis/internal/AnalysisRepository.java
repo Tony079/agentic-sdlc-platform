@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import io.github.tony079.sdlc.businessanalysis.internal.EvidenceVerifier.VerifiedEvidence;
 import io.github.tony079.sdlc.businessanalysis.internal.EvidenceVerifier.VerifiedItem;
+import io.github.tony079.sdlc.sourcerepo.api.RepositoryInputs;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -18,7 +19,30 @@ import org.springframework.transaction.annotation.Transactional;
 class AnalysisRepository {
 
     record InputSetRow(UUID id, UUID requirementId, int revisionNo, UUID repositoryId, String commitSha,
-                       UUID snapshotId, String documentsJson, String correctionsJson, String inputHash) {
+                       UUID snapshotId, String documentsJson, String correctionsJson, String inputHash,
+                       List<SourceRef> sourceRefs) {
+
+        /** The snapshots to read, each with the prefix its paths carry (one unprefixed source for legacy sets). */
+        List<RepositoryInputs.Source> sources() {
+            return sourceRefs.stream().map(r -> new RepositoryInputs.Source(r.snapshotId(), r.prefix())).toList();
+        }
+
+        /** The source a cited path belongs to (longest matching prefix). */
+        SourceRef sourceOf(String path) {
+            SourceRef best = null;
+            for (SourceRef r : sourceRefs) {
+                if (path != null && path.startsWith(r.prefix())
+                        && (best == null || r.prefix().length() > best.prefix().length())) {
+                    best = r;
+                }
+            }
+            return best == null ? sourceRefs.get(0) : best;
+        }
+    }
+
+    /** One analysed source (GD-23). */
+    record SourceRef(UUID repositoryId, String fullName, String branch, String commitSha, UUID snapshotId,
+                     String prefix) {
     }
 
     record PendingRow(UUID id, UUID requirementId, UUID stageExecutionId, UUID inputSetId, String inputHash,
@@ -34,14 +58,16 @@ class AnalysisRepository {
     UUID insertInputSet(UUID tenantId, InputSets.Draft draft, String documentsJson) {
         return jdbc.sql("""
                 INSERT INTO app.analysis_input_set (tenant_id, requirement_id, revision_no, revision_hash, repository_id,
-                                                    commit_sha, snapshot_id, documents, corrections, input_hash)
+                                                    commit_sha, snapshot_id, documents, corrections, input_hash, sources)
                 VALUES (:tenant, :requirement, :revisionNo, :revisionHash, :repository, :sha, :snapshot,
-                        CAST(:documents AS jsonb), CAST(:corrections AS jsonb), :hash)
+                        CAST(:documents AS jsonb), CAST(:corrections AS jsonb), :hash, CAST(:sources AS jsonb))
                 RETURNING id
                 """).param("tenant", tenantId).param("requirement", draft.requirementId())
                 .param("revisionNo", draft.revision().revisionNo()).param("revisionHash", draft.revision().contentHash())
-                .param("repository", draft.repository().repositoryId()).param("sha", draft.repository().commitSha())
-                .param("snapshot", draft.repository().snapshotId()).param("documents", documentsJson)
+                .param("repository", draft.repositories().get(0).repositoryId())
+                .param("sha", draft.repositories().get(0).commitSha())
+                .param("snapshot", draft.repositories().get(0).snapshotId()).param("documents", documentsJson)
+                .param("sources", sourcesJson(draft.repositories()))
                 .param("corrections", draft.correctionsJson()).param("hash", draft.inputHash())
                 .query(UUID.class).single();
     }
@@ -49,12 +75,20 @@ class AnalysisRepository {
     Optional<InputSetRow> inputSet(UUID id) {
         return jdbc.sql("""
                 SELECT id, requirement_id, revision_no, repository_id, commit_sha, snapshot_id, documents::text,
-                       corrections::text, input_hash
+                       corrections::text, input_hash, sources::text
                 FROM app.analysis_input_set WHERE id = :id
                 """).param("id", id)
-                .query((rs, n) -> new InputSetRow(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getInt(3),
-                        rs.getObject(4, UUID.class), rs.getString(5), rs.getObject(6, UUID.class), rs.getString(7),
-                        rs.getString(8), rs.getString(9)))
+                .query((rs, n) -> {
+                    UUID repo = rs.getObject(4, UUID.class);
+                    String sha = rs.getString(5);
+                    UUID snapshot = rs.getObject(6, UUID.class);
+                    List<SourceRef> refs = parseSources(rs.getString(10));
+                    if (refs.isEmpty()) {
+                        refs = List.of(new SourceRef(repo, null, null, sha, snapshot, ""));
+                    }
+                    return new InputSetRow(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getInt(3),
+                            repo, sha, snapshot, rs.getString(7), rs.getString(8), rs.getString(9), refs);
+                })
                 .optional();
     }
 
@@ -139,7 +173,38 @@ class AnalysisRepository {
                 .query(UUID.class).single();
     }
 
-    void insertItems(UUID tenantId, UUID versionId, UUID repositoryId, String commitSha, List<VerifiedItem> items) {
+    private static final tools.jackson.databind.json.JsonMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
+
+    static String sourcesJson(List<io.github.tony079.sdlc.sourcerepo.api.RepositoryInputs.PinnedRepository> sources) {
+        List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
+        for (var s : sources) {
+            java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("repositoryId", s.repositoryId().toString());
+            m.put("fullName", s.fullName());
+            m.put("branch", s.branch());
+            m.put("commitSha", s.commitSha());
+            m.put("snapshotId", s.snapshotId().toString());
+            m.put("prefix", s.prefix());
+            out.add(m);
+        }
+        return JSON.writeValueAsString(out);
+    }
+
+    static List<SourceRef> parseSources(String json) {
+        List<SourceRef> refs = new java.util.ArrayList<>();
+        if (json == null) {
+            return refs;
+        }
+        for (tools.jackson.databind.JsonNode n : JSON.readTree(json)) {
+            refs.add(new SourceRef(UUID.fromString(n.path("repositoryId").asString()), n.path("fullName").asString(null),
+                    n.path("branch").asString(null), n.path("commitSha").asString(),
+                    UUID.fromString(n.path("snapshotId").asString()), n.path("prefix").asString("")));
+        }
+        return refs;
+    }
+
+    /** Each repository citation is attributed to the source its path belongs to (repository and pinned commit). */
+    void insertItems(UUID tenantId, UUID versionId, InputSetRow set, List<VerifiedItem> items) {
         for (VerifiedItem item : items) {
             UUID itemId = jdbc.sql("""
                     INSERT INTO app.brd_item (tenant_id, brd_version_id, ordinal, item_key, kind, proposed_kind, section,
@@ -162,7 +227,8 @@ class AnalysisRepository {
                         VALUES (:tenant, :item, :type, :repo, :sha, :path, :start, :end, :rangeHash, :docVersion,
                                 :extraction, :chunk, :label, :quote, :support)
                         """).param("tenant", tenantId).param("item", itemId).param("type", e.type().name())
-                        .param("repo", repo ? repositoryId : null).param("sha", repo ? commitSha : null)
+                        .param("repo", repo ? set.sourceOf(e.path()).repositoryId() : null)
+                        .param("sha", repo ? set.sourceOf(e.path()).commitSha() : null)
                         .param("path", e.path()).param("start", e.startLine()).param("end", e.endLine())
                         .param("rangeHash", e.rangeSha256()).param("docVersion", e.documentVersionId())
                         .param("extraction", e.extractionNo()).param("chunk", e.chunkOrdinal())

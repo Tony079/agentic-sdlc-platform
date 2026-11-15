@@ -184,9 +184,6 @@ export function Layout() {
               <NavItem to="/change-requests" icon="checkCircle">
                 Change decisions
               </NavItem>
-              <NavItem to="/repository-links/redeem" icon="git">
-                Link a repository
-              </NavItem>
             </>
           )}
           {isOrgAdmin && (

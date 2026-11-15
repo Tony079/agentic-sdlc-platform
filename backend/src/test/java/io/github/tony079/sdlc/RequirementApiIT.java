@@ -69,7 +69,7 @@ class RequirementApiIT extends ApiIntegrationTest {
         assertThat(submit.errorCode()).isEqualTo("VALIDATION_FAILED");
         assertThat(submit.fieldErrors()).containsExactlyInAnyOrder("description:REQUIRED",
                 "businessObjective:REQUIRED", "expectedOutcomes:REQUIRED", "constraints:REQUIRED",
-                "integrations:REQUIRED", "repositoryUrl:REQUIRED");
+                "integrations:REQUIRED", "targetEnvironmentId:REQUIRED");
         assertThat(alice.get("/api/v1/requirements/" + draft.body().path("id").asString())
                 .body().path("state").asString()).isEqualTo("DRAFT");
     }

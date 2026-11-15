@@ -33,12 +33,13 @@ class BrdQuoteGate implements BrdQuotes {
         Object[] price = price(planId, size);
         jdbc.sql("""
                 INSERT INTO app.brd_quote (tenant_id, project_id, requirement_id, plan_id, currency, size, sizing_method,
-                                           documents, has_repository, text_chars, list_price)
-                VALUES (:t, :p, :r, :plan, :currency, :size, :method, :docs, :repo, :chars, :price)
+                                           documents, has_repository, repositories, text_chars, list_price)
+                VALUES (:t, :p, :r, :plan, :currency, :size, :method, :docs, :repo, :repos, :chars, :price)
                 ON CONFLICT (requirement_id) DO NOTHING
                 """).param("t", TenantContext.requireTenant()).param("p", projectId).param("r", requirementId)
                 .param("plan", planId).param("currency", price[0]).param("size", size).param("method", BrdSizing.METHOD)
-                .param("docs", basis.documents()).param("repo", basis.hasRepository()).param("chars", basis.textChars())
+                .param("docs", basis.documents()).param("repo", basis.repositories() > 0)
+                .param("repos", basis.repositories()).param("chars", basis.textChars())
                 .param("price", (BigDecimal) price[1]).update();
     }
 
@@ -56,13 +57,14 @@ class BrdQuoteGate implements BrdQuotes {
             String size = BrdSizing.size(basis);
             Object[] price = price(planId, size);
             jdbc.sql("""
-                    UPDATE app.brd_quote SET size = :size, documents = :docs, has_repository = :repo, text_chars = :chars,
-                           list_price = :price, quoted_at = clock_timestamp()
+                    UPDATE app.brd_quote SET size = :size, documents = :docs, has_repository = :repo, repositories = :repos,
+                           text_chars = :chars, list_price = :price, quoted_at = clock_timestamp()
                     WHERE requirement_id = :r AND status = 'PROPOSED'
-                      AND (size, documents, has_repository, text_chars, list_price)
-                          IS DISTINCT FROM (CAST(:size AS text), CAST(:docs AS int), CAST(:repo AS boolean),
+                      AND (size, documents, repositories, text_chars, list_price)
+                          IS DISTINCT FROM (CAST(:size AS text), CAST(:docs AS int), CAST(:repos AS int),
                                             CAST(:chars AS int), CAST(:price AS numeric))
-                    """).param("size", size).param("docs", basis.documents()).param("repo", basis.hasRepository())
+                    """).param("size", size).param("docs", basis.documents()).param("repo", basis.repositories() > 0)
+                    .param("repos", basis.repositories())
                     .param("chars", basis.textChars()).param("price", (BigDecimal) price[1]).param("r", requirementId)
                     .update();
         }

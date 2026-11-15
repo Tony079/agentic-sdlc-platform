@@ -40,16 +40,34 @@ class SnapshotRepositoryInputs implements RepositoryInputs {
     }
 
     @Override
-    public Optional<PinnedRepository> pinned(UUID requirementId) {
-        return jdbc.sql("""
-                SELECT rr.repository_id, rr.pinned_sha, s.id, s.status
+    public List<PinnedRepository> sources(UUID requirementId) {
+        List<PinnedRepository> sources = jdbc.sql("""
+                SELECT rr.repository_id, rr.pinned_sha, s.id, s.status, r.github_owner || '/' || r.github_name,
+                       rr.branch, rr.environment_id IS NOT NULL
                 FROM app.requirement_repository rr
+                JOIN app.repository r ON r.id = rr.repository_id
                 JOIN app.repository_snapshot s ON s.requirement_repository_id = rr.id
                 WHERE rr.requirement_id = :requirement AND rr.status = 'VALIDATED'
+                  AND rr.round = (SELECT max(round) FROM app.requirement_repository WHERE requirement_id = :requirement)
+                ORDER BY r.github_owner, r.github_name
                 """).param("requirement", requirementId)
                 .query((rs, n) -> new PinnedRepository(rs.getObject(1, UUID.class), rs.getString(2),
-                        rs.getObject(3, UUID.class), rs.getString(4)))
-                .optional();
+                        rs.getObject(3, UUID.class), rs.getString(4), rs.getString(5), rs.getString(6),
+                        rs.getBoolean(7) ? rs.getString(5) + "/" : ""))
+                .list();
+        return sourcesPending(requirementId) ? List.of() : sources;
+    }
+
+    @Override
+    public boolean sourcesPending(UUID requirementId) {
+        return Boolean.TRUE.equals(jdbc.sql("""
+                SELECT EXISTS (
+                  SELECT 1 FROM app.requirement_repository rr
+                  WHERE rr.requirement_id = :requirement
+                    AND rr.round = (SELECT max(round) FROM app.requirement_repository WHERE requirement_id = :requirement)
+                    AND (rr.status <> 'VALIDATED'
+                         OR NOT EXISTS (SELECT 1 FROM app.repository_snapshot s WHERE s.requirement_repository_id = rr.id)))
+                """).param("requirement", requirementId).query(Boolean.class).single());
     }
 
     @Override

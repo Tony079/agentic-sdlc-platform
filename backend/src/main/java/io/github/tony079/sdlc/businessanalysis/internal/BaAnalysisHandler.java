@@ -109,7 +109,7 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
                     PhaseA.class, job.aggregateId(), 2048, null));
 
             Set<String> relevant = ContextAssembler.relevantPaths(phaseA.output(), inputs.inventory());
-            Map<String, String> files = repositories.readFiles(inputs.inputSet().snapshotId(), relevant);
+            Map<String, String> files = repositories.readFiles(inputs.inputSet().sources(), relevant);
             List<DataBlock> phaseBData = new ArrayList<>();
             phaseBData.add(ContextAssembler.requirement(inputs.content()));
             phaseBData.add(ContextAssembler.phaseASummary(phaseA.output()));
@@ -148,7 +148,7 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
             return null;
         }
         Content content = requirements.currentRevision(set.requirementId()).orElseThrow().content();
-        Inventory inventory = repositories.inventory(set.snapshotId(), ContextAssembler.MAX_FILES_LISTED,
+        Inventory inventory = repositories.inventory(set.sources(), ContextAssembler.MAX_FILES_LISTED,
                 ContextAssembler.MAX_SYMBOLS);
         List<DocumentChunk> chunks = new ArrayList<>();
         for (JsonNode doc : json.readTree(set.documentsJson())) {

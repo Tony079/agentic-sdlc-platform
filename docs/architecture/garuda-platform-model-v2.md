@@ -82,7 +82,7 @@ Project
 - **Who changes them:** the Environment Manager adds, renames and removes environments and their repository-plus-branch pairs.
 - **PROD changes:** any change to the PROD environment is a request that a **BRD Approver of the project** (not the requester) approves.
 - **Verification:** Garuda checks through the GitHub App that each repository and branch exists, and records the head commit. A missing branch marks the environment *Needs attention*.
-- **How requirements use them:** a requirement on an existing product chooses its **target environment**. Analysis reads that environment's branches at a recorded commit. In future releases, agents branch off it and open pull requests into it; they never push to PROD or protected branches.
+- **How requirements use them (GD-23):** a requirement on an existing product names its **environment**, PROD by default. Analysis reads **every repository** of that environment at its branch head, pinned when the inputs are prepared; file paths are shown to the model as `owner/repository/path`, so each citation in the BRD names its repository and commit. The environment is fixed once the BRD quote is accepted. When branches move later, the requirement shows *the code has changed*; nothing is invalidated, and after release the author can **re-analyse** with the latest code (a new BRD version, no new charge). In future releases, agents branch off the environment and open pull requests into it; they never push to PROD or protected branches.
 - **C-01 is reversed:** Garuda staff no longer register repositories. The per-requirement repository link flow (C-18) is replaced by project environments.
 - **Scope:** this is configuration only. Agents acting on branches is a later release. Package names avoid the reserved later-stage names.
 
@@ -135,7 +135,9 @@ How step 6 works as built:
 - On acceptance, the plan's included BRDs for that project and calendar month (UTC) are used first, then the size price. An accepted quote is final (database guard).
 - AI cost comes from a daily rollup kept by a trigger on model-call records; the API login still cannot read raw model-call records. Calls without provider usage data add no cost and are counted separately.
 
+**GD-23 (built 2026-11-15, migration 0037):** requirements analyse their environment, as described in section 6. Branch heads are refreshed every 15 minutes (`sdlc.worker.environment-refresh-interval`). The BRD size counts the repositories analysed (3 points each).
+
 **Open items:**
 - **Quoted price against actual AI cost (margin)** is not shown: quotes are in the plan's currency and AI cost in USD, and no exchange-rate source has been decided.
-- **Analysis still uses the per-requirement repository link (C-18).** The target environment is recorded, and its branches are verified, but analysis does not yet read code from the environment's branch. That switch comes with the agent release.
+- **Re-analysis during internal review** is done by the Garuda reviewer requesting a revision; that revision still uses the commits already pinned. Only the author's re-analysis after release fetches new heads.
 - The BRD cost analysis agent (replacing RULES_V1) waits for O-01.

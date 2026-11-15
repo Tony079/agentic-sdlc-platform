@@ -52,8 +52,13 @@ export function RequirementFormPage() {
     queryFn: () => api.get<RequirementDetail>(`/api/v1/requirements/${id}`),
     enabled: Boolean(id),
   });
+  const target = useQuery({
+    queryKey: ['target-environment', id],
+    queryFn: () => api.get<{ environmentId: string | null }>(`/api/v1/requirements/${id}/target-environment`),
+    enabled: Boolean(id),
+  });
 
-  if (projects.isPending || (id && existing.isPending)) {
+  if (projects.isPending || (id && (existing.isPending || target.isPending))) {
     return <Loading />;
   }
   if (projects.isError || (id && existing.isError)) {
@@ -66,7 +71,7 @@ export function RequirementFormPage() {
 
   const current = saved ?? existing.data ?? null;
   const initial: RequirementFormValues = current
-    ? { projectId: current.projectId, ...current.content }
+    ? { projectId: current.projectId, ...current.content, targetEnvironmentId: target.data?.environmentId ?? null }
     : { ...EMPTY, projectId: search.get('projectId') ?? EMPTY.projectId };
   // GD-02: new requirements only in active projects where the user is a Requester or Approver (checked again by the
   // server). Projects without a role are absent for members; legacy responses without roles keep every project.
@@ -95,6 +100,12 @@ export function RequirementFormPage() {
           { 'Idempotency-Key': idempotencyKey.current },
         );
       }
+      // GD-23: the environment is saved with the draft (it is fixed later, once the BRD quote is accepted).
+      if (values.kind === 'EXISTING_REPOSITORY' && values.targetEnvironmentId
+          && values.targetEnvironmentId !== (target.data?.environmentId ?? null)) {
+        await api.put(`/api/v1/requirements/${detail.id}/target-environment`, { environmentId: values.targetEnvironmentId });
+        queryClient.setQueryData(['target-environment', detail.id], { environmentId: values.targetEnvironmentId });
+      }
       setSaved(detail);
       draftSaved = true;
       if (submitAfterSave) {
@@ -108,7 +119,9 @@ export function RequirementFormPage() {
       await queryClient.invalidateQueries({ queryKey: ['requirements'] });
       navigate(`/requirements/${detail.id}`);
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'VALIDATION_FAILED') {
+      if (error instanceof ApiError && error.code === 'VALIDATION_FAILED' && error.details.length === 0) {
+        setMessage(draftSaved ? `The draft was saved, but it cannot be submitted yet: ${error.message}` : error.message);
+      } else if (error instanceof ApiError && error.code === 'VALIDATION_FAILED') {
         setFieldErrors(error.details);
         setMessage(
           draftSaved
@@ -119,6 +132,8 @@ export function RequirementFormPage() {
         setMessage('This requirement was changed elsewhere. Reload the page to see the latest version.');
       } else if (error instanceof ApiError && error.code === 'REQUIREMENT_NOT_EDITABLE') {
         setMessage('This requirement can no longer be edited.');
+      } else if (error instanceof ApiError && error.code === 'ENVIRONMENT_LOCKED') {
+        setMessage('The environment is fixed once the BRD quote is accepted.');
       } else if (error instanceof ApiError && error.code === 'KIND_CHANGE_NOT_ALLOWED') {
         setMessage('The requirement type cannot be changed after submission.');
       } else {

@@ -8,8 +8,8 @@ import java.util.UUID;
  */
 public interface BrdQuotes {
 
-    /** What the size of a BRD is quoted from. */
-    record Basis(int documents, boolean hasRepository, int textChars) {
+    /** What the size of a BRD is quoted from: documents, repositories analysed (GD-23) and requirement text. */
+    record Basis(int documents, int repositories, int textChars) {
     }
 
     /**

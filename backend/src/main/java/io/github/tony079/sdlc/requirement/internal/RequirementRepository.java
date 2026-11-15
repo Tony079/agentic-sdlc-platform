@@ -91,6 +91,17 @@ class RequirementRepository {
     }
 
     /** Any requirement of the current tenant (RLS); for staff paths that are authorised by capability. */
+    /** GD-23: the environment the requirement is analysed against, if chosen. */
+    Optional<UUID> targetEnvironment(UUID id) {
+        return jdbc.sql("SELECT target_environment_id FROM app.requirement WHERE id = :id").param("id", id)
+                .query((rs, n) -> rs.getObject(1, UUID.class)).optional().filter(java.util.Objects::nonNull);
+    }
+
+    void setTargetEnvironment(UUID id, UUID environmentId) {
+        jdbc.sql("UPDATE app.requirement SET target_environment_id = :e WHERE id = :id AND target_environment_id IS DISTINCT FROM :e")
+                .param("e", environmentId).param("id", id).update();
+    }
+
     Optional<Row> find(UUID id) {
         return jdbc.sql("""
                 SELECT id, key, project_id, created_by, current_revision_no, version, created_at, updated_at, restricted

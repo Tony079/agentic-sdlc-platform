@@ -74,25 +74,35 @@ class ReleaseGates {
                 SELECT count(*) FROM app.clarification WHERE requirement_id = :r AND status IN ('OPEN', 'NEEDS_INFO', 'ANSWERED')
                 """).param("r", version.requirementId()).query(Integer.class).single();
         gates.add(new Gate("NO_OPEN_CLARIFICATIONS", open == 0, open == 0 ? null : open + " open"));
-        UUID snapshot = snapshotOf(version);
+        // GD-23: every analysed repository's snapshot must pass each required scan.
+        List<UUID> snapshots = snapshotsOf(version);
         for (String kind : requiredKinds) {
             record Run(UUID id, String status, String provider) {
             }
-            Run run = jdbc.sql("""
-                    SELECT id, status, provider FROM app.security_scan_run WHERE snapshot_id = :s AND kind = :k
-                    ORDER BY finished_at DESC LIMIT 1
-                    """).param("s", snapshot).param("k", kind)
-                    .query((rs, n) -> new Run(rs.getObject(1, UUID.class), rs.getString(2), rs.getString(3)))
-                    .optional().orElse(null);
-            if (run == null || !"COMPLETED".equals(run.status())) {
-                gates.add(new Gate("SECURITY_SCAN_" + kind, false, run == null ? "NOT_RUN" : run.status()));
-                continue;
+            boolean passed = true;
+            String detail = null;
+            for (UUID snapshot : snapshots) {
+                Run run = jdbc.sql("""
+                        SELECT id, status, provider FROM app.security_scan_run WHERE snapshot_id = :s AND kind = :k
+                        ORDER BY finished_at DESC LIMIT 1
+                        """).param("s", snapshot).param("k", kind)
+                        .query((rs, n) -> new Run(rs.getObject(1, UUID.class), rs.getString(2), rs.getString(3)))
+                        .optional().orElse(null);
+                if (run == null || !"COMPLETED".equals(run.status())) {
+                    passed = false;
+                    detail = run == null ? "NOT_RUN" : run.status();
+                    break;
+                }
+                int blockingFindings = jdbc.sql("""
+                        SELECT count(*) FROM app.security_finding WHERE scan_run_id = :r AND severity IN (:sev)
+                        """).param("r", run.id()).param("sev", blocking).query(Integer.class).single();
+                detail = run.provider() + (blockingFindings == 0 ? "" : ": " + blockingFindings + " blocking findings");
+                if (blockingFindings > 0) {
+                    passed = false;
+                    break;
+                }
             }
-            int blockingFindings = jdbc.sql("""
-                    SELECT count(*) FROM app.security_finding WHERE scan_run_id = :r AND severity IN (:sev)
-                    """).param("r", run.id()).param("sev", blocking).query(Integer.class).single();
-            gates.add(new Gate("SECURITY_SCAN_" + kind, blockingFindings == 0,
-                    run.provider() + (blockingFindings == 0 ? "" : ": " + blockingFindings + " blocking findings")));
+            gates.add(new Gate("SECURITY_SCAN_" + kind, passed, detail));
         }
         return gates;
     }
@@ -100,6 +110,15 @@ class ReleaseGates {
     UUID snapshotOf(VersionRow version) {
         return jdbc.sql("SELECT snapshot_id FROM app.analysis_input_set WHERE id = :i").param("i", version.inputSetId())
                 .query(UUID.class).single();
+    }
+
+    /** Every snapshot the version was analysed from (one for a legacy linked repository). */
+    List<UUID> snapshotsOf(VersionRow version) {
+        List<UUID> all = jdbc.sql("""
+                SELECT (src ->> 'snapshotId')::uuid FROM app.analysis_input_set s, jsonb_array_elements(s.sources) src
+                WHERE s.id = :i
+                """).param("i", version.inputSetId()).query(UUID.class).list();
+        return all.isEmpty() ? List.of(snapshotOf(version)) : all;
     }
 
     String commitOf(VersionRow version) {

@@ -35,11 +35,19 @@ class RepositoryEventConsumer implements EventConsumer {
     @Override
     public boolean accepts(String eventType) {
         return EventTypes.REPOSITORY_REGISTERED.equals(eventType) || EventTypes.JOB_DEAD.equals(eventType)
-                || EventTypes.ENVIRONMENT_BRANCHES_CHANGED.equals(eventType);
+                || EventTypes.ENVIRONMENT_BRANCHES_CHANGED.equals(eventType)
+                || EventTypes.SOURCES_ROUND_OPENED.equals(eventType);
     }
 
     @Override
     public void handle(DomainEvent event) {
+        if (EventTypes.SOURCES_ROUND_OPENED.equals(event.eventType())) {
+            UUID requirementId = event.uuid("requirementId");
+            int round = Integer.parseInt(String.valueOf(event.payload().get("round")));
+            jobs.enqueue(new JobRequest(EnvPinHandler.JOB_TYPE, EnvPinHandler.key(requirementId, round), "REQUIREMENT",
+                    requirementId, null, Map.of("requirementId", requirementId.toString(), "round", round), 100));
+            return;
+        }
         if (EventTypes.ENVIRONMENT_BRANCHES_CHANGED.equals(event.eventType())) {
             UUID repositoryId = event.uuid("repositoryId");
             jobs.enqueue(new JobRequest(EnvironmentVerifyHandler.JOB_TYPE, "env-verify:" + repositoryId + ":" + event.id(),
@@ -61,6 +69,12 @@ class RepositoryEventConsumer implements EventConsumer {
                     .ifPresent(r -> repositories.markRepository(repositoryId, "UNAVAILABLE", "VERIFY_FAILED"));
             for (UUID requirementId : repositories.pendingRequirements(repositoryId)) {
                 jobs.makeAvailable(RepoJobs.validateKey(requirementId));
+            }
+        } else if (EnvPinHandler.JOB_TYPE.equals(jobType)) {
+            String code = repositories.lastErrorCode(event.uuid("jobId")).orElse("SOURCE_PINNING_FAILED");
+            var round = repositories.latestRound(event.aggregateId());
+            if (!round.isEmpty()) {
+                repositories.failRound(event.aggregateId(), round.get(0).round(), code);
             }
         } else if (RepoJobs.VALIDATE.equals(jobType)) {
             String code = repositories.lastErrorCode(event.uuid("jobId")).orElse("REPO_VALIDATION_FAILED");

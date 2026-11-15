@@ -44,7 +44,8 @@ class InputSets {
                          String outputSha256, boolean included) {
     }
 
-    record Draft(UUID requirementId, RevisionInput revision, PinnedRepository repository, List<DocumentEntry> documents,
+    /** repositories: the sources of the latest round, all indexed (GD-23); the first is the primary one. */
+    record Draft(UUID requirementId, RevisionInput revision, List<PinnedRepository> repositories, List<DocumentEntry> documents,
                  String correctionsJson, String inputHash) {
     }
 
@@ -86,9 +87,9 @@ class InputSets {
     /** The input set if guard 9.4 holds now; empty otherwise. */
     Optional<Draft> evaluate(UUID requirementId, String correctionsJson) {
         Optional<RevisionInput> revision = requirements.currentRevision(requirementId);
-        Optional<PinnedRepository> repository = repositories.pinned(requirementId)
-                .filter(r -> "INDEXED".equals(r.snapshotStatus()));
-        if (revision.isEmpty() || repository.isEmpty()) {
+        List<PinnedRepository> sources = repositories.sources(requirementId);
+        if (revision.isEmpty() || sources.isEmpty()
+                || sources.stream().anyMatch(r -> !"INDEXED".equals(r.snapshotStatus()))) {
             return Optional.empty();
         }
         List<DocumentEntry> entries = new ArrayList<>();
@@ -109,16 +110,20 @@ class InputSets {
         }
         entries.sort(Comparator.comparing(e -> e.versionId().toString()));
         String corrections = normaliseCorrections(correctionsJson);
-        return Optional.of(new Draft(requirementId, revision.get(), repository.get(), List.copyOf(entries), corrections,
-                hash(revision.get(), repository.get(), entries, corrections)));
+        return Optional.of(new Draft(requirementId, revision.get(), sources, List.copyOf(entries), corrections,
+                hash(revision.get(), sources, entries, corrections)));
     }
 
-    static String hash(RevisionInput revision, PinnedRepository repository, List<DocumentEntry> documents,
+    static String hash(RevisionInput revision, List<PinnedRepository> sources, List<DocumentEntry> documents,
                        String corrections) {
         StringBuilder canonical = new StringBuilder("input-set:v1\n");
         canonical.append("revision:").append(revision.revisionNo()).append(':').append(revision.contentHash()).append('\n');
-        canonical.append("repository:").append(repository.repositoryId()).append(':').append(repository.commitSha())
-                .append(':').append(repository.snapshotId()).append('\n');
+        for (PinnedRepository repository : sources) {
+            // A legacy linked repository keeps its v1 line, so hashes of existing BRD versions still match.
+            canonical.append(repository.prefix().isEmpty() ? "repository:" : "source:" + repository.branch() + ':')
+                    .append(repository.repositoryId()).append(':').append(repository.commitSha())
+                    .append(':').append(repository.snapshotId()).append('\n');
+        }
         for (DocumentEntry doc : documents) {
             canonical.append("document:").append(doc.versionId()).append(':').append(doc.state()).append(':')
                     .append(doc.extractionNo()).append(':').append(doc.outputSha256()).append('\n');
