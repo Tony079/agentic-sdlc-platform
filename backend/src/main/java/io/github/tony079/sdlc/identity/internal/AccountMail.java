@@ -59,11 +59,14 @@ class AccountMail {
     /** Sends the message and records the result; never throws. Returns the email status. */
     String send(Message m) {
         if (!mail.configured()) {
+            log.warn("account email not sent ({}): mail is not configured (SDLC_MAIL_HOST is empty); share the link instead",
+                    m.kind());
             return "NOT_SENT";
         }
         String status;
         try {
             mail.send(m.recipient(), subject(m), text(m), html(m));
+            log.info("account email sent ({})", m.kind());
             status = "SENT";
         } catch (MailException e) {
             log.warn("account email not delivered: {}", e.code());
