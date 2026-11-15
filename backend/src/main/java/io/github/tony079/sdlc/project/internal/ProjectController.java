@@ -52,6 +52,14 @@ class ProjectController {
         return projects.update(id, body.name(), body.description());
     }
 
+    @PutMapping("/api/v1/projects/{id}/environment-manager")
+    ProjectView environmentManager(@PathVariable UUID id, @RequestBody ManagerBody body) {
+        return projects.setEnvironmentManager(id, body.userId());
+    }
+
+    record ManagerBody(UUID userId) {
+    }
+
     @PostMapping("/api/v1/projects/{id}/archive")
     ProjectView archive(@PathVariable UUID id) {
         return projects.archive(id);

@@ -178,7 +178,7 @@ export function RequirementDetailPage() {
   }
 
   const owner = detail.ownedByMe !== false;
-  const canRestrict = owner || detail.myRole === 'APPROVER';
+  const canRestrict = owner || detail.myRole === 'BRD_APPROVER';
   return (
     <>
       <BackLink to="/requirements">All requirements</BackLink>

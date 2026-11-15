@@ -92,7 +92,7 @@ class RequirementService {
             // Unknown, other-tenant and invisible projects are indistinguishable under RLS.
             throw ApiException.validation(List.of(new FieldError("projectId", "INVALID_VALUE")));
         }
-        // FR-ACC-01: creating a requirement needs the REQUESTER or APPROVER role in an active project (GD-02).
+        // FR-ACC-01: creating a requirement needs the REQUIREMENT_AUTHOR or BRD_APPROVER role in an active project (GD-02).
         if (!projects.roleOf(projectId).map(ProjectRole::canRequest).orElse(false)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ROLE_REQUIRED",
                     "You need the Requester or Approver role in this project to create requirements.");

@@ -58,3 +58,5 @@ databaseChangeLog:
   - include: { file: changes/0032-garuda-admins-organisation-record.sql, relativeToChangelogFile: true }
   # GD-19 (2026-11-15): projects approved by two Garuda Admins with a billing plan.
   - include: { file: changes/0033-project-approval-billing.sql, relativeToChangelogFile: true }
+  # GD-18 (2026-11-15): Requirement Author, BRD Approver, Viewer; one Environment Manager per project.
+  - include: { file: changes/0034-project-roles-environment-manager.sql, relativeToChangelogFile: true }

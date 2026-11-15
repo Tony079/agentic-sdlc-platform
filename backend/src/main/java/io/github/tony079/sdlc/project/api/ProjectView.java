@@ -12,5 +12,6 @@ import java.util.UUID;
  */
 public record ProjectView(UUID id, String name, String description, String status, ProjectRole myRole,
                           int memberCount, OffsetDateTime createdAt, OffsetDateTime archivedAt,
-                          OffsetDateTime activatedAt, String planName) {
+                          OffsetDateTime activatedAt, String planName, UUID environmentManagerId,
+                          String environmentManagerName) {
 }

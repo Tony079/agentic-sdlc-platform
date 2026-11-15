@@ -194,7 +194,7 @@ class GarudaOrganisationIT extends ApiIntegrationTest {
         String memberEmail = "member@" + slug + ".test";
         Response invited = orgAdmin.post("/api/v1/organisation/users", Map.of("email", memberEmail,
                 "displayName", "Mia Member", "role", "MEMBER",
-                "memberships", List.of(Map.of("projectId", alpha, "role", "REQUESTER"))));
+                "memberships", List.of(Map.of("projectId", alpha, "role", "REQUIREMENT_AUTHOR"))));
         assertThat(invited.status()).as(invited.body().toString()).isEqualTo(201);
         assertThat(invited.body().path("emailStatus").asString()).isEqualTo("SENT");
         String memberId = invited.body().path("userId").asString();
@@ -216,7 +216,7 @@ class GarudaOrganisationIT extends ApiIntegrationTest {
         assertThat(member.login(slug, memberEmail, PASSWORD).status()).isEqualTo(200);
         Response memberProjects = member.get("/api/v1/projects");
         assertThat(memberProjects.body().path("items").size()).isEqualTo(1);
-        assertThat(memberProjects.body().path("items").get(0).path("myRole").asString()).isEqualTo("REQUESTER");
+        assertThat(memberProjects.body().path("items").get(0).path("myRole").asString()).isEqualTo("REQUIREMENT_AUTHOR");
         assertThat(member.get("/api/v1/projects/" + beta).status()).isEqualTo(404);
         assertThat(member.get("/api/v1/organisation/users").status()).isEqualTo(403);
         assertThat(member.post("/api/v1/organisation/users", Map.of("email", "x@" + slug + ".test",

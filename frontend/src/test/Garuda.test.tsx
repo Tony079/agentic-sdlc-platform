@@ -59,7 +59,7 @@ describe('Organisation users', () => {
     await user.type(screen.getByLabelText('Work email'), 'mia@acme.test');
     await user.click(screen.getByRole('button', { name: /Add project/ }));
     await user.selectOptions(screen.getByLabelText('Project 1'), 'p1');
-    await user.selectOptions(screen.getByLabelText('Role in project 1'), 'APPROVER');
+    await user.selectOptions(screen.getByLabelText('Role in project 1'), 'BRD_APPROVER');
     await user.click(screen.getByRole('button', { name: /Send invitation/ }));
 
     expect(await screen.findByRole('heading', { name: 'Invitation sent' })).toBeInTheDocument();
@@ -70,7 +70,7 @@ describe('Organisation users', () => {
       email: 'mia@acme.test',
       displayName: 'Mia Member',
       role: 'MEMBER',
-      memberships: [{ projectId: 'p1', role: 'APPROVER' }],
+      memberships: [{ projectId: 'p1', role: 'BRD_APPROVER' }],
     });
   });
 });

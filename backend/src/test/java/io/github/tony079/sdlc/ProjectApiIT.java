@@ -136,4 +136,24 @@ class ProjectApiIT extends ApiIntegrationTest {
         assertThat(admin.put("/api/v1/projects/" + id, Map.of("name", "Too late")).errorCode())
                 .isEqualTo("PROJECT_ARCHIVED");
     }
+
+    @Test
+    void anOrganisationAdminNamesOneEnvironmentManagerAmongTheProjectMembers() {
+        ApiClient aaron = loggedIn("acme", "aaron@acme.test");
+        String project = aaron.post("/api/v1/projects", java.util.Map.of("name", "Env " + java.util.UUID.randomUUID()))
+                .body().path("id").asString();
+        String alice = TestDatabase.get().admin().queryForObject(
+                "SELECT id::text FROM app.app_user WHERE email = 'alice@acme.test'", String.class);
+        // Not a member yet: refused.
+        assertThat(aaron.put("/api/v1/projects/" + project + "/environment-manager", java.util.Map.of("userId", alice))
+                .status()).isEqualTo(422);
+        String member = aaron.post("/api/v1/projects/" + project + "/members",
+                java.util.Map.of("userId", alice, "role", "REQUIREMENT_AUTHOR")).body().path("id").asString();
+        ApiClient.Response named = aaron.put("/api/v1/projects/" + project + "/environment-manager",
+                java.util.Map.of("userId", alice));
+        assertThat(named.body().path("environmentManagerName").asString()).isEqualTo("Alice Client");
+        // Leaving the project clears the role.
+        aaron.post("/api/v1/project-members/" + member + "/remove", java.util.Map.of());
+        assertThat(aaron.get("/api/v1/projects/" + project).body().path("environmentManagerId").isNull()).isTrue();
+    }
 }

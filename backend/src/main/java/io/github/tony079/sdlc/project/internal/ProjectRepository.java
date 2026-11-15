@@ -28,6 +28,8 @@ class ProjectRepository {
     private static final String SELECT = """
             SELECT p.id, p.name, p.description, p.status, p.created_at, p.archived_at, p.activated_at,
                    (SELECT b.name FROM app.billing_plan b WHERE b.id = p.plan_id) AS plan_name,
+                   p.environment_manager_id,
+                   (SELECT u.display_name FROM app.app_user u WHERE u.id = p.environment_manager_id) AS environment_manager_name,
                    (SELECT m.role FROM app.project_member m WHERE m.project_id = p.id AND m.user_id = :me
                       AND m.removed_at IS NULL) AS my_role,
                    (SELECT count(*) FROM app.project_member m WHERE m.project_id = p.id AND m.removed_at IS NULL) AS members
@@ -70,6 +72,11 @@ class ProjectRepository {
                 UPDATE app.project SET status = 'ARCHIVED', archived_at = clock_timestamp()
                 WHERE id = :id AND status IN ('PENDING', 'ACTIVE')
                 """).param("id", id).update() == 1;
+    }
+
+    void setEnvironmentManager(UUID id, UUID userId) {
+        jdbc.sql("UPDATE app.project SET environment_manager_id = :user WHERE id = :id").param("id", id)
+                .param("user", userId).update();
     }
 
     Optional<String> status(UUID id) {
@@ -135,7 +142,8 @@ class ProjectRepository {
         return new ProjectView(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("description"),
                 rs.getString("status"), role == null ? null : ProjectRole.valueOf(role), rs.getInt("members"),
                 rs.getObject("created_at", OffsetDateTime.class), rs.getObject("archived_at", OffsetDateTime.class),
-                rs.getObject("activated_at", OffsetDateTime.class), rs.getString("plan_name"));
+                rs.getObject("activated_at", OffsetDateTime.class), rs.getString("plan_name"),
+                rs.getObject("environment_manager_id", UUID.class), rs.getString("environment_manager_name"));
     }
 
     private static Member member(ResultSet rs, int n) throws SQLException {

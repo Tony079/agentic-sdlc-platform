@@ -61,7 +61,7 @@ class RequirementVisibilityIT extends ApiIntegrationTest {
         Response seen = aaron.get("/api/v1/requirements/" + id);
         assertThat(seen.status()).isEqualTo(200);
         assertThat(seen.body().path("ownedByMe").asBoolean()).isFalse();
-        assertThat(seen.body().path("myRole").asString()).isEqualTo("APPROVER");
+        assertThat(seen.body().path("myRole").asString()).isEqualTo("BRD_APPROVER");
         assertThat(aaron.get("/api/v1/requirements/" + id + "/timeline").status()).isEqualTo(200);
         assertThat(aaron.get("/api/v1/requirements").body().path("items").valueStream()
                 .map(n -> n.path("id").asString())).contains(id);
@@ -88,7 +88,7 @@ class RequirementVisibilityIT extends ApiIntegrationTest {
         UUID project = db.admin().queryForObject(
                 "INSERT INTO app.project (tenant_id, name, created_by) VALUES (?, ?, ?) RETURNING id", UUID.class,
                 tenant, "Private " + UUID.randomUUID(), userId("aaron@acme.test"));
-        io.github.tony079.sdlc.support.RequirementFixtures.addMember(project, aliceId, "REQUESTER");
+        io.github.tony079.sdlc.support.RequirementFixtures.addMember(project, aliceId, "REQUIREMENT_AUTHOR");
         ApiClient alice = loggedIn("acme", "alice@acme.test");
         Response created = alice.post("/api/v1/requirements", complete(project.toString()));
         assertThat(created.status()).isEqualTo(201);

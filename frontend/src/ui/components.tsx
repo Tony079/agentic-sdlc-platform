@@ -189,8 +189,8 @@ export function StatePill({ state }: { state: string }) {
 export const ROLE_LABELS: Record<string, string> = {
   ORG_ADMIN: 'Organisation Admin',
   MEMBER: 'Member',
-  REQUESTER: 'Requester',
-  APPROVER: 'Approver',
+  REQUIREMENT_AUTHOR: 'Requirement Author',
+  BRD_APPROVER: 'BRD Approver',
   VIEWER: 'Viewer',
 };
 
@@ -198,7 +198,7 @@ export function RoleBadge({ role }: { role: string | null | undefined }) {
   if (!role) {
     return <Badge tone="neutral">No access</Badge>;
   }
-  const tone: Tone = role === 'ORG_ADMIN' || role === 'APPROVER' ? 'primary' : role === 'REQUESTER' ? 'info' : 'neutral';
+  const tone: Tone = role === 'ORG_ADMIN' || role === 'BRD_APPROVER' ? 'primary' : role === 'REQUIREMENT_AUTHOR' ? 'info' : 'neutral';
   return <Badge tone={tone}>{ROLE_LABELS[role] ?? role}</Badge>;
 }
 

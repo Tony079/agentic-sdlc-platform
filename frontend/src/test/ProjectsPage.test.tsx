@@ -21,14 +21,14 @@ describe('ProjectsPage', () => {
         status: 200,
         body: {
           items: [
-            { id: 'p1', name: 'Alpha', status: 'ACTIVE', myRole: 'REQUESTER', memberCount: 3, createdAt: '2026-11-02T10:00:00Z' },
+            { id: 'p1', name: 'Alpha', status: 'ACTIVE', myRole: 'REQUIREMENT_AUTHOR', memberCount: 3, createdAt: '2026-11-02T10:00:00Z' },
           ],
         },
       };
     });
     renderWithProviders(<ProjectsPage />);
     expect(await screen.findByText('Alpha')).toBeInTheDocument();
-    expect(screen.getByText('Requester')).toBeInTheDocument();
+    expect(screen.getByText('Requirement Author')).toBeInTheDocument();
     expect(screen.getByText('3 members')).toBeInTheDocument();
     // Members cannot create projects: no button is offered (the server refuses anyway).
     expect(screen.queryByRole('button', { name: /New project/ })).not.toBeInTheDocument();

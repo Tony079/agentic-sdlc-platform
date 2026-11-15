@@ -100,6 +100,23 @@ class ProjectService implements ProjectAccess, io.github.tony079.sdlc.project.ap
         return projects.findById(id, admin.userId()).orElseThrow();
     }
 
+    /** GD-18: one Environment Manager per project, an active member named by an Organisation Admin (or none). */
+    @Transactional
+    public ProjectView setEnvironmentManager(UUID id, UUID userId) {
+        CurrentUser admin = ClientUsers.requireOrgAdmin();
+        ProjectView project = get(id);
+        if (!"ACTIVE".equals(project.status()) && !"PENDING".equals(project.status())) {
+            throw ApiException.conflict("PROJECT_ARCHIVED", "An archived or declined project cannot be changed.");
+        }
+        try {
+            projects.setEnvironmentManager(id, userId);
+        } catch (org.springframework.dao.DataAccessException e) {
+            throw ApiException.validation("The Environment Manager must be a member of the project.");
+        }
+        audit.record(AuditAction.PROJECT_UPDATED, "PROJECT", id, AuditResult.SUCCESS);
+        return projects.findById(id, admin.userId()).orElseThrow();
+    }
+
     @Transactional
     public ProjectView archive(UUID id) {
         CurrentUser admin = ClientUsers.requireOrgAdmin();
@@ -143,7 +160,7 @@ class ProjectService implements ProjectAccess, io.github.tony079.sdlc.project.ap
             throw ApiException.conflict("PROJECT_ARCHIVED", "Members cannot be added to an archived or declined project.");
         }
         if (role == null) {
-            throw ApiException.validation("Choose a role: REQUESTER, APPROVER or VIEWER.");
+            throw ApiException.validation("Choose a role: REQUIREMENT_AUTHOR, BRD_APPROVER or VIEWER.");
         }
         if (!projects.userExists(userId)) {
             throw ApiException.notFound();
@@ -162,7 +179,7 @@ class ProjectService implements ProjectAccess, io.github.tony079.sdlc.project.ap
     public ProjectRepository.Member changeRole(UUID memberId, ProjectRole role) {
         ClientUsers.requireOrgAdmin();
         if (role == null) {
-            throw ApiException.validation("Choose a role: REQUESTER, APPROVER or VIEWER.");
+            throw ApiException.validation("Choose a role: REQUIREMENT_AUTHOR, BRD_APPROVER or VIEWER.");
         }
         projects.member(memberId).orElseThrow(ApiException::notFound);
         projects.changeRole(memberId, role);

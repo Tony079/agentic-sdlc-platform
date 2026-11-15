@@ -231,7 +231,7 @@ class ChangeRequestService {
                 SELECT c.id FROM app.change_request c JOIN app.requirement r ON r.id = c.requirement_id
                 WHERE c.status IN ('AWAITING_CLIENT_DECISION', 'ACCEPTED', 'DECLINED') AND c.reviewed_by IS NOT NULL
                   AND EXISTS (SELECT 1 FROM app.project_member m WHERE m.project_id = r.project_id AND m.user_id = :me
-                              AND m.role = 'APPROVER' AND m.removed_at IS NULL)
+                              AND m.role = 'BRD_APPROVER' AND m.removed_at IS NULL)
                 ORDER BY c.submitted_at DESC
                 """).param("me", user.userId()).query(UUID.class).list().stream().map(this::view).toList();
     }

@@ -27,19 +27,19 @@ import {
 import { ProjectFormModal } from './ProjectsPage';
 
 const ROLE_HELP: Record<ProjectRole, string> = {
-  REQUESTER: 'Creates requirements, uploads documents and answers clarifications.',
-  APPROVER: 'Everything a Requester does, plus approves BRDs, change decisions and repository links.',
+  REQUIREMENT_AUTHOR: 'Creates requirements, uploads documents and answers clarifications.',
+  BRD_APPROVER: 'Everything a Requirement Author does, plus approves BRDs, change decisions and repository links.',
   VIEWER: 'Reads requirements and BRDs of the project; cannot change anything.',
 };
 
-export const PROJECT_ROLES: ProjectRole[] = ['REQUESTER', 'APPROVER', 'VIEWER'];
+export const PROJECT_ROLES: ProjectRole[] = ['REQUIREMENT_AUTHOR', 'BRD_APPROVER', 'VIEWER'];
 
 function AddMemberModal({ project, existing, onClose }: { project: Project; existing: Set<string>; onClose: () => void }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const users = useQuery({ queryKey: ['org-users'], queryFn: () => api.get<OrgUser[]>('/api/v1/organisation/users') });
   const [userId, setUserId] = useState('');
-  const [role, setRole] = useState<ProjectRole>('REQUESTER');
+  const [role, setRole] = useState<ProjectRole>('REQUIREMENT_AUTHOR');
   const candidates = (users.data ?? []).filter((u) => u.status !== 'DISABLED' && !existing.has(u.id));
   const add = useMutation({
     mutationFn: () => api.post(`/api/v1/projects/${project.id}/members`, { userId, role }),
@@ -125,6 +125,16 @@ function MembersTab({ project, admin }: { project: Project; admin: boolean }) {
     await queryClient.invalidateQueries({ queryKey: ['project-members', project.id] });
     await queryClient.invalidateQueries({ queryKey: ['projects'] });
   }
+  async function setManager(userId: string) {
+    try {
+      await api.put(`/api/v1/projects/${project.id}/environment-manager`, { userId: userId || null });
+      toast.success(userId ? 'Environment Manager updated.' : 'Environment Manager removed.');
+      await queryClient.invalidateQueries({ queryKey: ['project', project.id] });
+      await refresh();
+    } catch {
+      toast.error('The Environment Manager could not be changed.');
+    }
+  }
   async function changeRole(member: ProjectMember, role: ProjectRole) {
     try {
       await api.put(`/api/v1/project-members/${member.id}`, { role });
@@ -159,6 +169,31 @@ function MembersTab({ project, admin }: { project: Project; admin: boolean }) {
         )
       }
     >
+      <div className="card-body spread" style={{ flexWrap: 'wrap', borderBottom: '1px solid var(--border)' }}>
+        <div>
+          <div className="label">Environment Manager</div>
+          <div className="small">Registers the project&apos;s environments, repositories and branches. One per project.</div>
+        </div>
+        {admin && project.status !== 'ARCHIVED' && project.status !== 'DECLINED' ? (
+          <select
+            aria-label="Environment Manager"
+            value={project.environmentManagerId ?? ''}
+            onChange={(e) => void setManager(e.target.value)}
+            style={{ width: 'auto', minWidth: 220 }}
+          >
+            <option value="">Not assigned</option>
+            {(members.data ?? [])
+              .filter((m) => m.userStatus !== 'DISABLED')
+              .map((m) => (
+                <option key={m.userId} value={m.userId}>
+                  {m.displayName}
+                </option>
+              ))}
+          </select>
+        ) : (
+          <strong>{project.environmentManagerName ?? 'Not assigned'}</strong>
+        )}
+      </div>
       {members.isPending && <div className="card-body"><Loading /></div>}
       {members.isError && <div className="card-body"><ErrorText>Members could not be loaded.</ErrorText></div>}
       {members.data && list.length === 0 && <EmptyState icon="users" title="No members yet" />}
@@ -184,6 +219,7 @@ function MembersTab({ project, admin }: { project: Project; admin: boolean }) {
                         <span className="sub">{m.email}</span>
                       </div>
                       {m.userStatus === 'INVITED' && <Badge tone="warning">Invited</Badge>}
+                      {m.userId === project.environmentManagerId && <Badge tone="violet">Environment Manager</Badge>}
                       {m.userStatus === 'DISABLED' && <Badge tone="neutral">Deactivated</Badge>}
                     </div>
                   </td>
@@ -230,7 +266,7 @@ function RequirementsTab({ project }: { project: Project }) {
     queryFn: () => api.get<RequirementPage>(`/api/v1/requirements?projectId=${project.id}`),
   });
   const items = requirements.data?.items ?? [];
-  const canCreate = project.status === 'ACTIVE' && (project.myRole === 'REQUESTER' || project.myRole === 'APPROVER');
+  const canCreate = project.status === 'ACTIVE' && (project.myRole === 'REQUIREMENT_AUTHOR' || project.myRole === 'BRD_APPROVER');
   return (
     <Card
       title="Requirements"

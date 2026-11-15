@@ -167,7 +167,7 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
               type="button"
               className="btn-ghost btn-sm"
               disabled={rows.length >= available.length}
-              onClick={() => setRows((r) => [...r, { projectId: '', role: 'REQUESTER' }])}
+              onClick={() => setRows((r) => [...r, { projectId: '', role: 'REQUIREMENT_AUTHOR' }])}
             >
               <Icon name="plus" size={15} />
               Add project

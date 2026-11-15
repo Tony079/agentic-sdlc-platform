@@ -62,7 +62,7 @@ class BillingIT extends ApiIntegrationTest {
         assertThat(project.body().path("status").asString()).isEqualTo("PENDING");
         String projectId = project.body().path("id").asString();
         String me = orgAdmin.get("/api/v1/me").body().path("userId").asString();
-        Response added = orgAdmin.post("/api/v1/projects/" + projectId + "/members", Map.of("userId", me, "role", "APPROVER"));
+        Response added = orgAdmin.post("/api/v1/projects/" + projectId + "/members", Map.of("userId", me, "role", "BRD_APPROVER"));
         assertThat(added.status()).as(added.body().toString()).isEqualTo(201);
         assertThat(orgAdmin.post("/api/v1/requirements", RequirementFixtures.minimalDraft(projectId, "NEW_PRODUCT"),
                 Map.of("Idempotency-Key", UUID.randomUUID().toString()), true).errorCode()).isEqualTo("PROJECT_NOT_ACTIVE");

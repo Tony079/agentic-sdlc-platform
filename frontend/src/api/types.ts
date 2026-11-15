@@ -9,7 +9,7 @@ export interface Me {
 }
 
 export type OrgRole = 'ORG_ADMIN' | 'MEMBER';
-export type ProjectRole = 'REQUESTER' | 'APPROVER' | 'VIEWER';
+export type ProjectRole = 'REQUIREMENT_AUTHOR' | 'BRD_APPROVER' | 'VIEWER';
 
 export interface Project {
   id: string;
@@ -18,6 +18,8 @@ export interface Project {
   status?: 'PENDING' | 'ACTIVE' | 'DECLINED' | 'ARCHIVED';
   activatedAt?: string | null;
   planName?: string | null;
+  environmentManagerId?: string | null;
+  environmentManagerName?: string | null;
   /** The caller's project role, or null when not a member (an Organisation Admin sees every project). */
   myRole?: ProjectRole | null;
   memberCount?: number;

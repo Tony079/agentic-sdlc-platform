@@ -14,8 +14,8 @@ public final class RequirementFixtures {
 
     /**
      * A project of the logged-in user's organisation, with the same memberships the 0030 migration gives existing
-     * data: the user is a REQUESTER (or an APPROVER if they are an Organisation Admin), and every Organisation Admin
-     * of the organisation is an APPROVER. Created directly as the test superuser: through the API only an
+     * data: the user is a REQUIREMENT_AUTHOR (or a BRD_APPROVER if an Organisation Admin), and every Organisation Admin
+     * of the organisation is a BRD_APPROVER. Created directly as the test superuser: through the API only an
      * Organisation Admin may create projects (FR-ORG-04), which ProjectApiIT and OrganisationAdminIT cover.
      */
     public static String project(ApiClient client) {
@@ -28,7 +28,7 @@ public final class RequirementFixtures {
         return projectFor(tenant, user, "Req project " + UUID.randomUUID()).toString();
     }
 
-    /** A project in the tenant, with {@code member} as REQUESTER (APPROVER if an admin) and all admins as APPROVER. */
+    /** A project in the tenant, with {@code member} as REQUIREMENT_AUTHOR (BRD_APPROVER if an admin) and all admins as BRD_APPROVER. */
     public static UUID projectFor(UUID tenant, UUID member, String name) {
         var admin = TestDatabase.get().admin();
         UUID orgAdmin = admin.queryForObject("""
@@ -40,12 +40,12 @@ public final class RequirementFixtures {
                 tenant, name, orgAdmin);
         admin.update("""
                 INSERT INTO app.project_member (tenant_id, project_id, user_id, role, added_by)
-                SELECT ?, ?, u.id, 'APPROVER', ? FROM app.app_user u
+                SELECT ?, ?, u.id, 'BRD_APPROVER', ? FROM app.app_user u
                 WHERE u.tenant_id = ? AND u.role = 'ORG_ADMIN' AND u.status = 'ACTIVE'
                 """, tenant, project, orgAdmin, tenant);
         admin.update("""
                 INSERT INTO app.project_member (tenant_id, project_id, user_id, role, added_by)
-                SELECT ?, ?, ?, 'REQUESTER', ?
+                SELECT ?, ?, ?, 'REQUIREMENT_AUTHOR', ?
                 WHERE NOT EXISTS (SELECT 1 FROM app.project_member m WHERE m.project_id = ? AND m.user_id = ?
                                   AND m.removed_at IS NULL)
                 """, tenant, project, member, orgAdmin, project, member);
