@@ -132,7 +132,8 @@ class ProjectService implements ProjectAccess, io.github.tony079.sdlc.project.ap
 
     @Transactional(readOnly = true)
     public List<ProjectRepository.Member> members(UUID projectId) {
-        ClientUsers.requireOrgAdmin();
+        // Organisation Admins and the project's own members see who works on it (RLS limits members to their
+        // projects); only Organisation Admins change memberships.
         get(projectId);
         return projects.members(projectId);
     }

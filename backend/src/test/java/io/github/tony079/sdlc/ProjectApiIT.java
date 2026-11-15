@@ -152,6 +152,14 @@ class ProjectApiIT extends ApiIntegrationTest {
         ApiClient.Response named = aaron.put("/api/v1/projects/" + project + "/environment-manager",
                 java.util.Map.of("userId", alice));
         assertThat(named.body().path("environmentManagerName").asString()).isEqualTo("Alice Client");
+        // Project members see who else works on the project; people outside it do not.
+        ApiClient aliceClient = loggedIn("acme", "alice@acme.test");
+        ApiClient.Response seen = aliceClient.get("/api/v1/projects/" + project + "/members");
+        assertThat(seen.status()).as(seen.body().toString()).isEqualTo(200);
+        assertThat(seen.body().toString()).contains("alice@acme.test");
+        String other = aaron.post("/api/v1/projects", java.util.Map.of("name", "Other " + java.util.UUID.randomUUID()))
+                .body().path("id").asString();
+        assertThat(aliceClient.get("/api/v1/projects/" + other + "/members").status()).isEqualTo(404);
         // Leaving the project clears the role.
         aaron.post("/api/v1/project-members/" + member + "/remove", java.util.Map.of());
         assertThat(aaron.get("/api/v1/projects/" + project).body().path("environmentManagerId").isNull()).isTrue();
