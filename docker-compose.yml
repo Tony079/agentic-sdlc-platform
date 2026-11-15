@@ -126,8 +126,14 @@ services:
       SDLC_SCANNER_HOST: clamav
       # Local development only: synthetic documents. Real client documents need O-15 (extractor isolation) first.
       SDLC_DOCUMENT_EXTRACTION_ENABLED: "true"
+      # Garuda GitHub App (read-only). Off unless set in .env; the private key is a file in ./secrets (git-ignored),
+      # mounted read-only into the worker only. The API never holds GitHub credentials.
+      SDLC_GITHUB_ENABLED: ${SDLC_GITHUB_ENABLED:-false}
+      SDLC_GITHUB_APP_ID: ${SDLC_GITHUB_APP_ID:-}
+      SDLC_GITHUB_PRIVATE_KEY_FILE: ${SDLC_GITHUB_PRIVATE_KEY_FILE:-}
     volumes:
       - doc-store:/var/lib/sdlc/documents
+      - ./secrets:/run/secrets/garuda:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
