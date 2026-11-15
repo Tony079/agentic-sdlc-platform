@@ -62,3 +62,5 @@ databaseChangeLog:
   - include: { file: changes/0034-project-roles-environment-manager.sql, relativeToChangelogFile: true }
   # GD-20/GD-21 (2026-11-15): project environments with GitHub repository + branch pairs; PROD changes approved.
   - include: { file: changes/0035-project-environments.sql, relativeToChangelogFile: true }
+  # GD-22 (2026-11-15): BRD quotes by size accepted before analysis; allowance and overage; AI cost reads for Garuda.
+  - include: { file: changes/0036-brd-quotes-ai-cost.sql, relativeToChangelogFile: true }

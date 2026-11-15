@@ -14,6 +14,7 @@ import { DocumentsPanel } from '../components/DocumentsPanel';
 import { BrdPanel } from '../components/BrdPanel';
 import { RepositoryLinkPanel } from '../components/RepositoryLinkPanel';
 import { TargetEnvironmentPanel } from '../components/TargetEnvironmentPanel';
+import { BrdQuotePanel } from '../components/BrdQuotePanel';
 import { Icon } from '../ui/Icon';
 import {
   BackLink,
@@ -270,6 +271,7 @@ export function RequirementDetailPage() {
           </div>
         </div>
         <div>
+          <BrdQuotePanel requirementId={detail.id} />
           {detail.content.kind === 'EXISTING_REPOSITORY' && <TargetEnvironmentPanel requirementId={detail.id} projectId={detail.projectId} />}
           <Card title="Details">
             <dl className="details" style={{ gridTemplateColumns: '110px minmax(0, 1fr)' }}>

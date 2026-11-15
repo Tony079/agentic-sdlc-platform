@@ -8,6 +8,7 @@ import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -58,9 +59,6 @@ class BillingService {
     record ReportLine(UUID tenantId, String organisationName, UUID projectId, String projectName, String planName,
                       String currency, BigDecimal monthlyFee, LocalDate billedFrom, LocalDate billedTo, int activeDays,
                       int daysInMonth, BigDecimal projectFee) {
-    }
-
-    record Report(String month, List<ReportLine> lines, List<Total> totals) {
     }
 
     record Total(String currency, BigDecimal amount) {
@@ -273,55 +271,163 @@ class BillingService {
 
     // --- report ---------------------------------------------------------------------------------------------
 
-    /** Project fees for a calendar month (UTC), prorated by active days. BRD charges are added by GD-22 quotes. */
-    Report report(YearMonth month) {
-        List<Object[]> tenants = tx.execute(s -> {
+    record BrdLine(UUID tenantId, String organisationName, UUID projectId, String projectName, UUID requirementId,
+                   String requirementKey, String size, String sizingMethod, boolean included, String currency,
+                   BigDecimal listPrice, BigDecimal charge, LocalDate acceptedOn) {
+    }
+
+    record FullReport(String month, List<ReportLine> lines, List<BrdLine> brds, List<Total> totals) {
+    }
+
+    /** Project fees (prorated by active days) and accepted BRDs (allowance first, then size price) for a month. */
+    FullReport report(YearMonth month) {
+        List<Object[]> tenants = tenants();
+        List<ReportLine> lines = new ArrayList<>();
+        List<BrdLine> brds = new ArrayList<>();
+        for (Object[] t : tenants) {
+            UUID tenantId = (UUID) t[0];
+            projectFees(tenantId, month).forEach(l -> lines.add(new ReportLine(tenantId, (String) t[1], l.projectId(),
+                    l.projectName(), l.planName(), l.currency(), l.monthlyFee(), l.billedFrom(), l.billedTo(),
+                    l.activeDays(), l.daysInMonth(), l.projectFee())));
+            brdCharges(tenantId, month).forEach(b -> brds.add(new BrdLine(tenantId, (String) t[1], b.projectId(),
+                    b.projectName(), b.requirementId(), b.requirementKey(), b.size(), b.sizingMethod(), b.included(),
+                    b.currency(), b.listPrice(), b.charge(), b.acceptedOn())));
+        }
+        List<Map.Entry<String, BigDecimal>> amounts = new ArrayList<>();
+        lines.forEach(l -> amounts.add(Map.entry(l.currency(), l.projectFee())));
+        brds.forEach(b -> amounts.add(Map.entry(b.currency(), b.charge())));
+        return new FullReport(month.toString(), lines, brds, totals(amounts));
+    }
+
+    /** One organisation's prorated project fees; no caller check (the caller is a Garuda Admin or the org's admin). */
+    List<ReportLine> projectFees(UUID tenantId, YearMonth month) {
+        LocalDate first = month.atDay(1);
+        LocalDate last = month.atEndOfMonth();
+        int days = month.lengthOfMonth();
+        return TenantContext.callAs(tenantId, () -> tx.execute(s -> jdbc.sql("""
+                SELECT p.id, p.name, b.name, b.currency, b.monthly_fee, p.activated_at, p.archived_at
+                FROM app.project p JOIN app.billing_plan b ON b.id = p.plan_id
+                WHERE p.activated_at IS NOT NULL ORDER BY lower(p.name)
+                """).query((rs, n) -> {
+                    LocalDate from = rs.getObject(6, OffsetDateTime.class).withOffsetSameInstant(ZoneOffset.UTC).toLocalDate();
+                    OffsetDateTime archived = rs.getObject(7, OffsetDateTime.class);
+                    LocalDate to = archived == null ? last : archived.withOffsetSameInstant(ZoneOffset.UTC).toLocalDate();
+                    LocalDate start = from.isAfter(first) ? from : first;
+                    LocalDate end = to.isBefore(last) ? to : last;
+                    if (end.isBefore(start)) {
+                        return null;
+                    }
+                    int active = (int) (end.toEpochDay() - start.toEpochDay()) + 1;
+                    BigDecimal fee = rs.getBigDecimal(5);
+                    BigDecimal amount = fee.multiply(BigDecimal.valueOf(active))
+                            .divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
+                    return new ReportLine(tenantId, null, rs.getObject(1, UUID.class), rs.getString(2),
+                            rs.getString(3), rs.getString(4), fee, start, end, active, days, amount);
+                }).list().stream().filter(java.util.Objects::nonNull).toList()));
+    }
+
+    /** One organisation's accepted BRDs billed in the month. */
+    List<BrdLine> brdCharges(UUID tenantId, YearMonth month) {
+        return TenantContext.callAs(tenantId, () -> tx.execute(s -> jdbc.sql("""
+                SELECT q.project_id, p.name, q.requirement_id, r.key, q.size, q.sizing_method, q.included, q.currency,
+                       q.list_price, q.charge, q.accepted_at
+                FROM app.brd_quote q JOIN app.project p ON p.id = q.project_id JOIN app.requirement r ON r.id = q.requirement_id
+                WHERE q.status = 'ACCEPTED' AND q.billing_month = :m ORDER BY q.accepted_at
+                """).param("m", month.atDay(1)).query((rs, n) -> new BrdLine(tenantId, null, rs.getObject(1, UUID.class),
+                rs.getString(2), rs.getObject(3, UUID.class), rs.getString(4), rs.getString(5), rs.getString(6),
+                rs.getBoolean(7), rs.getString(8), rs.getBigDecimal(9), rs.getBigDecimal(10),
+                rs.getObject(11, OffsetDateTime.class).withOffsetSameInstant(ZoneOffset.UTC).toLocalDate())).list()));
+    }
+
+    static List<Total> totals(List<Map.Entry<String, BigDecimal>> amounts) {
+        return amounts.stream().collect(java.util.stream.Collectors.groupingBy(Map.Entry::getKey, java.util.TreeMap::new,
+                        java.util.stream.Collectors.reducing(BigDecimal.ZERO, Map.Entry::getValue, BigDecimal::add)))
+                .entrySet().stream().map(e -> new Total(e.getKey(), e.getValue())).toList();
+    }
+
+    String reportCsv(YearMonth month) {
+        FullReport report = report(month);
+        StringBuilder csv = new StringBuilder("line_type,organisation,project,plan,currency,monthly_fee,billed_from,billed_to,"
+                + "active_days,days_in_month,requirement,brd_size,sizing,included_in_allowance,list_price,amount\n");
+        for (ReportLine l : report.lines()) {
+            csv.append(String.join(",", "PROJECT_FEE", quote(l.organisationName()), quote(l.projectName()),
+                    quote(l.planName()), l.currency(), l.monthlyFee().toPlainString(), l.billedFrom().toString(),
+                    l.billedTo().toString(), String.valueOf(l.activeDays()), String.valueOf(l.daysInMonth()), "", "", "",
+                    "", "", l.projectFee().toPlainString())).append('\n');
+        }
+        for (BrdLine b : report.brds()) {
+            csv.append(String.join(",", "BRD", quote(b.organisationName()), quote(b.projectName()), "", b.currency(), "",
+                    b.acceptedOn().toString(), b.acceptedOn().toString(), "", "", b.requirementKey(), b.size(),
+                    b.sizingMethod() + " (estimated)", String.valueOf(b.included()), b.listPrice().toPlainString(),
+                    b.charge().toPlainString())).append('\n');
+        }
+        return csv.toString();
+    }
+
+    // --- AI cost (GD-22) ------------------------------------------------------------------------------------
+
+    record CostRow(UUID tenantId, String organisationName, UUID projectId, String projectName, UUID requirementId,
+                   String requirementKey, long calls, long inputTokens, long outputTokens, BigDecimal costUsd,
+                   long estimatedCalls, long unmeteredCalls) {
+    }
+
+    record CostReport(String month, String level, List<CostRow> rows, BigDecimal totalUsd, boolean includesEstimates) {
+    }
+
+    /**
+     * Model spend in USD for a month, by organisation (no tenantId), by project of one organisation, or by requirement
+     * of one project, from the daily rollup (the API never reads raw model-call records). Calls with locally
+     * estimated usage and calls without usage data are counted separately; the latter add no cost.
+     */
+    CostReport aiCosts(YearMonth month, UUID tenantId, UUID projectId) {
+        LocalDate from = month.atDay(1);
+        LocalDate to = month.plusMonths(1).atDay(1);
+        String level = tenantId == null ? "ORGANISATION" : projectId == null ? "PROJECT" : "REQUIREMENT";
+        List<Object[]> scope = tenantId == null ? tenants()
+                : tenants().stream().filter(t -> t[0].equals(tenantId)).toList();
+        if (scope.isEmpty()) {
+            throw ApiException.notFound();
+        }
+        String group = switch (level) {
+            case "ORGANISATION" -> "NULL::uuid, NULL::text, NULL::uuid, NULL::text";
+            case "PROJECT" -> "p.id, p.name, NULL::uuid, NULL::text";
+            default -> "p.id, p.name, r.id, r.key";
+        };
+        String sql = "SELECT " + group + """
+                , coalesce(sum(c.calls), 0), coalesce(sum(c.input_tokens), 0), coalesce(sum(c.output_tokens), 0),
+                       coalesce(sum(c.cost_usd), 0), coalesce(sum(c.estimated_calls), 0), coalesce(sum(c.unmetered_calls), 0)
+                FROM app.ai_cost_daily c
+                LEFT JOIN app.requirement r ON r.id = c.requirement_id
+                LEFT JOIN app.project p ON p.id = c.project_id
+                WHERE c.day >= :from AND c.day < :to
+                """ + (projectId == null ? "" : " AND c.project_id = :project") + " GROUP BY 1, 2, 3, 4 ORDER BY 8 DESC";
+        List<CostRow> rows = new ArrayList<>();
+        for (Object[] t : scope) {
+            UUID tenant = (UUID) t[0];
+            rows.addAll(TenantContext.callAs(tenant, () -> tx.execute(s -> {
+                var statement = jdbc.sql(sql).param("from", from).param("to", to);
+                if (projectId != null) {
+                    statement = statement.param("project", projectId);
+                }
+                return statement.query((rs, n) -> new CostRow(tenant, (String) t[1], rs.getObject(1, UUID.class),
+                        rs.getString(2), rs.getObject(3, UUID.class), rs.getString(4), rs.getLong(5), rs.getLong(6),
+                        rs.getLong(7), rs.getBigDecimal(8), rs.getLong(9), rs.getLong(10))).list();
+            })));
+        }
+        if ("ORGANISATION".equals(level)) {
+            rows = rows.stream().filter(r -> r.calls() > 0).toList();
+        }
+        BigDecimal total = rows.stream().map(CostRow::costUsd).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new CostReport(month.toString(), level, rows, total,
+                rows.stream().anyMatch(r -> r.estimatedCalls() > 0 || r.unmeteredCalls() > 0));
+    }
+
+    private List<Object[]> tenants() {
+        return tx.execute(s -> {
             admin();
             return jdbc.sql("SELECT id, name FROM app.tenant ORDER BY lower(name)")
                     .query((rs, n) -> new Object[] {rs.getObject(1, UUID.class), rs.getString(2)}).list();
         });
-        LocalDate first = month.atDay(1);
-        LocalDate last = month.atEndOfMonth();
-        int days = month.lengthOfMonth();
-        List<ReportLine> lines = new ArrayList<>();
-        for (Object[] t : tenants) {
-            UUID tenantId = (UUID) t[0];
-            lines.addAll(TenantContext.callAs(tenantId, () -> tx.execute(s -> jdbc.sql("""
-                    SELECT p.id, p.name, b.name, b.currency, b.monthly_fee, p.activated_at, p.archived_at
-                    FROM app.project p JOIN app.billing_plan b ON b.id = p.plan_id
-                    WHERE p.activated_at IS NOT NULL
-                    """).query((rs, n) -> {
-                        LocalDate from = rs.getObject(6, OffsetDateTime.class).withOffsetSameInstant(ZoneOffset.UTC).toLocalDate();
-                        OffsetDateTime archived = rs.getObject(7, OffsetDateTime.class);
-                        LocalDate to = archived == null ? last : archived.withOffsetSameInstant(ZoneOffset.UTC).toLocalDate();
-                        LocalDate start = from.isAfter(first) ? from : first;
-                        LocalDate end = to.isBefore(last) ? to : last;
-                        if (end.isBefore(start)) {
-                            return null;
-                        }
-                        int active = (int) (end.toEpochDay() - start.toEpochDay()) + 1;
-                        BigDecimal fee = rs.getBigDecimal(5);
-                        BigDecimal amount = fee.multiply(BigDecimal.valueOf(active))
-                                .divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
-                        return new ReportLine(tenantId, (String) t[1], rs.getObject(1, UUID.class), rs.getString(2),
-                                rs.getString(3), rs.getString(4), fee, start, end, active, days, amount);
-                    }).list().stream().filter(java.util.Objects::nonNull).toList())));
-        }
-        List<Total> totals = lines.stream().collect(java.util.stream.Collectors.groupingBy(ReportLine::currency,
-                        java.util.TreeMap::new, java.util.stream.Collectors.reducing(BigDecimal.ZERO, ReportLine::projectFee, BigDecimal::add)))
-                .entrySet().stream().map(e -> new Total(e.getKey(), e.getValue())).toList();
-        return new Report(month.toString(), lines, totals);
-    }
-
-    String reportCsv(YearMonth month) {
-        StringBuilder csv = new StringBuilder("organisation,project,plan,currency,monthly_fee,billed_from,billed_to,active_days,days_in_month,project_fee\n");
-        for (ReportLine l : report(month).lines()) {
-            csv.append(String.join(",", quote(l.organisationName()), quote(l.projectName()), quote(l.planName()),
-                    l.currency(), l.monthlyFee().toPlainString(), l.billedFrom().toString(), l.billedTo().toString(),
-                    String.valueOf(l.activeDays()), String.valueOf(l.daysInMonth()), l.projectFee().toPlainString()))
-                    .append('\n');
-        }
-        return csv.toString();
     }
 
     // --- internals ------------------------------------------------------------------------------------------

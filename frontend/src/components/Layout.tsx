@@ -195,8 +195,11 @@ export function Layout() {
               <NavItem to="/admin/users" icon="users">
                 Users
               </NavItem>
-              <NavItem to="/organisation" icon="building">
+              <NavItem to="/organisation" icon="building" end>
                 Organisation
+              </NavItem>
+              <NavItem to="/organisation/billing" icon="chart">
+                Billing
               </NavItem>
             </>
           )}

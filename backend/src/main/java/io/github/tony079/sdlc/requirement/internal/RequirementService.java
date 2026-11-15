@@ -13,6 +13,7 @@ import java.util.UUID;
 import io.github.tony079.sdlc.audit.api.AuditWriter;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditAction;
 import io.github.tony079.sdlc.audit.api.AuditWriter.AuditResult;
+import io.github.tony079.sdlc.billing.api.BrdQuotes;
 import io.github.tony079.sdlc.common.api.ApiError.FieldError;
 import io.github.tony079.sdlc.common.api.ApiException;
 import io.github.tony079.sdlc.project.api.ProjectAccess;
@@ -60,10 +61,13 @@ class RequirementService {
     private final SecurityEventRecorder securityEvents;
     private final ProjectAccess projects;
 
+    private final BrdQuotes quotes;
+
     RequirementService(RequirementRepository requirements, RequirementKeyGenerator keys, IdempotencyStore idempotency,
                        WorkflowEngine workflow, AuditWriter audit, SecurityEventRecorder securityEvents,
-                       ProjectAccess projects) {
+                       ProjectAccess projects, BrdQuotes quotes) {
         this.projects = projects;
+        this.quotes = quotes;
         this.requirements = requirements;
         this.keys = keys;
         this.idempotency = idempotency;
@@ -235,6 +239,14 @@ class RequirementService {
         Route route = RequirementFields.EXISTING_REPOSITORY.equals(current.content().kind()) ? Route.REPOSITORY
                 : Route.MANUAL_INTAKE;
         workflow.submit(id, route);
+        // GD-22: a project with a billing plan quotes the BRD; analysis waits until the quote is accepted.
+        var c = current.content();
+        int chars = 0;
+        for (String text : new String[] {c.title(), c.description(), c.businessObjective(), c.expectedOutcomes(),
+                c.acceptanceCriteria(), c.constraints(), c.integrations()}) {
+            chars += text == null ? 0 : text.length();
+        }
+        quotes.open(id, row.projectId(), new BrdQuotes.Basis(0, route == Route.REPOSITORY, chars));
         audit.record(AuditAction.REQUIREMENT_SUBMITTED, "REQUIREMENT", id, AuditResult.SUCCESS);
         return detail(id, actor());
     }

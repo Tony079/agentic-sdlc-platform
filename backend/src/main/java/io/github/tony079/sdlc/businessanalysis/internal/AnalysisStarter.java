@@ -4,6 +4,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.github.tony079.sdlc.billing.api.BrdQuotes;
+import io.github.tony079.sdlc.requirement.api.RequirementView;
 import io.github.tony079.sdlc.tenancy.api.TenantContext;
 import io.github.tony079.sdlc.workflow.api.WorkflowEngine;
 import io.github.tony079.sdlc.workflow.api.WorkflowState;
@@ -27,12 +29,15 @@ class AnalysisStarter {
     private final InputSets inputSets;
     private final AnalysisRepository repository;
     private final JsonMapper json;
+    private final BrdQuotes quotes;
 
-    AnalysisStarter(WorkflowEngine workflow, InputSets inputSets, AnalysisRepository repository, JsonMapper json) {
+    AnalysisStarter(WorkflowEngine workflow, InputSets inputSets, AnalysisRepository repository, JsonMapper json,
+                    BrdQuotes quotes) {
         this.workflow = workflow;
         this.inputSets = inputSets;
         this.repository = repository;
         this.json = json;
+        this.quotes = quotes;
     }
 
     /** From AWAITING_DOCUMENTS only (event-driven); returns the new stage execution, if started. */
@@ -64,9 +69,24 @@ class AnalysisStarter {
         if (draft.isEmpty()) {
             return Optional.empty();
         }
+        // GD-22: with a billing plan, analysis waits for the accepted BRD quote (opened at submission).
+        if (!quotes.readyForAnalysis(requirementId, basis(draft.get()))) {
+            return Optional.empty();
+        }
         UUID inputSetId = repository.insertInputSet(TenantContext.requireTenant(), draft.get(),
                 json.writeValueAsString(draft.get().documents()));
         return workflow.startAnalysis(requirementId, draft.get().inputHash(),
                 Map.of("inputSetId", inputSetId.toString()));
+    }
+
+    private static BrdQuotes.Basis basis(InputSets.Draft draft) {
+        RequirementView.Content c = draft.revision().content();
+        int chars = 0;
+        for (String text : new String[] {c.title(), c.description(), c.businessObjective(), c.expectedOutcomes(),
+                c.acceptanceCriteria(), c.constraints(), c.integrations()}) {
+            chars += text == null ? 0 : text.length();
+        }
+        int documents = (int) draft.documents().stream().filter(InputSets.DocumentEntry::included).count();
+        return new BrdQuotes.Basis(documents, draft.repository() != null, chars);
     }
 }

@@ -10,7 +10,8 @@ import io.github.tony079.sdlc.billing.internal.BillingService.NewDecision;
 import io.github.tony079.sdlc.billing.internal.BillingService.NewPlan;
 import io.github.tony079.sdlc.billing.internal.BillingService.PendingProject;
 import io.github.tony079.sdlc.billing.internal.BillingService.Plan;
-import io.github.tony079.sdlc.billing.internal.BillingService.Report;
+import io.github.tony079.sdlc.billing.internal.BillingService.CostReport;
+import io.github.tony079.sdlc.billing.internal.BillingService.FullReport;
 import io.github.tony079.sdlc.common.api.ApiException;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -70,7 +71,7 @@ class BillingController {
     }
 
     @GetMapping("/api/v1/staff/billing/report")
-    Report report(@RequestParam String month) {
+    FullReport report(@RequestParam String month) {
         return billing.report(month(month));
     }
 
@@ -82,7 +83,16 @@ class BillingController {
                 .contentType(new MediaType("text", "csv")).body(billing.reportCsv(m));
     }
 
-    private static YearMonth month(String value) {
+    @GetMapping("/api/v1/staff/billing/ai-costs")
+    CostReport aiCosts(@RequestParam String month, @RequestParam(required = false) UUID tenantId,
+                       @RequestParam(required = false) UUID projectId) {
+        if (projectId != null && tenantId == null) {
+            throw ApiException.validation("Choose the organisation of the project.");
+        }
+        return billing.aiCosts(month(month), tenantId, projectId);
+    }
+
+    static YearMonth month(String value) {
         try {
             return YearMonth.parse(value);
         } catch (DateTimeParseException | NullPointerException e) {

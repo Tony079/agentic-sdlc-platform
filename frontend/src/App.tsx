@@ -11,6 +11,7 @@ import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { NotificationsPage } from './pages/NotificationsPage';
+import { OrganisationBillingPage } from './pages/OrganisationBillingPage';
 import { OrganisationPage } from './pages/OrganisationPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -105,6 +106,14 @@ export function App() {
           element={
             <RequireOrgAdmin>
               <OrganisationPage />
+            </RequireOrgAdmin>
+          }
+        />
+        <Route
+          path="/organisation/billing"
+          element={
+            <RequireOrgAdmin>
+              <OrganisationBillingPage />
             </RequireOrgAdmin>
           }
         />

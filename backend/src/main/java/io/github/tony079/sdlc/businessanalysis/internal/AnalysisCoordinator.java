@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 class AnalysisCoordinator implements EventConsumer {
 
     private static final Set<String> TRIGGERS = Set.of(EventTypes.REPO_VALIDATED, EventTypes.REPOSITORY_SNAPSHOT_INDEXED,
-            EventTypes.DOCUMENT_PROCESSED, EventTypes.DOCUMENT_FAILED);
+            EventTypes.DOCUMENT_PROCESSED, EventTypes.DOCUMENT_FAILED, EventTypes.BRD_QUOTE_ACCEPTED);
 
     private final AnalysisStarter starter;
     private final InputChangeConsumers inputChanges;

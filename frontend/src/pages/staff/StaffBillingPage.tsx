@@ -4,6 +4,8 @@ import { api, ApiError } from '../../api/client';
 import { useStaffMe } from '../../components/StaffLayout';
 import { Icon } from '../../ui/Icon';
 import { useToast } from '../../ui/Toast';
+import { AiCostReport } from '../../components/AiCostReport';
+import { money, SIZE_LABEL } from '../../ui/money';
 import { Badge, Callout, Card, EmptyState, ErrorText, Loading, Modal, PageHeader, Stat, Tabs, formatDate, relativeTime, type Tone } from '../../ui/components';
 
 interface Plan {
@@ -60,12 +62,25 @@ interface ReportLine {
 
 const PLAN_TONE: Record<string, Tone> = { PROPOSED: 'warning', ACTIVE: 'success', REJECTED: 'danger', RETIRED: 'neutral' };
 
-function money(currency: string, amount: number): string {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount);
-  } catch {
-    return `${currency} ${amount}`;
-  }
+interface BrdLine {
+  organisationName: string;
+  projectName: string;
+  requirementId: string;
+  requirementKey: string;
+  size: string;
+  sizingMethod: string;
+  included: boolean;
+  currency: string;
+  listPrice: number;
+  charge: number;
+  acceptedOn: string;
+}
+
+interface Report {
+  month: string;
+  lines: ReportLine[];
+  brds: BrdLine[];
+  totals: { currency: string; amount: number }[];
 }
 
 function message(error: unknown, fallback: string): string {
@@ -235,7 +250,7 @@ export function StaffBillingPage() {
   const me = useStaffMe();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [tab, setTab] = useState<'projects' | 'plans' | 'report'>('projects');
+  const [tab, setTab] = useState<'projects' | 'plans' | 'report' | 'ai'>('projects');
   const [proposing, setProposing] = useState(false);
   const [deciding, setDeciding] = useState<PendingProject | null>(null);
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
@@ -243,7 +258,7 @@ export function StaffBillingPage() {
   const pending = useQuery({ queryKey: ['project-requests'], queryFn: () => api.get<PendingProject[]>('/api/v1/staff/project-requests') });
   const report = useQuery({
     queryKey: ['billing-report', month],
-    queryFn: () => api.get<{ month: string; lines: ReportLine[]; totals: { currency: string; amount: number }[] }>(`/api/v1/staff/billing/report?month=${month}`),
+    queryFn: () => api.get<Report>(`/api/v1/staff/billing/report?month=${month}`),
     enabled: tab === 'report',
   });
   const myId = me.data?.staffId;
@@ -265,7 +280,7 @@ export function StaffBillingPage() {
       <PageHeader
         eyebrow="Platform"
         title="Billing"
-        description="Projects are billed from activation by two Garuda Admins until the organisation archives them."
+        description="Projects are billed monthly from activation until archiving, and each BRD by its accepted size quote."
         actions={
           <button type="button" className="btn-primary" onClick={() => setProposing(true)}>
             <Icon name="plus" size={16} />
@@ -287,6 +302,7 @@ export function StaffBillingPage() {
           { id: 'projects', label: 'Project approvals', count: pending.data?.length },
           { id: 'plans', label: 'Plans', count: plans.data?.length },
           { id: 'report', label: 'Monthly report' },
+          { id: 'ai', label: 'AI cost' },
         ]}
       />
       {tab === 'projects' && (
@@ -467,48 +483,104 @@ export function StaffBillingPage() {
         >
           {report.isPending && <div className="card-body"><Loading /></div>}
           {report.isError && <div className="card-body"><ErrorText>The report could not be loaded.</ErrorText></div>}
-          {report.data && report.data.lines.length === 0 && <EmptyState icon="chart" title="Nothing billed in this month" />}
+          {report.data && report.data.lines.length === 0 && report.data.brds.length === 0 && (
+            <EmptyState icon="chart" title="Nothing billed in this month" />
+          )}
           {report.data && report.data.lines.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <caption className="sr-only">Project fees</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Organisation</th>
+                    <th scope="col">Project</th>
+                    <th scope="col">Plan</th>
+                    <th scope="col">Billed period</th>
+                    <th scope="col" className="num">Active days</th>
+                    <th scope="col" className="num">Project fee</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.data.lines.map((l) => (
+                    <tr key={`${l.organisationName}-${l.projectName}`}>
+                      <td>{l.organisationName}</td>
+                      <td className="primary-cell">{l.projectName}</td>
+                      <td>{l.planName}</td>
+                      <td className="small">
+                        {formatDate(l.billedFrom)} → {formatDate(l.billedTo)}
+                      </td>
+                      <td className="num">
+                        {l.activeDays} / {l.daysInMonth}
+                      </td>
+                      <td className="num">{money(l.currency, l.projectFee)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {report.data && report.data.brds.length > 0 && (
             <>
+              <div className="card-body" style={{ paddingBottom: 0 }}>
+                <strong>BRD charges</strong>
+                <span className="small"> · the monthly allowance applies first, then the size price</span>
+              </div>
               <div className="table-wrap">
                 <table>
+                  <caption className="sr-only">BRD charges</caption>
                   <thead>
                     <tr>
                       <th scope="col">Organisation</th>
                       <th scope="col">Project</th>
-                      <th scope="col">Plan</th>
-                      <th scope="col">Billed period</th>
-                      <th scope="col" className="num">Active days</th>
-                      <th scope="col" className="num">Project fee</th>
+                      <th scope="col">Requirement</th>
+                      <th scope="col">Size</th>
+                      <th scope="col">Accepted</th>
+                      <th scope="col" className="num">Charge</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {report.data.lines.map((l) => (
-                      <tr key={`${l.organisationName}-${l.projectName}`}>
-                        <td>{l.organisationName}</td>
-                        <td className="primary-cell">{l.projectName}</td>
-                        <td>{l.planName}</td>
-                        <td className="small">
-                          {formatDate(l.billedFrom)} → {formatDate(l.billedTo)}
+                    {report.data.brds.map((b) => (
+                      <tr key={b.requirementId}>
+                        <td>{b.organisationName}</td>
+                        <td>{b.projectName}</td>
+                        <td className="mono">{b.requirementKey}</td>
+                        <td>
+                          {SIZE_LABEL[b.size] ?? b.size} <span className="small">(estimated)</span>
                         </td>
+                        <td className="small">{formatDate(b.acceptedOn)}</td>
                         <td className="num">
-                          {l.activeDays} / {l.daysInMonth}
+                          {b.included ? (
+                            <Badge tone="success">Included</Badge>
+                          ) : (
+                            money(b.currency, b.charge)
+                          )}
                         </td>
-                        <td className="num">{money(l.currency, l.projectFee)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="card-footer">
-                {report.data.totals.map((t) => (
-                  <strong key={t.currency}>Total {money(t.currency, t.amount)}</strong>
-                ))}
-              </div>
-              <div className="card-body small">BRD charges (included allowance and overage by size) are added when BRD quotes go live.</div>
             </>
           )}
+          {report.data && (report.data.lines.length > 0 || report.data.brds.length > 0) && (
+            <div className="card-footer">
+              {report.data.totals.map((t) => (
+                <strong key={t.currency}>Total {money(t.currency, t.amount)}</strong>
+              ))}
+            </div>
+          )}
         </Card>
+      )}
+      {tab === 'ai' && (
+        <>
+          <div className="row" style={{ marginBottom: '0.75rem' }}>
+            <label className="row small">
+              Month
+              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ width: 170 }} />
+            </label>
+          </div>
+          <AiCostReport month={month} />
+        </>
       )}
       {proposing && <PlanModal onClose={() => setProposing(false)} />}
       {deciding && <DecisionModal project={deciding} plans={plans.data ?? []} onClose={() => setDeciding(null)} />}

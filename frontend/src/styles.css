@@ -1840,3 +1840,18 @@ dl.content > div dt {
 .card > section > h2:first-child {
   margin-top: 0;
 }
+
+/* Inline text buttons inside tables (drill-down links). */
+button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+button.link:hover {
+  text-decoration: underline;
+}
