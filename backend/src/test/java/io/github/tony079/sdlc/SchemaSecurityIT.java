@@ -36,7 +36,8 @@ class SchemaSecurityIT {
                 "ba_result_pending", "brd", "brd_flag_ack", "brd_item", "brd_item_evidence", "brd_version",
                 "build_dependency", "change_request", "change_request_diff", "clarification", "clarification_message", "client_change_request", "code_symbol",
                 "document", "document_chunk", "document_decision",
-                "document_extraction", "document_version",
+                "document_extraction", "document_version", "environment", "environment_branch",
+                "environment_change_request",
                 "idempotency_record", "job", "job_attempt", "model_call_record", "notification",
                 "outbox_event", "processed_event", "project", "project_member", "project_repository", "release_approval", "repository",
                 "repository_file", "repository_link_request", "repository_snapshot", "requirement",
@@ -45,7 +46,8 @@ class SchemaSecurityIT {
         // Garuda GD-13: project-scoped tables carry one extra RESTRICTIVE policy for signed-in client users.
         java.util.Set<String> projectScoped = java.util.Set.of("admin_retry_request", "analysis_input_set",
                 "approved_scope_version", "ba_result_pending", "brd", "brd_version", "change_request", "clarification",
-                "client_change_request", "document", "document_decision", "document_version", "model_call_record",
+                "client_change_request", "document", "document_decision", "document_version", "environment",
+                "environment_branch", "environment_change_request", "model_call_record",
                 "notification", "project", "project_member", "release_approval", "repository_link_request",
                 "requirement", "requirement_closure", "requirement_repository", "requirement_repository_link",
                 "requirement_revision", "workflow_instance");
@@ -159,7 +161,7 @@ class SchemaSecurityIT {
                 WHERE grantee = 'sdlc_app' AND table_schema = 'app' AND table_name = 'requirement'
                   AND privilege_type = 'UPDATE' ORDER BY column_name
                 """, String.class);
-        assertThat(requirementColumns).containsExactly("current_revision_no", "restricted", "updated_at", "version");
+        assertThat(requirementColumns).containsExactly("current_revision_no", "restricted", "target_environment_id", "updated_at", "version");
         List<String> instanceColumns = admin.queryForList("""
                 SELECT column_name FROM information_schema.column_privileges
                 WHERE grantee = 'sdlc_app' AND table_schema = 'app' AND table_name = 'workflow_instance'

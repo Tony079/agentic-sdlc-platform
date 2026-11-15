@@ -60,3 +60,5 @@ databaseChangeLog:
   - include: { file: changes/0033-project-approval-billing.sql, relativeToChangelogFile: true }
   # GD-18 (2026-11-15): Requirement Author, BRD Approver, Viewer; one Environment Manager per project.
   - include: { file: changes/0034-project-roles-environment-manager.sql, relativeToChangelogFile: true }
+  # GD-20/GD-21 (2026-11-15): project environments with GitHub repository + branch pairs; PROD changes approved.
+  - include: { file: changes/0035-project-environments.sql, relativeToChangelogFile: true }

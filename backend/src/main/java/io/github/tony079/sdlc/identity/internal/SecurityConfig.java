@@ -126,6 +126,9 @@ class SecurityConfig {
                                 .hasRole("CLIENT")
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout")
                                 .hasAnyRole("CLIENT", "CLIENT_MFA_PENDING")
+                        // GD-20: project environments (Environment Manager and BRD Approvers; re-checked per call).
+                        .requestMatchers("/api/v1/environments/**", "/api/v1/environment-branches/**",
+                                "/api/v1/environment-requests/**").hasRole("CLIENT")
                         .requestMatchers("/api/v1/me").hasRole("CLIENT")
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions

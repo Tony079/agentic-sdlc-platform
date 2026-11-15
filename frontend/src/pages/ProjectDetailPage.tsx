@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import type { OrgUser, Project, ProjectMember, ProjectRole, RequirementPage } from '../api/types';
+import { EnvironmentsTab } from '../components/EnvironmentsTab';
 import { useAuth } from '../auth/AuthContext';
 import { Icon } from '../ui/Icon';
 import { useToast } from '../ui/Toast';
@@ -371,7 +372,7 @@ function SettingsTab({ project }: { project: Project }) {
 export function ProjectDetailPage() {
   const { id = '' } = useParams();
   const { isOrgAdmin } = useAuth();
-  const [tab, setTab] = useState<'requirements' | 'members' | 'settings'>('requirements');
+  const [tab, setTab] = useState<'requirements' | 'environments' | 'members' | 'settings'>('requirements');
   const project = useQuery({ queryKey: ['project', id], queryFn: () => api.get<Project>(`/api/v1/projects/${id}`) });
 
   if (project.isPending) return <Loading />;
@@ -386,8 +387,9 @@ export function ProjectDetailPage() {
   const p = project.data;
   const tabs: { id: typeof tab; label: string; count?: number }[] = [
     { id: 'requirements', label: 'Requirements' },
-    { id: 'members', label: 'Members', count: p.memberCount },
   ];
+  if (p.myRole) tabs.push({ id: 'environments', label: 'Environments' });
+  tabs.push({ id: 'members', label: 'Members', count: p.memberCount });
   if (isOrgAdmin) tabs.push({ id: 'settings', label: 'Settings' });
 
   return (
@@ -431,6 +433,7 @@ export function ProjectDetailPage() {
       )}
       <Tabs label="Project sections" tabs={tabs} value={tab} onChange={setTab} />
       {tab === 'requirements' && <RequirementsTab project={p} />}
+      {tab === 'environments' && p.myRole && <EnvironmentsTab project={p} />}
       {tab === 'members' && <MembersTab project={p} admin={isOrgAdmin} />}
       {tab === 'settings' && isOrgAdmin && <SettingsTab project={p} />}
     </>

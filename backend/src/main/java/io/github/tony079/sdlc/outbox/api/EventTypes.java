@@ -42,6 +42,8 @@ public final class EventTypes {
     public static final String ADMIN_RETRY_REJECTED = "AdminRetryRejected";
     public static final String CHANGE_REQUEST_SUBMITTED = "ChangeRequestSubmitted";
     public static final String CHANGE_REQUEST_ACCEPTED = "ChangeRequestAccepted";
+    /** GD-20: a project's repository or environment branches changed; the worker verifies them (ENV_VERIFY). */
+    public static final String ENVIRONMENT_BRANCHES_CHANGED = "EnvironmentBranchesChanged";
 
     private static final Map<String, Integer> VERSIONS = Map.ofEntries(
             Map.entry(REQUIREMENT_SUBMITTED, 1),
@@ -77,7 +79,8 @@ public final class EventTypes {
             Map.entry(ADMIN_RETRY_COMPLETED, 1),
             Map.entry(ADMIN_RETRY_REJECTED, 1),
             Map.entry(CHANGE_REQUEST_SUBMITTED, 1),
-            Map.entry(CHANGE_REQUEST_ACCEPTED, 1));
+            Map.entry(CHANGE_REQUEST_ACCEPTED, 1),
+            Map.entry(ENVIRONMENT_BRANCHES_CHANGED, 1));
 
     private EventTypes() {
     }

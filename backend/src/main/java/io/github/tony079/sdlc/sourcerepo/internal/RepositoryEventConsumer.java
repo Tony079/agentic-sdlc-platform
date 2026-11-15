@@ -34,11 +34,18 @@ class RepositoryEventConsumer implements EventConsumer {
 
     @Override
     public boolean accepts(String eventType) {
-        return EventTypes.REPOSITORY_REGISTERED.equals(eventType) || EventTypes.JOB_DEAD.equals(eventType);
+        return EventTypes.REPOSITORY_REGISTERED.equals(eventType) || EventTypes.JOB_DEAD.equals(eventType)
+                || EventTypes.ENVIRONMENT_BRANCHES_CHANGED.equals(eventType);
     }
 
     @Override
     public void handle(DomainEvent event) {
+        if (EventTypes.ENVIRONMENT_BRANCHES_CHANGED.equals(event.eventType())) {
+            UUID repositoryId = event.uuid("repositoryId");
+            jobs.enqueue(new JobRequest(EnvironmentVerifyHandler.JOB_TYPE, "env-verify:" + repositoryId + ":" + event.id(),
+                    RegistrationService.AGGREGATE, repositoryId, null, Map.of("repositoryId", repositoryId.toString()), 100));
+            return;
+        }
         if (EventTypes.REPOSITORY_REGISTERED.equals(event.eventType())) {
             UUID repositoryId = event.uuid("repositoryId");
             UUID requirementId = event.uuid("requirementId");
