@@ -454,3 +454,17 @@ The product is named **Garuda**. The model is `docs/architecture/garuda-platform
 **Effect on S-02:** the API login may now write staff identities, grants and assignments. Database guards allow this only as the execution of an approved two-person request in the same transaction, approved by an active, MFA-enrolled staff administrator acting as themselves. Outside such a request, the database still refuses these writes (`StaffAdministrationIT`, `StaffProvisioningIT`).
 
 **Residual risk** (accepted, as for organisation onboarding): the database cannot verify a staff member's TOTP itself. A fully compromised API process could therefore forge actor identities. The provisioning path stays available for recovery.
+
+## 16. Garuda platform decisions, part 2 (owner, 2026-11-15)
+
+Specification: `docs/architecture/garuda-platform-model-v2.md`.
+
+| ID | Owner decision |
+|---|---|
+| GD-16 | One **Garuda Admin** role (`STAFF_ADMIN` includes onboarding and the dashboard). Garuda manages organisations and **Organisation Admins only**, never other organisation users. Every Garuda action has two people: one creates, one approves. |
+| GD-17 | Organisation record: identity, contacts, commercial and security. Mandatory for the pilot: identity, primary admin, allowed email domains (enforced on every invitation). |
+| GD-18 | Project roles: Requirement Author, BRD Approver, Viewer; one Environment Manager per project. |
+| GD-19 | Every project needs approval by two Garuda Admins with a billing plan. Pending, then Active (billing starts), then Archived (billing stops). |
+| GD-20 | Each project defines its own environments (one may be PROD), each with repository-plus-branch pairs, registered by the Environment Manager. PROD changes need a second approver (a BRD Approver of the project). Reverses C-01: Garuda staff no longer register repositories. |
+| GD-21 | GitHub for now (Garuda GitHub App installed by the client, read-only). GitLab later. |
+| GD-22 | Charging: per active project per month, plus per BRD by size-based quote accepted before analysis, with a monthly included allowance and overage (option "B with C"). AI cost tracked per organisation, project and requirement. |
