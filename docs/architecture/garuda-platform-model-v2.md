@@ -116,3 +116,26 @@ It can be exported as CSV. Invoices and payment collection are out of scope.
 6. AI cost totals, BRD quotes, billing report.
 
 Each step is tested and committed separately.
+
+## 9. Implementation status (2026-11-15)
+
+All six steps are implemented on `feature/garuda-platform`, each with integration tests; the full backend suite (67 test classes) and the frontend suite pass.
+
+| Step | Migration | Where in the product |
+|---|---|---|
+| 1–2 GD-16/17 | 0032 | Garuda › Organisations (record, admins; two-person) |
+| 3 GD-19 | 0033 | Garuda › Billing › Project approvals, Plans |
+| 4 GD-18 | 0034 | Project › Members (roles, Environment Manager) |
+| 5 GD-20/21 | 0035 | Project › Environments; Requirement › Target environment |
+| 6 GD-22 | 0036 | Requirement › BRD quote; Garuda › Billing › Monthly report, AI cost; Administration › Billing |
+
+How step 6 works as built:
+- The quote opens when a requirement is **submitted** in a project with a plan, and is refreshed from the analysis inputs (documents, repository, text) until it is accepted. Projects without a plan (in use before billing) are not quoted.
+- Sizing is **RULES_V1**: 2 points per document, 3 for an existing repository, 1 per 2,000 characters; Small ≤ 4, Medium ≤ 10, Large above. Every quote is labelled *estimated* until the BRD cost analysis agent is approved (O-01).
+- On acceptance, the plan's included BRDs for that project and calendar month (UTC) are used first, then the size price. An accepted quote is final (database guard).
+- AI cost comes from a daily rollup kept by a trigger on model-call records; the API login still cannot read raw model-call records. Calls without provider usage data add no cost and are counted separately.
+
+**Open items:**
+- **Quoted price against actual AI cost (margin)** is not shown: quotes are in the plan's currency and AI cost in USD, and no exchange-rate source has been decided.
+- **Analysis still uses the per-requirement repository link (C-18).** The target environment is recorded, and its branches are verified, but analysis does not yet read code from the environment's branch. That switch comes with the agent release.
+- The BRD cost analysis agent (replacing RULES_V1) waits for O-01.
