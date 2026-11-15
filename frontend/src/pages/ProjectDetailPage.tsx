@@ -230,7 +230,7 @@ function RequirementsTab({ project }: { project: Project }) {
     queryFn: () => api.get<RequirementPage>(`/api/v1/requirements?projectId=${project.id}`),
   });
   const items = requirements.data?.items ?? [];
-  const canCreate = project.status !== 'ARCHIVED' && (project.myRole === 'REQUESTER' || project.myRole === 'APPROVER');
+  const canCreate = project.status === 'ACTIVE' && (project.myRole === 'REQUESTER' || project.myRole === 'APPROVER');
   return (
     <Card
       title="Requirements"
@@ -315,11 +315,11 @@ function SettingsTab({ project }: { project: Project }) {
           <dd>{project.status === 'ARCHIVED' ? `Archived ${formatDate(project.archivedAt)}` : 'Active'}</dd>
         </dl>
       </Card>
-      {project.status !== 'ARCHIVED' && (
+      {(project.status === 'ACTIVE' || project.status === 'PENDING') && (
         <Card title="Archive project">
           <p className="small">
-            Archiving stops new requirements in this project. Members keep read access to existing requirements, and nothing
-            is deleted.
+            Archiving stops new requirements and stops billing for this project. Members keep read access to existing
+            requirements, and nothing is deleted.
           </p>
           <button type="button" className="btn-danger" onClick={() => void archive()}>
             <Icon name="archive" size={16} />
@@ -362,6 +362,8 @@ export function ProjectDetailPage() {
           <span className="row" style={{ gap: '0.75rem' }}>
             {p.name}
             {p.status === 'ARCHIVED' && <Badge tone="neutral">Archived</Badge>}
+            {p.status === 'PENDING' && <Badge tone="warning">Awaiting Garuda approval</Badge>}
+            {p.status === 'DECLINED' && <Badge tone="danger">Declined</Badge>}
           </span>
         }
         description={p.description || undefined}
@@ -372,6 +374,19 @@ export function ProjectDetailPage() {
           </span>
         }
       />
+      {p.status === 'PENDING' && (
+        <Callout tone="warning" title="Awaiting Garuda approval">
+          Garuda activates new projects before work starts. You can already add members; requirements can be created once the
+          project is active.
+        </Callout>
+      )}
+      {p.status === 'DECLINED' && <Callout tone="danger">Garuda declined this project. Contact your Garuda account team.</Callout>}
+      {p.status === 'ACTIVE' && p.planName && isOrgAdmin && (
+        <p className="small">
+          Plan: {p.planName}
+          {p.activatedAt ? ` · active since ${formatDate(p.activatedAt)}` : ''}
+        </p>
+      )}
       {isOrgAdmin && !p.myRole && (
         <Callout>
           You manage this project as Organisation Admin. To see its requirements, add yourself as a member (this is recorded

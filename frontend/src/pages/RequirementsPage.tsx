@@ -28,7 +28,7 @@ export function RequirementsPage() {
     queryFn: () => api.get<RequirementPage>(`/api/v1/requirements${query ? `?${query}` : ''}`),
   });
   const projectName = (id: string) => projects.data?.items.find((p) => p.id === id)?.name ?? '';
-  const canCreate = !!projects.data?.items.some((p) => p.myRole === 'REQUESTER' || p.myRole === 'APPROVER');
+  const canCreate = !!projects.data?.items.some((p) => p.status !== 'PENDING' && (p.myRole === 'REQUESTER' || p.myRole === 'APPROVER'));
   const items = requirements.data?.items ?? [];
 
   return (

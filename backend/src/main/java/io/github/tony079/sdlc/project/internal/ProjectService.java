@@ -139,8 +139,8 @@ class ProjectService implements ProjectAccess, io.github.tony079.sdlc.project.ap
     public ProjectRepository.Member addProjectMember(UUID projectId, UUID userId, ProjectRole role) {
         CurrentUser admin = ClientUsers.requireOrgAdmin();
         ProjectView project = get(projectId);
-        if (!"ACTIVE".equals(project.status())) {
-            throw ApiException.conflict("PROJECT_ARCHIVED", "Members cannot be added to an archived project.");
+        if (!"ACTIVE".equals(project.status()) && !"PENDING".equals(project.status())) {
+            throw ApiException.conflict("PROJECT_ARCHIVED", "Members cannot be added to an archived or declined project.");
         }
         if (role == null) {
             throw ApiException.validation("Choose a role: REQUESTER, APPROVER or VIEWER.");

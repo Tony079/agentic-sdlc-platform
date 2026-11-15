@@ -98,7 +98,8 @@ class RequirementService {
                     "You need the Requester or Approver role in this project to create requirements.");
         }
         if (!projects.isActive(projectId)) {
-            throw ApiException.conflict("PROJECT_ARCHIVED", "Requirements cannot be created in an archived project.");
+            throw ApiException.conflict("PROJECT_NOT_ACTIVE",
+                    "Requirements can be created only in an active project. New projects are activated by Garuda.");
         }
 
         UUID id = UUID.randomUUID();

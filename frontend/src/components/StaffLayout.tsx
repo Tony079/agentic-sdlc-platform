@@ -100,6 +100,11 @@ export function StaffLayout() {
               Onboarding &amp; status
             </Item>
           )}
+          {hasAny(staff, 'ORG_ONBOARD') && (
+            <Item to="/staff/billing" icon="layers">
+              Billing
+            </Item>
+          )}
           {hasAny(staff, 'STAFF_ADMIN') && (
             <Item to="/staff/team" icon="users">
               Team

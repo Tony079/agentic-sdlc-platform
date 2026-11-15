@@ -34,7 +34,7 @@ export function HomePage() {
   const waiting = myItems.filter((r) => WAITING_ON_CLIENT.has(r.state)).length;
   const shared = (visible.data?.items ?? []).filter((r) => r.state === 'SHARED_WITH_CLIENT').length;
   const projectName = (id: string) => projects.data?.items.find((p) => p.id === id)?.name ?? '';
-  const canRequest = !!projects.data?.items.some((p) => p.myRole === 'REQUESTER' || p.myRole === 'APPROVER');
+  const canRequest = !!projects.data?.items.some((p) => p.status !== 'PENDING' && (p.myRole === 'REQUESTER' || p.myRole === 'APPROVER'));
 
   return (
     <>

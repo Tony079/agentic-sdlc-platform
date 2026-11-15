@@ -28,6 +28,7 @@ import { StaffOperationsPage } from './pages/staff/StaffOperationsPage';
 import { StaffOrganisationDetailPage, StaffOrganisationsPage } from './pages/staff/StaffOrganisationsPage';
 import { StaffReviewPage } from './pages/staff/StaffReviewPage';
 import { StaffTeamPage } from './pages/staff/StaffTeamPage';
+import { StaffBillingPage } from './pages/staff/StaffBillingPage';
 
 /** Redirects to sign-in when there is no session. A convenience only: the API enforces authentication. */
 function RequireSession({ children }: { children: ReactNode }) {
@@ -67,6 +68,7 @@ export function App() {
         <Route path="organisations/:id" element={<StaffOrganisationDetailPage />} />
         <Route path="onboarding" element={<StaffOnboardingPage />} />
         <Route path="team" element={<StaffTeamPage />} />
+        <Route path="billing" element={<StaffBillingPage />} />
         <Route path="reviews/:versionId" element={<StaffReviewPage />} />
         <Route path="inbox" element={<StaffClarificationsPage />} />
         <Route path="operations" element={<StaffOperationsPage />} />

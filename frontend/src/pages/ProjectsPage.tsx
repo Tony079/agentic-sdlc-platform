@@ -34,7 +34,7 @@ export function ProjectFormModal({
         ? api.put<Project>(`/api/v1/projects/${project.id}`, { name: name.trim(), description: description.trim() || null })
         : api.post<Project>('/api/v1/projects', { name: name.trim(), description: description.trim() || null }),
     onSuccess: async (saved) => {
-      toast.success(project ? 'Project updated.' : `Project “${saved.name}” created.`);
+      toast.success(project ? 'Project updated.' : `Project “${saved.name}” requested. Garuda will review it.`);
       await queryClient.invalidateQueries({ queryKey: ['projects'] });
       await queryClient.invalidateQueries({ queryKey: ['project', saved.id] });
       onClose();
@@ -47,7 +47,11 @@ export function ProjectFormModal({
   return (
     <Modal
       title={project ? 'Edit project' : 'New project'}
-      description={project ? undefined : 'A project groups the requirements of one product or business area.'}
+      description={
+        project
+          ? undefined
+          : 'A project groups the requirements of one product or business area. Garuda approves new projects before work starts; billing begins on approval.'
+      }
       onClose={onClose}
       footer={
         <>
@@ -142,7 +146,15 @@ export function ProjectsPage() {
                 <span className="stat-icon">
                   <Icon name="folder" size={16} />
                 </span>
-                {project.status === 'ARCHIVED' ? <Badge tone="neutral">Archived</Badge> : <RoleBadge role={project.myRole} />}
+                {project.status === 'ARCHIVED' ? (
+                  <Badge tone="neutral">Archived</Badge>
+                ) : project.status === 'PENDING' ? (
+                  <Badge tone="warning">Awaiting Garuda approval</Badge>
+                ) : project.status === 'DECLINED' ? (
+                  <Badge tone="danger">Declined</Badge>
+                ) : (
+                  <RoleBadge role={project.myRole} />
+                )}
               </div>
               <div>
                 <h3 style={{ margin: 0 }}>{project.name}</h3>

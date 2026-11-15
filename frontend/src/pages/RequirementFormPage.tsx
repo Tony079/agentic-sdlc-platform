@@ -71,7 +71,7 @@ export function RequirementFormPage() {
   // GD-02: new requirements only in active projects where the user is a Requester or Approver (checked again by the
   // server). Projects without a role are absent for members; legacy responses without roles keep every project.
   const requestable = (projects.data?.items ?? []).filter(
-    (p) => p.status !== 'ARCHIVED' && (p.myRole === undefined || p.myRole === 'REQUESTER' || p.myRole === 'APPROVER'),
+    (p) => (p.status === undefined || p.status === 'ACTIVE') && (p.myRole === undefined || p.myRole === 'REQUESTER' || p.myRole === 'APPROVER'),
   );
 
   async function onSave(values: RequirementFormValues, submitAfterSave: boolean) {

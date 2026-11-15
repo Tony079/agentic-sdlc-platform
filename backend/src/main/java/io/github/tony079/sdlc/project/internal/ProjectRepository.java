@@ -26,7 +26,8 @@ class ProjectRepository {
     }
 
     private static final String SELECT = """
-            SELECT p.id, p.name, p.description, p.status, p.created_at, p.archived_at,
+            SELECT p.id, p.name, p.description, p.status, p.created_at, p.archived_at, p.activated_at,
+                   (SELECT b.name FROM app.billing_plan b WHERE b.id = p.plan_id) AS plan_name,
                    (SELECT m.role FROM app.project_member m WHERE m.project_id = p.id AND m.user_id = :me
                       AND m.removed_at IS NULL) AS my_role,
                    (SELECT count(*) FROM app.project_member m WHERE m.project_id = p.id AND m.removed_at IS NULL) AS members
@@ -40,7 +41,7 @@ class ProjectRepository {
     }
 
     List<ProjectView> findAll(UUID me, boolean includeArchived, int limit) {
-        return jdbc.sql(SELECT + (includeArchived ? "" : " WHERE p.status = 'ACTIVE'")
+        return jdbc.sql(SELECT + (includeArchived ? "" : " WHERE p.status IN ('PENDING', 'ACTIVE')")
                         + " ORDER BY p.status, lower(p.name), p.id LIMIT :limit")
                 .param("me", me).param("limit", limit).query(ProjectRepository::view).list();
     }
@@ -60,14 +61,14 @@ class ProjectRepository {
     }
 
     boolean update(UUID id, String name, String description) {
-        return jdbc.sql("UPDATE app.project SET name = :name, description = :description WHERE id = :id AND status = 'ACTIVE'")
+        return jdbc.sql("UPDATE app.project SET name = :name, description = :description WHERE id = :id AND status IN ('PENDING', 'ACTIVE')")
                 .param("id", id).param("name", name).param("description", description).update() == 1;
     }
 
     boolean archive(UUID id) {
         return jdbc.sql("""
                 UPDATE app.project SET status = 'ARCHIVED', archived_at = clock_timestamp()
-                WHERE id = :id AND status = 'ACTIVE'
+                WHERE id = :id AND status IN ('PENDING', 'ACTIVE')
                 """).param("id", id).update() == 1;
     }
 
@@ -133,7 +134,8 @@ class ProjectRepository {
         String role = rs.getString("my_role");
         return new ProjectView(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("description"),
                 rs.getString("status"), role == null ? null : ProjectRole.valueOf(role), rs.getInt("members"),
-                rs.getObject("created_at", OffsetDateTime.class), rs.getObject("archived_at", OffsetDateTime.class));
+                rs.getObject("created_at", OffsetDateTime.class), rs.getObject("archived_at", OffsetDateTime.class),
+                rs.getObject("activated_at", OffsetDateTime.class), rs.getString("plan_name"));
     }
 
     private static Member member(ResultSet rs, int n) throws SQLException {

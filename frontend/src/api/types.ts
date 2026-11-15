@@ -15,7 +15,9 @@ export interface Project {
   id: string;
   name: string;
   description?: string | null;
-  status?: 'ACTIVE' | 'ARCHIVED';
+  status?: 'PENDING' | 'ACTIVE' | 'DECLINED' | 'ARCHIVED';
+  activatedAt?: string | null;
+  planName?: string | null;
   /** The caller's project role, or null when not a member (an Organisation Admin sees every project). */
   myRole?: ProjectRole | null;
   memberCount?: number;
