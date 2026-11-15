@@ -38,7 +38,8 @@ class OrganisationOnboardingService {
     record OnboardingRequest(UUID id, String organisationName, String organisationSlug, String adminEmail,
                              String adminDisplayName, String status, UUID requestedBy, String requestedByName,
                              OffsetDateTime requestedAt, UUID approvedBy, String approvedByName,
-                             OffsetDateTime executedAt, UUID createdTenantId, String decisionNote) {
+                             OffsetDateTime executedAt, UUID createdTenantId, String decisionNote,
+                             OrganisationProfiles.Profile profile) {
     }
 
     record StatusRequest(UUID id, UUID tenantId, String organisationName, String kind, String status, String reason,
@@ -54,9 +55,12 @@ class OrganisationOnboardingService {
     private final StaffAccess staffAccess;
     private final PlatformAuditWriter platformAudit;
     private final AccountMail accountMail;
+    private final OrganisationProfiles profiles;
 
     OrganisationOnboardingService(JdbcClient jdbc, PlatformTransactionManager transactionManager,
-                                  StaffAccess staffAccess, PlatformAuditWriter platformAudit, AccountMail accountMail) {
+                                  StaffAccess staffAccess, PlatformAuditWriter platformAudit, AccountMail accountMail,
+                                  OrganisationProfiles profiles) {
+        this.profiles = profiles;
         this.jdbc = jdbc;
         this.tx = new TransactionTemplate(transactionManager);
         this.staffAccess = staffAccess;
@@ -72,7 +76,8 @@ class OrganisationOnboardingService {
         });
     }
 
-    OnboardingRequest requestOnboarding(String name, String slug, String adminEmail, String adminName) {
+    OnboardingRequest requestOnboarding(String name, String slug, String adminEmail, String adminName,
+                                        OrganisationProfiles.Profile requestedProfile) {
         String orgName = name == null ? "" : name.strip();
         String orgSlug = slug == null ? "" : slug.strip().toLowerCase(Locale.ROOT);
         String email = adminEmail == null ? "" : adminEmail.strip().toLowerCase(Locale.ROOT);
@@ -90,6 +95,7 @@ class OrganisationOnboardingService {
         if (admin.isEmpty() || admin.length() > 200) {
             throw ApiException.validation("Enter the first Organisation Admin's name.");
         }
+        OrganisationProfiles.Profile profile = profiles.validate(requestedProfile, email);
         UUID id;
         try {
             id = tx.execute(s -> {
@@ -102,9 +108,10 @@ class OrganisationOnboardingService {
                 }
                 return jdbc.sql("""
                         INSERT INTO app.organisation_onboarding_request (organisation_name, organisation_slug, admin_email,
-                                                                         admin_display_name, requested_by)
-                        VALUES (:name, :slug, :email, :admin, :staff) RETURNING id
+                                                                         admin_display_name, requested_by, profile)
+                        VALUES (:name, :slug, :email, :admin, :staff, CAST(:profile AS jsonb)) RETURNING id
                         """).param("name", orgName).param("slug", orgSlug).param("email", email).param("admin", admin)
+                        .param("profile", profiles.toJson(profile))
                         .param("staff", staff).query(UUID.class).single();
             });
         } catch (DuplicateKeyException e) {
@@ -149,6 +156,10 @@ class OrganisationOnboardingService {
                 jdbc.sql("INSERT INTO app.tenant (id, slug, name, status) VALUES (:id, :slug, :name, 'ACTIVE')")
                         .param("id", tenantId).param("slug", request.organisationSlug())
                         .param("name", request.organisationName()).update();
+                // GD-17: the organisation record, before any user, so that allowed domains apply to the first admin.
+                if (request.profile() != null) {
+                    profiles.save(tenantId, request.profile());
+                }
                 UUID adminId = jdbc.sql("""
                         INSERT INTO app.app_user (tenant_id, email, display_name, role, status)
                         VALUES (:tenant, :email, :name, 'ORG_ADMIN', 'INVITED') RETURNING id
@@ -293,7 +304,7 @@ class OrganisationOnboardingService {
     private static final String ONBOARDING_SELECT = """
             SELECT r.id, r.organisation_name, r.organisation_slug, r.admin_email, r.admin_display_name, r.status,
                    r.requested_by, rq.display_name, r.requested_at, r.approved_by, ap.display_name, r.executed_at,
-                   r.created_tenant_id, r.decision_note
+                   r.created_tenant_id, r.decision_note, CASE WHEN r.profile = '{}'::jsonb THEN NULL ELSE r.profile::text END
             FROM app.organisation_onboarding_request r
             JOIN app.staff_user rq ON rq.id = r.requested_by
             LEFT JOIN app.staff_user ap ON ap.id = r.approved_by
@@ -331,11 +342,11 @@ class OrganisationOnboardingService {
         return TenantContext.currentActor().orElse(null);
     }
 
-    private static OnboardingRequest onboarding(java.sql.ResultSet rs) throws java.sql.SQLException {
+    private OnboardingRequest onboarding(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new OnboardingRequest(rs.getObject(1, UUID.class), rs.getString(2), rs.getString(3), rs.getString(4),
                 rs.getString(5), rs.getString(6), rs.getObject(7, UUID.class), rs.getString(8),
                 rs.getObject(9, OffsetDateTime.class), rs.getObject(10, UUID.class), rs.getString(11),
-                rs.getObject(12, OffsetDateTime.class), rs.getObject(13, UUID.class), rs.getString(14));
+                rs.getObject(12, OffsetDateTime.class), rs.getObject(13, UUID.class), rs.getString(14), profiles.fromJson(rs.getString(15)));
     }
 
     private static StatusRequest status(java.sql.ResultSet rs) throws java.sql.SQLException {

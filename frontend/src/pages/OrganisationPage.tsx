@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import type { OrganisationSummary, TenantLifecycleRequest } from '../api/types';
 import { Badge, Callout, Card, CopyField, PageHeader, formatDateTime } from '../ui/components';
+import { OrganisationProfileView } from '../components/OrganisationProfileForm';
 
 /**
  * Organisation settings for Organisation Admins: the sign-in address, email delivery status and, as the last resort,
@@ -70,7 +71,7 @@ export function OrganisationPage() {
               <Badge tone="success">Password and authenticator</Badge>
             </dd>
             <dt>Member sign-in</dt>
-            <dd>Password (at least 12 characters)</dd>
+            <dd>{s?.profile?.mfaPolicy === 'ALL_USERS' ? 'Password and authenticator' : 'Password (at least 12 characters)'}</dd>
             <dt>Invitation email</dt>
             <dd>
               {s?.emailConfigured ? (
@@ -84,6 +85,12 @@ export function OrganisationPage() {
           </dl>
         </Card>
       </div>
+      {s?.profile && (
+        <Card title="Organisation record">
+          <p className="small">Maintained by Garuda. To change it, contact your Garuda account team.</p>
+          <OrganisationProfileView profile={s.profile} />
+        </Card>
+      )}
       <Card title="Delete organisation">
         <p className="small">
           Deletion is a soft deletion: access stops for everyone in your organisation, and data is kept under the agreed

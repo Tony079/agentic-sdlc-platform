@@ -42,7 +42,29 @@ export interface MfaEnrolment {
   otpauthUri: string;
 }
 
+export interface OrganisationProfile {
+  legalName: string;
+  displayName: string;
+  industry?: string | null;
+  country?: string | null;
+  address?: string | null;
+  website?: string | null;
+  billingContactName?: string | null;
+  billingContactEmail?: string | null;
+  technicalContactName?: string | null;
+  technicalContactEmail?: string | null;
+  supportEmail?: string | null;
+  contractRef?: string | null;
+  contractStart?: string | null;
+  renewalDate?: string | null;
+  userLimit?: number | null;
+  allowedEmailDomains: string[];
+  dataRegion?: string | null;
+  mfaPolicy: 'ADMINS' | 'ALL_USERS';
+}
+
 export interface OrganisationSummary {
+  profile?: OrganisationProfile | null;
   id: string;
   name: string;
   slug: string;
@@ -164,6 +186,7 @@ export interface OnboardingRequest {
   executedAt: string | null;
   createdTenantId: string | null;
   decisionNote: string | null;
+  profile?: OrganisationProfile | null;
 }
 
 export interface OnboardingApproved {
@@ -600,4 +623,39 @@ export interface StaffApproved {
   request: StaffRequest | null;
   link: string | null;
   emailStatus: 'NOT_SENT' | 'SENT' | 'FAILED' | null;
+}
+
+// Garuda actions on one organisation: its record and its Organisation Admins (GD-16, GD-17)
+
+export type OrgAdminRequestKind = 'INVITE_ADMIN' | 'DISABLE_ADMIN' | 'REACTIVATE_ADMIN' | 'RESET_ADMIN_MFA' | 'UPDATE_PROFILE';
+
+export interface OrgAdminRequest {
+  id: string;
+  tenantId: string;
+  organisationName: string;
+  kind: OrgAdminRequestKind;
+  subjectUserId: string | null;
+  subjectName: string | null;
+  inviteEmail: string | null;
+  inviteDisplayName: string | null;
+  profile: OrganisationProfile | null;
+  reason: string;
+  status: 'REQUESTED' | 'EXECUTED' | 'REJECTED' | 'CANCELLED';
+  requestedBy: string;
+  requestedByName: string;
+  requestedAt: string;
+  approvedBy: string | null;
+  approvedByName: string | null;
+  executedAt: string | null;
+}
+
+export interface OrganisationRecord {
+  tenantId: string;
+  name: string;
+  slug: string;
+  status: string;
+  profile: OrganisationProfile | null;
+  updatedAt: string | null;
+  admins: { id: string; displayName: string; email: string; status: string; mfaEnrolled: boolean; invitationExpiresAt: string | null }[];
+  requests: OrgAdminRequest[];
 }

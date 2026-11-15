@@ -2,7 +2,9 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '../../api/client';
-import type { OnboardingApproved, OnboardingRequest, OrganisationStatusRequest } from '../../api/types';
+import type { OnboardingApproved, OnboardingRequest, OrgAdminRequest, OrganisationProfile, OrganisationStatusRequest } from '../../api/types';
+import { OrgAdminRequestTable } from './OrganisationRecordPanel';
+import { EMPTY_PROFILE, OrganisationProfileForm, cleanProfile } from '../../components/OrganisationProfileForm';
 import { useStaffMe } from '../../components/StaffLayout';
 import { Icon } from '../../ui/Icon';
 import { useToast } from '../../ui/Toast';
@@ -64,6 +66,7 @@ function RequestModal({ onClose }: { onClose: () => void }) {
   const [slugEdited, setSlugEdited] = useState(false);
   const [adminName, setAdminName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
+  const [profile, setProfile] = useState<OrganisationProfile>(EMPTY_PROFILE);
   const create = useMutation({
     mutationFn: () =>
       api.post<OnboardingRequest>('/api/v1/staff/organisation-requests', {
@@ -71,6 +74,16 @@ function RequestModal({ onClose }: { onClose: () => void }) {
         slug: slug.trim(),
         adminEmail: adminEmail.trim(),
         adminDisplayName: adminName.trim(),
+        profile: cleanProfile({
+          ...profile,
+          legalName: profile.legalName || name.trim(),
+          displayName: profile.displayName || name.trim(),
+          allowedEmailDomains: profile.allowedEmailDomains.filter(Boolean).length
+            ? profile.allowedEmailDomains.filter(Boolean)
+            : adminEmail.includes('@')
+              ? [adminEmail.split('@')[1]!.trim().toLowerCase()]
+              : [],
+        }),
       }),
     onSuccess: async () => {
       toast.success('Onboarding requested. A second administrator must approve it.');
@@ -142,6 +155,12 @@ function RequestModal({ onClose }: { onClose: () => void }) {
             <input type="email" value={adminEmail} maxLength={320} onChange={(e) => setAdminEmail(e.target.value)} required />
           </label>
         </div>
+        <hr />
+        <p className="small">
+          Organisation record. Legal and display name default to the name above; allowed email domains default to the
+          admin&apos;s email domain.
+        </p>
+        <OrganisationProfileForm value={profile} onChange={setProfile} />
         {create.isError && <ErrorText>{message(create.error, 'The request could not be recorded.')}</ErrorText>}
       </form>
     </Modal>
@@ -190,7 +209,7 @@ export function StaffOnboardingPage() {
   const me = useStaffMe();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [tab, setTab] = useState<'onboarding' | 'status'>('onboarding');
+  const [tab, setTab] = useState<'onboarding' | 'admins' | 'status'>('onboarding');
   const [requesting, setRequesting] = useState(false);
   const [approved, setApproved] = useState<OnboardingApproved | null>(null);
   const onboarding = useQuery({
@@ -202,6 +221,10 @@ export function StaffOnboardingPage() {
     queryFn: () => api.get<OrganisationStatusRequest[]>('/api/v1/staff/organisation-status-requests'),
   });
   const myId = me.data?.staffId;
+  const adminRequests = useQuery({
+    queryKey: ['org-admin-requests'],
+    queryFn: () => api.get<OrgAdminRequest[]>('/api/v1/staff/organisation-admin-requests'),
+  });
   const canOnboard = !!me.data?.capabilities.includes('ORG_ONBOARD');
 
   async function approve(request: OnboardingRequest) {
@@ -256,6 +279,7 @@ export function StaffOnboardingPage() {
         onChange={setTab}
         tabs={[
           { id: 'onboarding', label: 'Onboarding', count: open.length },
+          { id: 'admins', label: 'Admin & record changes', count: (adminRequests.data ?? []).filter((r) => r.status === 'REQUESTED').length },
           { id: 'status', label: 'Suspension & reactivation', count: openStatus.length },
         ]}
       />
@@ -352,6 +376,11 @@ export function StaffOnboardingPage() {
               </table>
             </div>
           )}
+        </Card>
+      )}
+      {tab === 'admins' && (
+        <Card title="Organisation Admin and record changes" flush>
+          {adminRequests.isPending ? <div className="card-body"><Loading /></div> : <OrgAdminRequestTable requests={adminRequests.data ?? []} showOrganisation />}
         </Card>
       )}
       {tab === 'status' && (

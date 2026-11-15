@@ -79,7 +79,9 @@ class StaffRepository {
     boolean hasCapability(UUID staffId, StaffCapability capability) {
         return jdbc.sql("""
                 SELECT count(*) FROM app.staff_capability_grant
-                WHERE staff_id = :staff AND capability = :capability AND revoked_at IS NULL
+                WHERE staff_id = :staff AND revoked_at IS NULL
+                  AND (capability = :capability
+                       OR (capability = 'STAFF_ADMIN' AND :capability IN ('ORG_ONBOARD', 'AUDITOR')))
                 """).param("staff", staffId).param("capability", capability.name()).query(Integer.class).single() > 0;
     }
 
@@ -108,7 +110,12 @@ class StaffRepository {
 
     List<String> capabilities(UUID staffId) {
         return jdbc.sql("""
-                SELECT capability FROM app.staff_capability_grant WHERE staff_id = :staff AND revoked_at IS NULL ORDER BY 1
+                -- GD-16: STAFF_ADMIN (Garuda Admin) includes onboarding and the dashboard.
+                SELECT DISTINCT c FROM (
+                  SELECT capability AS c FROM app.staff_capability_grant WHERE staff_id = :staff AND revoked_at IS NULL
+                  UNION ALL
+                  SELECT unnest(ARRAY['ORG_ONBOARD', 'AUDITOR']) FROM app.staff_capability_grant
+                  WHERE staff_id = :staff AND revoked_at IS NULL AND capability = 'STAFF_ADMIN') x ORDER BY 1
                 """).param("staff", staffId).query(String.class).list();
     }
 }

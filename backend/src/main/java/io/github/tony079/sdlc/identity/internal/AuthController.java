@@ -97,7 +97,7 @@ class AuthController {
         CurrentUser user = authenticated.get();
 
         // GD-08: an Organisation Admin completes sign-in only after TOTP (enrolling it the first time).
-        if (user.orgAdmin() && orgAdminMfaRequired) {
+        if ((user.orgAdmin() && orgAdminMfaRequired) || mfa.requiredForAllUsers(user.tenantId())) {
             boolean enrolled = mfa.enrolled(user.tenantId(), user.userId());
             establish(new ClientMfaPending(user, enrolled), List.of(ClientMfaPending.AUTHORITY), request, response);
             return new MfaStatus(enrolled ? "MFA_REQUIRED" : "MFA_ENROLMENT_REQUIRED");

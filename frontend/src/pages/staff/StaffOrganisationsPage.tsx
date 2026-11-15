@@ -9,7 +9,6 @@ import { useToast } from '../../ui/Toast';
 import {
   BackLink,
   Badge,
-  Card,
   EmptyState,
   ErrorText,
   Loading,
@@ -22,6 +21,7 @@ import {
   relativeTime,
 } from '../../ui/components';
 import { BottleneckTable, OrganisationTable } from './StaffDashboardPage';
+import { OrganisationRecordPanel } from './OrganisationRecordPanel';
 
 export function StaffOrganisationsPage() {
   const overview = useQuery({
@@ -140,7 +140,7 @@ function StatusRequestModal({
 export function StaffOrganisationDetailPage() {
   const { id = '' } = useParams();
   const me = useStaffMe();
-  const [tab, setTab] = useState<'requirements' | 'projects' | 'bottlenecks'>('requirements');
+  const [tab, setTab] = useState<'record' | 'requirements' | 'projects' | 'bottlenecks'>('record');
   const [statusKind, setStatusKind] = useState<'SUSPEND' | 'REACTIVATE' | null>(null);
   const detail = useQuery({
     queryKey: ['staff-organisation', id],
@@ -191,34 +191,18 @@ export function StaffOrganisationDetailPage() {
         <Stat icon="file" label="Open requirements" value={o.openRequirements} meta={`${o.requirements} in total`} />
         <Stat icon="alert" label="Bottlenecks" value={o.bottlenecks} />
       </div>
-      <Card title="Organisation Admins" flush>
-        {o.admins.length === 0 ? (
-          <EmptyState icon="shield" title="No Organisation Admin" />
-        ) : (
-          <ul className="list">
-            {o.admins.map((a) => (
-              <li key={a.email}>
-                <Icon name="shield" />
-                <div className="grow">
-                  <div className="title">{a.displayName}</div>
-                  <span className="small">{a.email}</span>
-                </div>
-                {a.status === 'INVITED' ? <Badge tone="warning">Invited</Badge> : <Badge tone="success">Active</Badge>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
       <Tabs
         label="Organisation sections"
         value={tab}
         onChange={setTab}
         tabs={[
+          { id: 'record', label: 'Record & admins' },
           { id: 'requirements', label: 'Requirements', count: requirements.length },
           { id: 'projects', label: 'Projects', count: projects.length },
           { id: 'bottlenecks', label: 'Bottlenecks', count: stuck.length },
         ]}
       />
+      {tab === 'record' && <OrganisationRecordPanel tenantId={o.id} />}
       {tab === 'requirements' && (
         <div className="card card-flush">
           {requirements.length === 0 ? (

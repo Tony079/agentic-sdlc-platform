@@ -26,7 +26,7 @@ import {
 
 /** What each capability lets a staff member do, shown when inviting and granting. */
 export const CAPABILITIES: { id: string; label: string; help: string }[] = [
-  { id: 'STAFF_ADMIN', label: 'Staff administrator', help: 'Requests and approves changes to Garuda staff; sees the dashboard.' },
+  { id: 'STAFF_ADMIN', label: 'Garuda Admin', help: 'Onboards organisations, manages their admins and Garuda staff; sees the dashboard. Every action needs a second Garuda Admin.' },
   { id: 'ORG_ONBOARD', label: 'Organisation onboarding', help: 'Onboards, suspends and reactivates client organisations.' },
   { id: 'AUDITOR', label: 'Auditor', help: 'Read-only access to the dashboard.' },
   { id: 'BUSINESS_ANALYST', label: 'Business analyst', help: 'Assesses client change requests.' },

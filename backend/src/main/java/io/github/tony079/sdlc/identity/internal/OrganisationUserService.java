@@ -49,7 +49,8 @@ class OrganisationUserService {
     }
 
     record OrganisationSummary(UUID id, String name, String slug, int activeUsers, int invitedUsers,
-                               int deactivatedUsers, int organisationAdmins, boolean emailConfigured) {
+                               int deactivatedUsers, int organisationAdmins, boolean emailConfigured,
+                               OrganisationProfiles.Profile profile) {
     }
 
     record MembershipRequest(UUID projectId, ProjectRole role) {
@@ -64,9 +65,11 @@ class OrganisationUserService {
     private final AuditWriter audit;
     private final ProjectAdministration projects;
     private final AccountMail accountMail;
+    private final OrganisationProfiles profiles;
 
     OrganisationUserService(JdbcClient jdbc, PlatformTransactionManager transactionManager, AuditWriter audit,
-                            ProjectAdministration projects, AccountMail accountMail) {
+                            ProjectAdministration projects, AccountMail accountMail, OrganisationProfiles profiles) {
+        this.profiles = profiles;
         this.jdbc = jdbc;
         this.tx = new TransactionTemplate(transactionManager);
         this.audit = audit;
@@ -87,7 +90,8 @@ class OrganisationUserService {
                 """).param("tenant", admin.tenantId())
                 .query((rs, n) -> new OrganisationSummary(rs.getObject(1, UUID.class), rs.getString(2),
                         rs.getString(3), rs.getInt(4), rs.getInt(5), rs.getInt(6), rs.getInt(7),
-                        accountMail.configured()))
+                        accountMail.configured(),
+                        profiles.find(admin.tenantId()).map(OrganisationProfiles.StoredProfile::profile).orElse(null)))
                 .single());
     }
 
@@ -153,6 +157,12 @@ class OrganisationUserService {
             });
         } catch (DuplicateKeyException e) {
             throw ApiException.conflict("USER_EXISTS", "A user with this email already exists in the organisation.");
+        } catch (DataAccessException e) {
+            if (Optional.ofNullable(e.getMostSpecificCause().getMessage()).orElse("").contains("email domain is not allowed")) {
+                throw ApiException.validation("This email domain is not allowed for your organisation. Ask Garuda to add it to"
+                        + " the allowed domains.");
+            }
+            throw e;
         }
         return deliver(message);
     }

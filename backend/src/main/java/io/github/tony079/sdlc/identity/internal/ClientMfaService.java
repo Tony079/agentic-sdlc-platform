@@ -36,6 +36,13 @@ class ClientMfaService {
         this.clock = Clock.systemUTC();
     }
 
+    /** GD-17: the organisation's record may require TOTP of every user, not only Organisation Admins. */
+    boolean requiredForAllUsers(UUID tenant) {
+        return Boolean.TRUE.equals(TenantContext.callAs(tenant, () -> tx.execute(s -> jdbc.sql(
+                "SELECT mfa_policy = 'ALL_USERS' FROM app.tenant_profile WHERE profile_tenant_id = :t")
+                .param("t", tenant).query(Boolean.class).optional().orElse(false))));
+    }
+
     boolean enrolled(UUID tenant, UUID user) {
         return state(tenant, user).map(MfaState::enrolled).orElse(false);
     }

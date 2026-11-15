@@ -54,3 +54,5 @@ databaseChangeLog:
   - include: { file: changes/0030-garuda-organisations.sql, relativeToChangelogFile: true }
   # GD-15 (2026-11-13): staff administration in the Garuda console, two-person requests, staff invitations.
   - include: { file: changes/0031-staff-administration.sql, relativeToChangelogFile: true }
+  # GD-16/GD-17 (2026-11-15): Garuda Admin role, organisation record, Organisation Admins managed by Garuda.
+  - include: { file: changes/0032-garuda-admins-organisation-record.sql, relativeToChangelogFile: true }

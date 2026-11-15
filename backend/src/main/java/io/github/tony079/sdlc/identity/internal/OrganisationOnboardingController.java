@@ -25,7 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 class OrganisationOnboardingController {
 
     record OnboardingBody(@NotNull @Size(max = 200) String organisationName, @NotNull @Size(max = 63) String slug,
-                          @NotNull @Size(max = 320) String adminEmail, @NotNull @Size(max = 200) String adminDisplayName) {
+                          @NotNull @Size(max = 320) String adminEmail, @NotNull @Size(max = 200) String adminDisplayName,
+                          OrganisationProfiles.Profile profile) {
     }
 
     record NoteBody(@Size(max = 2000) String note) {
@@ -49,7 +50,7 @@ class OrganisationOnboardingController {
     @ResponseStatus(HttpStatus.CREATED)
     OnboardingRequest request(@Valid @RequestBody OnboardingBody body) {
         return onboarding.requestOnboarding(body.organisationName(), body.slug(), body.adminEmail(),
-                body.adminDisplayName());
+                body.adminDisplayName(), body.profile());
     }
 
     @PostMapping("/api/v1/staff/organisation-requests/{id}/approve")

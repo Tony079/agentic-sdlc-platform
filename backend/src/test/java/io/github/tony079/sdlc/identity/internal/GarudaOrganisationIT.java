@@ -83,8 +83,15 @@ class GarudaOrganisationIT extends ApiIntegrationTest {
 
     private Enrolled onboarder() {
         Enrolled member = StaffFixtures.createEnrolled(StaffFixtures.uniqueEmail("onboard"), AnalysisScenario.PASSWORD);
-        StaffFixtures.grant(member.email(), StaffCapability.ORG_ONBOARD);
+        // GD-16: the Garuda Admin role (STAFF_ADMIN) includes onboarding.
+        StaffFixtures.grant(member.email(), StaffCapability.STAFF_ADMIN);
         return member;
+    }
+
+    static Map<String, Object> profile(String... domains) {
+        return Map.of("legalName", "Garuda Client Private Limited", "displayName", "Garuda Client", "industry", "Insurance",
+                "country", "India", "billingContactEmail", "billing@" + domains[0], "allowedEmailDomains", List.of(domains),
+                "mfaPolicy", "ADMINS");
     }
 
     private static String token(String link) {
@@ -131,8 +138,13 @@ class GarudaOrganisationIT extends ApiIntegrationTest {
         assertThat(staffC.get("/api/v1/staff/organisation-requests").status()).isEqualTo(403);
         assertThat(staffA.post("/api/v1/staff/organisation-requests", Map.of("organisationName", "Bad", "slug", "-x",
                 "adminEmail", adminEmail, "adminDisplayName", "First Admin")).status()).isEqualTo(422);
+        // GD-17: the organisation record is mandatory, and the admin's email must be in an allowed domain.
+        assertThat(staffA.post("/api/v1/staff/organisation-requests", Map.of("organisationName", "Garuda Client " + suffix,
+                "slug", slug, "adminEmail", adminEmail, "adminDisplayName", "First Admin", "profile",
+                profile("other.test"))).status()).isEqualTo(422);
         Response requested = staffA.post("/api/v1/staff/organisation-requests", Map.of("organisationName",
-                "Garuda Client " + suffix, "slug", slug, "adminEmail", adminEmail, "adminDisplayName", "First Admin"));
+                "Garuda Client " + suffix, "slug", slug, "adminEmail", adminEmail, "adminDisplayName", "First Admin",
+                "profile", profile(slug + ".test")));
         assertThat(requested.status()).as(requested.body().toString()).isEqualTo(201);
         String requestId = requested.body().path("id").asString();
         assertThat(staffA.post("/api/v1/staff/organisation-requests/" + requestId + "/approve", Map.of()).errorCode())
@@ -295,6 +307,69 @@ class GarudaOrganisationIT extends ApiIntegrationTest {
         assertThat(admin.queryForList("SELECT action FROM app.audit_event WHERE tenant_id = ?", String.class, tenantId))
                 .contains("USER_INVITED", "USER_INVITATION_ACCEPTED", "USER_ROLE_CHANGED", "USER_DEACTIVATED",
                         "USER_REACTIVATED", "PASSWORD_RESET_REQUESTED", "PASSWORD_RESET_COMPLETED");
+    }
+
+    @Test
+    void garudaAdminsManageOrganisationAdminsAndTheRecordButNotOtherUsers() {
+        ApiClient staffA = staff(onboarder());
+        ApiClient staffB = staff(onboarder());
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String slug = "admins-" + suffix;
+        String domain = slug + ".test";
+        String requestId = staffA.post("/api/v1/staff/organisation-requests", Map.of("organisationName", "Admins " + suffix,
+                "slug", slug, "adminEmail", "first@" + domain, "adminDisplayName", "First Admin",
+                "profile", profile(domain))).body().path("id").asString();
+        Response approved = staffB.post("/api/v1/staff/organisation-requests/" + requestId + "/approve", Map.of());
+        String tenantId = approved.body().path("request").path("createdTenantId").asString();
+        client().post("/api/v1/public/invitations/accept", Map.of("organisation", slug,
+                "token", token(approved.body().path("invitationLink").asString()), "password", PASSWORD));
+        ApiClient first = client();
+        assertThat(first.login(slug, "first@" + domain, PASSWORD).status()).isEqualTo(200);
+        assertThat(first.get("/api/v1/organisation").body().path("profile").path("legalName").asString())
+                .isEqualTo("Garuda Client Private Limited");
+
+        // A second Organisation Admin: wrong domain refused; requester cannot approve; approver sends the link.
+        String base = "/api/v1/staff/organisations/" + tenantId + "/admin-requests";
+        assertThat(staffA.post(base, Map.of("kind", "INVITE_ADMIN", "email", "second@elsewhere.test",
+                "displayName", "Second Admin", "reason", "Cover for holidays.")).status()).isEqualTo(422);
+        String invite = staffA.post(base, Map.of("kind", "INVITE_ADMIN", "email", "second@" + domain,
+                "displayName", "Second Admin", "reason", "Cover for holidays.")).body().path("id").asString();
+        assertThat(staffA.post("/api/v1/staff/organisation-admin-requests/" + invite + "/approve", Map.of()).errorCode())
+                .isEqualTo("SECOND_APPROVER_REQUIRED");
+        Response invited = staffB.post("/api/v1/staff/organisation-admin-requests/" + invite + "/approve", Map.of());
+        assertThat(invited.status()).as(invited.body().toString()).isEqualTo(200);
+        assertThat(client().post("/api/v1/public/invitations/accept", Map.of("organisation", slug,
+                "token", token(invited.body().path("link").asString()), "password", PASSWORD)).status()).isEqualTo(204);
+
+        // Organisation users are the Organisation Admin's business: Garuda sees and targets admins only.
+        String memberId = first.post("/api/v1/organisation/users", Map.of("email", "member@" + domain,
+                "displayName", "Member", "role", "MEMBER")).body().path("userId").asString();
+        Response record = staffA.get("/api/v1/staff/organisations/" + tenantId + "/record");
+        assertThat(record.body().path("admins").size()).isEqualTo(2);
+        assertThat(record.body().toString()).doesNotContain("member@" + domain);
+        assertThat(staffA.post(base, Map.of("kind", "DISABLE_ADMIN", "subjectUserId", memberId,
+                "reason", "Not allowed.")).status()).isEqualTo(422);
+
+        // Disable the first admin (two people): their sign-in ends.
+        String firstId = first.get("/api/v1/me").body().path("userId").asString();
+        String disable = staffB.post(base, Map.of("kind", "DISABLE_ADMIN", "subjectUserId", firstId,
+                "reason", "Left the company.")).body().path("id").asString();
+        assertThat(staffA.post("/api/v1/staff/organisation-admin-requests/" + disable + "/approve", Map.of()).status())
+                .isEqualTo(200);
+        assertThat(first.get("/api/v1/me").status()).isEqualTo(401);
+
+        // The record changes by two people; new domains apply to the organisation's own invitations.
+        Map<String, Object> wider = new java.util.HashMap<>(profile(domain, "partner.test"));
+        String update = staffA.post(base, Map.of("kind", "UPDATE_PROFILE", "profile", wider,
+                "reason", "Add the partner domain.")).body().path("id").asString();
+        assertThat(staffB.post("/api/v1/staff/organisation-admin-requests/" + update + "/approve", Map.of()).status())
+                .isEqualTo(200);
+        ApiClient second = client();
+        assertThat(second.login(slug, "second@" + domain, PASSWORD).status()).isEqualTo(200);
+        assertThat(second.post("/api/v1/organisation/users", Map.of("email", "p@partner.test", "displayName", "Partner",
+                "role", "MEMBER")).status()).isEqualTo(201);
+        assertThat(second.post("/api/v1/organisation/users", Map.of("email", "x@nope.test", "displayName", "Nope",
+                "role", "MEMBER")).status()).isEqualTo(422);
     }
 
     @Test
