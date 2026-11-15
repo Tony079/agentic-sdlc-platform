@@ -47,7 +47,12 @@ const ERRORS: Record<string, string> = {
 };
 
 function message(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) return ERRORS[error.code] ?? (error.status === 422 ? error.message : fallback);
+  if (error instanceof ApiError) {
+    if (error.status === 403 && !ERRORS[error.code]) {
+      return 'You need the “Organisation onboarding” capability. Ask a staff administrator to grant it in Team.';
+    }
+    return ERRORS[error.code] ?? (error.status === 422 || error.status === 409 ? error.message : fallback);
+  }
   return fallback;
 }
 
@@ -197,6 +202,7 @@ export function StaffOnboardingPage() {
     queryFn: () => api.get<OrganisationStatusRequest[]>('/api/v1/staff/organisation-status-requests'),
   });
   const myId = me.data?.staffId;
+  const canOnboard = !!me.data?.capabilities.includes('ORG_ONBOARD');
 
   async function approve(request: OnboardingRequest) {
     if (!window.confirm(`Create ${request.organisationName} and invite ${request.adminEmail} as its first Organisation Admin?`)) return;
@@ -230,12 +236,20 @@ export function StaffOnboardingPage() {
         title="Onboarding & status"
         description="Every new organisation, suspension and reactivation needs two Garuda administrators: one requests, another approves."
         actions={
-          <button type="button" className="btn-primary" onClick={() => setRequesting(true)}>
-            <Icon name="plus" size={16} />
-            Onboard organisation
-          </button>
+          canOnboard && (
+            <button type="button" className="btn-primary" onClick={() => setRequesting(true)}>
+              <Icon name="plus" size={16} />
+              Onboard organisation
+            </button>
+          )
         }
       />
+      {me.data && !canOnboard && (
+        <Callout tone="warning" title="You don’t have the “Organisation onboarding” capability">
+          Onboarding needs two staff members who hold it: one requests, the other approves. A staff administrator grants it in
+          Team (approved by a second administrator). Nobody can grant it to themselves.
+        </Callout>
+      )}
       <Tabs
         label="Request types"
         value={tab}
