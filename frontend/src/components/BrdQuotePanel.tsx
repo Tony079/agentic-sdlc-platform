@@ -11,6 +11,7 @@ interface Quote {
   estimated: boolean;
   documents: number;
   hasRepository: boolean;
+  repositories: number;
   textChars: number;
   currency: string;
   listPrice: number;
@@ -41,6 +42,8 @@ export function BrdQuotePanel({ requirementId }: { requirementId: string }) {
         throw e;
       }
     },
+    // While the quote is open it follows the inputs (documents processed, repositories pinned).
+    refetchInterval: (q) => (q.state.data?.status === 'PROPOSED' ? 5000 : false),
   });
   if (!quote.data?.status || !quote.data.size) return null;
   const q = quote.data;
@@ -77,7 +80,8 @@ export function BrdQuotePanel({ requirementId }: { requirementId: string }) {
         <dt>Based on</dt>
         <dd className="small">
           {q.documents} document{q.documents === 1 ? '' : 's'}
-          {q.hasRepository ? ', an existing repository' : ''}, {(q.textChars ?? 0).toLocaleString()} characters of requirement text
+          {q.repositories > 0 ? `, ${q.repositories} repositor${q.repositories === 1 ? 'y' : 'ies'}` : ''},{' '}
+          {(q.textChars ?? 0).toLocaleString()} characters of requirement text
         </dd>
         <dt>Price</dt>
         <dd>

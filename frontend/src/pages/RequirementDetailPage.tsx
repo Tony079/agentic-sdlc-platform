@@ -135,6 +135,9 @@ export function RequirementDetailPage() {
       queryClient.setQueryData(['requirement', id], updated);
       await queryClient.invalidateQueries({ queryKey: ['requirement', id, 'timeline'] });
       await queryClient.invalidateQueries({ queryKey: ['requirements'] });
+      // Submission opens the BRD quote and the analysed sources.
+      await queryClient.invalidateQueries({ queryKey: ['brd-quote', id] });
+      await queryClient.invalidateQueries({ queryKey: ['sources', id] });
       setCancelling(false);
       setReason('');
     } catch (error) {

@@ -29,6 +29,10 @@ class BrdQuoteGate implements BrdQuotes {
         if (planId == null) {
             return;
         }
+        // Documents attached before submission count from the start (the worker refreshes the quote later).
+        int documents = jdbc.sql("SELECT count(*) FROM app.document WHERE requirement_id = :r AND removed_at IS NULL")
+                .param("r", requirementId).query(Integer.class).single();
+        basis = new Basis(Math.max(basis.documents(), documents), basis.repositories(), basis.textChars());
         String size = BrdSizing.size(basis);
         Object[] price = price(planId, size);
         jdbc.sql("""
