@@ -113,6 +113,10 @@ sdlc:
     # local development and tests only. Never accepted from a request.
     provider: ${SDLC_MODEL_PROVIDER:none}
     model-id: ${SDLC_MODEL_ID:}
+    # Azure OpenAI in Microsoft Foundry: the resource endpoint (or any URL of it); the key is the secret
+    # llm.azure-openai-key (SDLC_SECRET_LLM_AZURE_OPENAI_KEY). model-id is the deployment name.
+    azure:
+      endpoint: ${SDLC_MODEL_AZURE_ENDPOINT:}
     timeout: 120s
     max-transient-retries: 2
     retry-backoff: 2s

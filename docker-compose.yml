@@ -131,6 +131,14 @@ services:
       SDLC_GITHUB_ENABLED: ${SDLC_GITHUB_ENABLED:-false}
       SDLC_GITHUB_APP_ID: ${SDLC_GITHUB_APP_ID:-}
       SDLC_GITHUB_PRIVATE_KEY_FILE: ${SDLC_GITHUB_PRIVATE_KEY_FILE:-}
+      # BA agent model (O-01). "none" keeps all data on this machine and analysis waits.
+      SDLC_MODEL_PROVIDER: ${SDLC_MODEL_PROVIDER:-none}
+      SDLC_MODEL_ID: ${SDLC_MODEL_ID:-}
+      SDLC_MODEL_AZURE_ENDPOINT: ${SDLC_MODEL_AZURE_ENDPOINT:-}
+      SDLC_SECRET_LLM_AZURE_OPENAI_KEY: ${SDLC_AZURE_OPENAI_KEY:-}
+      # Spending caps in USD (empty = no cap): analysis stops with COST_CAP when reached.
+      SDLC_MODEL_BUDGET_TENANT_MONTHLY_USD: ${SDLC_MODEL_BUDGET_TENANT_MONTHLY_USD:-}
+      SDLC_MODEL_BUDGET_REQUIREMENT_USD: ${SDLC_MODEL_BUDGET_REQUIREMENT_USD:-}
     volumes:
       - doc-store:/var/lib/sdlc/documents
       - ./secrets:/run/secrets/garuda:ro

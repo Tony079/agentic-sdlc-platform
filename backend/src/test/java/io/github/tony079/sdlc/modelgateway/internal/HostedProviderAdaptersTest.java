@@ -38,11 +38,13 @@ class HostedProviderAdaptersTest {
     private final AtomicReference<Map<String, List<String>>> lastHeaders = new AtomicReference<>();
     private final AtomicReference<String> reply = new AtomicReference<>();
     private final AtomicInteger status = new AtomicInteger(200);
+    private final AtomicReference<String> lastPath = new AtomicReference<>();
 
     @BeforeEach
     void start() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
+            lastPath.set(exchange.getRequestURI().getPath());
             lastHeaders.set(Map.copyOf(exchange.getRequestHeaders()));
             lastBody.set(json.readTree(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
             byte[] out = reply.get().getBytes(StandardCharsets.UTF_8);
@@ -111,6 +113,31 @@ class HostedProviderAdaptersTest {
             assertThat(tc.arguments()).containsEntry("path", "B.java").containsEntry("start", "3");
         });
         assertThat(result.usage()).isEqualTo(new ModelProvider.Usage(120, 30, false));
+    }
+
+    @Test
+    void azureOpenAiUsesTheResourceV1EndpointAndApiKeyHeader() throws Exception {
+        // A deployment's target URI is accepted; only its host is used.
+        var provider = new AzureOpenAiModelProvider(secrets("llm.azure-openai-key", "test-key-az"), json,
+                base() + "/openai/deployments/gpt-4.1-mini/chat/completions?api-version=2025-01-01-preview", true);
+        reply.set("""
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\\"ok\\":2}"}}],
+                 "usage":{"prompt_tokens":70,"completion_tokens":9}}""");
+        ModelProvider.Result result = provider.complete(call(false));
+        assertThat(lastPath.get()).isEqualTo("/openai/v1/chat/completions");
+        assertThat(lastHeaders.get().get("Api-key")).containsExactly("test-key-az");
+        assertThat(lastHeaders.get()).doesNotContainKey("Authorization");
+        assertThat(lastBody.get().path("model").asString()).isEqualTo("model-under-test");
+        assertThat(result.text()).isEqualTo("{\"ok\":2}");
+        assertThat(result.usage()).isEqualTo(new ModelProvider.Usage(70, 9, false));
+        assertThat(provider.name()).isEqualTo("azure-openai");
+        // Only Azure hosts, over HTTPS.
+        assertThatThrownBy(() -> AzureOpenAiModelProvider.uri("https://example.com/openai/v1", false))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(AzureOpenAiModelProvider.uri("https://acme.openai.azure.com/", false).toString())
+                .isEqualTo("https://acme.openai.azure.com/openai/v1/chat/completions");
+        assertThat(AzureOpenAiModelProvider.uri("https://acme.services.ai.azure.com/api/projects/p1", false).toString())
+                .isEqualTo("https://acme.services.ai.azure.com/openai/v1/chat/completions");
     }
 
     @Test

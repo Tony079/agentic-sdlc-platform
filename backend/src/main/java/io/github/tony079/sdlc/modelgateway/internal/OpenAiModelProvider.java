@@ -45,9 +45,22 @@ public class OpenAiModelProvider implements ModelProvider {
         return "openai";
     }
 
+    /** The secret holding the API key. */
+    protected String secretName() {
+        return "llm.openai-key";
+    }
+
+    protected java.net.URI chatCompletionsUri() {
+        return HttpModelProviderSupport.endpoint(baseUrl, "/v1/chat/completions", allowLoopbackHttp);
+    }
+
+    protected Map<String, String> authHeaders(String key) {
+        return Map.of("Authorization", "Bearer " + key);
+    }
+
     @Override
     public Result complete(Call call) throws Failure {
-        String key = secrets.secret("llm.openai-key").orElseThrow(() -> new Failure(Failure.Kind.ERROR));
+        String key = secrets.secret(secretName()).orElseThrow(() -> new Failure(Failure.Kind.ERROR));
         List<Map<String, Object>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content", call.instructions()));
         for (DataBlock block : call.data()) {
@@ -71,9 +84,8 @@ public class OpenAiModelProvider implements ModelProvider {
                     "name", t.name(), "description", t.description(), "parameters",
                     Map.of("type", "object", "additionalProperties", Map.of("type", "string"))))).toList());
         }
-        String response = HttpModelProviderSupport.post(
-                HttpModelProviderSupport.endpoint(baseUrl, "/v1/chat/completions", allowLoopbackHttp),
-                Map.of("Authorization", "Bearer " + key), json.writeValueAsString(body), call.timeout());
+        String response = HttpModelProviderSupport.post(chatCompletionsUri(), authHeaders(key),
+                json.writeValueAsString(body), call.timeout());
         JsonNode root = json.readTree(response);
         JsonNode choice = root.path("choices").path(0);
         if ("content_filter".equals(choice.path("finish_reason").asString(""))) {

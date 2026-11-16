@@ -68,3 +68,5 @@ databaseChangeLog:
   - include: { file: changes/0037-environment-sources.sql, relativeToChangelogFile: true }
   # GD-24 (2026-11-16): BRDs go to the client: author review and confirmation, BRD Approver approval, automatic release.
   - include: { file: changes/0038-client-brd-review.sql, relativeToChangelogFile: true }
+  # O-01 (2026-11-16): GPT-4.1 mini in Azure OpenAI (Microsoft Foundry) for the BA agent.
+  - include: { file: changes/0039-azure-openai-model.sql, relativeToChangelogFile: true }
