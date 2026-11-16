@@ -173,6 +173,11 @@ class AnalysisRepository {
                 .query(UUID.class).single();
     }
 
+    void setFeasibility(UUID versionId, String verdict, String reasonsJson) {
+        jdbc.sql("UPDATE app.brd_version SET feasibility = :v, feasibility_reasons = CAST(:r AS jsonb) WHERE id = :id")
+                .param("v", verdict).param("r", reasonsJson).param("id", versionId).update();
+    }
+
     private static final tools.jackson.databind.json.JsonMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
 
     static String sourcesJson(List<io.github.tony079.sdlc.sourcerepo.api.RepositoryInputs.PinnedRepository> sources) {

@@ -101,7 +101,7 @@ class OperatorRetryIT extends ApiIntegrationTest {
         fake.cannedReply("ba.phase-a", """
                 {"understanding": "Loans.", "components": [], "relevantPaths": ["%s"]}""".formatted(AnalysisScenario.CONTROLLER));
         fake.cannedReply("ba.phase-b", """
-                {"items": [{"kind": "FACT", "section": "FACTS", "statement": "Loans are served by the controller mapped to /loans.",
+                {"feasibility": {"verdict": "FEASIBLE", "reasons": ["Fits the existing code."]}, "items": [{"kind": "FACT", "section": "FACTS", "statement": "Loans are served by the controller mapped to /loans.",
                   "evidence": [{"type": "REPOSITORY", "path": "%s", "startLine": 3, "endLine": 6, "documentVersionId": null,
                   "chunk": null, "quote": "RequestMapping(\\"/loans\\")"}], "risk": null, "component": null}],
                  "unsupported": [], "clarifications": []}""".formatted(AnalysisScenario.CONTROLLER));

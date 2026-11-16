@@ -37,7 +37,7 @@ import org.springframework.stereotype.Component;
 class ReviewConsumers implements EventConsumer {
 
     private static final Set<String> EVENTS = Set.of(EventTypes.RELEASE_APPROVED, EventTypes.REVISION_REQUESTED,
-            EventTypes.CLIENT_CHANGES_REQUESTED);
+            EventTypes.CLIENT_CHANGES_REQUESTED, EventTypes.BRD_APPROVED_INTERNAL);
 
     private final ReviewRepository reviews;
     private final ClarificationRepository clarificationRepository;
@@ -81,6 +81,7 @@ class ReviewConsumers implements EventConsumer {
         switch (event.eventType()) {
             case EventTypes.RELEASE_APPROVED -> release(requirementId, event.uuid("releaseApprovalId"));
             case EventTypes.REVISION_REQUESTED, EventTypes.CLIENT_CHANGES_REQUESTED -> reanalyseIfWaiting(requirementId);
+            case EventTypes.BRD_APPROVED_INTERNAL -> publishClientApproved(requirementId);
             default -> { }
         }
     }
@@ -100,6 +101,33 @@ class ReviewConsumers implements EventConsumer {
             }
             default -> { }
         }
+    }
+
+    /**
+     * GD-24: a BRD approved by the client (author confirmed, BRD Approver approved) is released by the engine as soon
+     * as the automated gates pass: inputs unchanged, no open clarifications, required security scans clean. A version
+     * approved by a Garuda reviewer still waits for a Release Manager.
+     */
+    void publishClientApproved(UUID requirementId) {
+        if (workflow.lockState(requirementId) != WorkflowState.INTERNAL_APPROVED) {
+            return;
+        }
+        VersionRow version = reviews.latestWithStatus(requirementId, Set.of("APPROVED_INTERNAL")).orElse(null);
+        if (version == null || !reviews.clientApproved(version.id())) {
+            return;
+        }
+        List<ReleaseGates.Gate> results = gates.evaluate(version).stream()
+                .filter(g -> !"INTERNAL_APPROVAL_VALID".equals(g.name())).toList();
+        UUID owner = reviews.requirementOwner(requirementId);
+        if (!ReleaseGates.allPassed(results)) {
+            audit.record(AuditAction.BRD_RELEASE_BLOCKED, "BRD_VERSION", version.id(), AuditResult.DENIED);
+            reviews.notify(TenantContext.requireTenant(), owner, "BRD_PUBLISH_BLOCKED", requirementId);
+            return;
+        }
+        reviews.setVersionStatus(version.id(), "RELEASED");
+        workflow.release(requirementId);
+        reviews.notify(TenantContext.requireTenant(), owner, "BRD_APPROVED", requirementId);
+        audit.record(AuditAction.BRD_RELEASED, "BRD_VERSION", version.id(), AuditResult.SUCCESS);
     }
 
     /** FR-DOC-10: clarification answers given during review feed the next version, never the approved one. */

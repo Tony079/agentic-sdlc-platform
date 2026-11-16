@@ -95,7 +95,20 @@ final class BrdViews {
                         List<VersionRef> versions) {
     }
 
-    record ClientBrd(UUID requirementId, String state, VersionView version) {
+    /**
+     * GD-24 review state for the client. stage: AUTHOR_REVIEW (the author accepts flags and confirms, or requests
+     * changes), AWAITING_APPROVAL (a BRD Approver other than the author approves, or requests changes), PUBLISHING
+     * (approved; automated gates run), APPROVED (final), CLOSED_NOT_FEASIBLE.
+     */
+    record ClientReview(String stage, String feasibility, List<String> feasibilityReasons, List<String> unacceptedFlags,
+                        List<String> acceptedFlags, String authorConfirmedBy, OffsetDateTime authorConfirmedAt,
+                        String approvedBy, int revisionsUsed, int revisionsIncluded, String nextRevisionCurrency,
+                        java.math.BigDecimal nextRevisionPrice, boolean isAuthor, boolean isApprover,
+                        boolean canAcceptFlags, boolean canConfirm, boolean canApprove, boolean canRequestChanges,
+                        String blockedReason) {
+    }
+
+    record ClientBrd(UUID requirementId, String state, VersionView version, ClientReview review) {
     }
 
     record NotificationView(UUID id, String kind, UUID requirementId, OffsetDateTime createdAt, OffsetDateTime readAt) {

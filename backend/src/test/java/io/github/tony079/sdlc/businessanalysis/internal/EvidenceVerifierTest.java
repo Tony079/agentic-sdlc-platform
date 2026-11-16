@@ -49,7 +49,7 @@ class EvidenceVerifierTest {
     }
 
     private static VerifiedItem only(Item item) {
-        return EvidenceVerifier.verify(new Proposal(List.of(item), List.of(), List.of()), Map.of(PATH, CODE), DOCS).get(0);
+        return EvidenceVerifier.verify(new Proposal(null, List.of(item), List.of(), List.of()), Map.of(PATH, CODE), DOCS).get(0);
     }
 
     @Test
@@ -110,7 +110,7 @@ class EvidenceVerifierTest {
 
     @Test
     void unsupportedRequirementsAndUncitedRecommendationsAreListedAsUnsupported() {
-        List<VerifiedItem> items = EvidenceVerifier.verify(new Proposal(
+        List<VerifiedItem> items = EvidenceVerifier.verify(new Proposal(null,
                 List.of(new Item(Kind.RECOMMENDATION, Section.RECOMMENDATIONS, "Add an index on repayments.", List.of(),
                         "low", "db")),
                 List.of(new Unsupported("Export of audit data as CSV")), List.of()), Map.of(), Map.of());
@@ -123,8 +123,8 @@ class EvidenceVerifierTest {
     @Test
     void itemKeysAreStableForTheSameStatement() {
         Item item = new Item(Kind.ASSUMPTION, Section.ASSUMPTIONS, "Same text.", List.of(), null, null);
-        String a = EvidenceVerifier.verify(new Proposal(List.of(item), List.of(), List.of()), Map.of(), Map.of()).get(0).itemKey();
-        String b = EvidenceVerifier.verify(new Proposal(List.of(item), List.of(), List.of()), Map.of(), Map.of()).get(0).itemKey();
+        String a = EvidenceVerifier.verify(new Proposal(null, List.of(item), List.of(), List.of()), Map.of(), Map.of()).get(0).itemKey();
+        String b = EvidenceVerifier.verify(new Proposal(null, List.of(item), List.of(), List.of()), Map.of(), Map.of()).get(0).itemKey();
         assertThat(a).isEqualTo(b);
     }
 }

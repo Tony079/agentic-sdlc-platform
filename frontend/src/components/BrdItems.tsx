@@ -1,10 +1,16 @@
 import type { BrdEvidence, BrdItem } from '../api/types';
 
+// GD-24 template order; FACTS is kept for BRDs produced before it.
 const SECTION_TITLES: Record<string, string> = {
+  CONTEXT: 'Context',
+  CURRENT_SYSTEM: 'How the system works today',
   FACTS: 'Facts',
-  ASSUMPTIONS: 'Assumptions',
+  IMPACTED_COMPONENTS: 'Impact',
+  SCENARIOS: 'Scenarios',
   RISKS: 'Risks',
-  IMPACTED_COMPONENTS: 'Impacted components',
+  ASSUMPTIONS: 'Assumptions',
+  NON_FUNCTIONAL: 'Non-functional points',
+  ACCEPTANCE_CRITERIA: 'Acceptance criteria',
   MISSING_REQUIREMENTS: 'Missing requirements',
   RECOMMENDATIONS: 'Recommendations',
   QUESTIONS: 'Open questions',

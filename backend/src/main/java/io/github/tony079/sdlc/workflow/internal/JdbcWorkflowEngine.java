@@ -92,8 +92,9 @@ class JdbcWorkflowEngine implements WorkflowEngine {
         String actor = TenantContext.currentActorType();
         String event = switch (transition) {
             case T29_CANCEL -> "USER".equals(actor) ? EventTypes.REQUIREMENT_CANCELLED : null;
-            case T21_APPROVE_INTERNAL -> "STAFF".equals(actor) ? EventTypes.BRD_APPROVED_INTERNAL : null;
-            case T22_REQUEST_REVISION -> "STAFF".equals(actor) ? EventTypes.REVISION_REQUESTED : null;
+            // GD-24: the client (author or BRD Approver, checked by the service and the database) also decides.
+            case T21_APPROVE_INTERNAL -> "STAFF".equals(actor) || "USER".equals(actor) ? EventTypes.BRD_APPROVED_INTERNAL : null;
+            case T22_REQUEST_REVISION -> "STAFF".equals(actor) || "USER".equals(actor) ? EventTypes.REVISION_REQUESTED : null;
             case T23_REJECT -> "STAFF".equals(actor) ? EventTypes.REQUIREMENT_REJECTED : null;
             case T05_CLOSE_MANUAL_INTAKE -> "STAFF".equals(actor) ? EventTypes.REQUIREMENT_CANCELLED : null;
             case T27_CLIENT_CHANGES -> "USER".equals(actor) ? EventTypes.CLIENT_CHANGES_REQUESTED : null;
@@ -364,6 +365,19 @@ class JdbcWorkflowEngine implements WorkflowEngine {
         outbox.publish(AGGREGATE, requirementId, EventTypes.REVIEW_QUEUED,
                 Map.of("requirementId", requirementId.toString(), "brdVersionId", brdVersionId.toString()));
         audit.record(AuditAction.BRD_VERSION_CREATED, "BRD_VERSION", brdVersionId, AuditResult.SUCCESS);
+        return Optional.of(to);
+    }
+
+    @Override
+    public Optional<WorkflowState> closeNotFeasible(UUID requirementId) {
+        requireEngine();
+        Current current = lock(requirementId);
+        if (current.state() != WorkflowState.INTERNAL_REVIEW) {
+            return Optional.empty();
+        }
+        WorkflowState to = applyLocked(requirementId, current, Transition.T23_REJECT, "Not feasible (BA agent verdict)");
+        outbox.publish(AGGREGATE, requirementId, EventTypes.REQUIREMENT_REJECTED,
+                Map.of("requirementId", requirementId.toString()));
         return Optional.of(to);
     }
 

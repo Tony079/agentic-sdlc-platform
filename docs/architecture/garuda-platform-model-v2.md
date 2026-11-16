@@ -137,6 +137,8 @@ How step 6 works as built:
 
 **GD-23 (built 2026-11-15, migration 0037):** requirements analyse their environment, as described in section 6. Branch heads are refreshed every 15 minutes (`sdlc.worker.environment-refresh-interval`). The BRD size counts the repositories analysed (3 points each).
 
+**GD-24 (built 2026-11-16, migration 0038):** BRDs go straight to the client. The BA agent (prompt `ba.phase-b` v3) returns a feasibility verdict and the GD-24 template sections. The requirement's author accepts each flagged statement (or requests changes), then confirms; a BRD Approver other than the author approves; the worker releases the BRD when the automated gates pass. Change requests 4 and later are charged at the BRD's size price (`brd_revision_charge`). A *Not feasible* verdict closes the requirement (T23 by the engine) and waives the quote. Workflow states keep their codes; screens show them as *BRD in review*, *Changes requested*, *Approved, publishing*, *BRD approved* and *Closed*.
+
 **Open items:**
 - **Quoted price against actual AI cost (margin)** is not shown: quotes are in the plan's currency and AI cost in USD, and no exchange-rate source has been decided.
 - **Re-analysis during internal review** is done by the Garuda reviewer requesting a revision; that revision still uses the commits already pinned. Only the author's re-analysis after release fetches new heads.

@@ -68,7 +68,7 @@ class AnalysisIT extends ApiIntegrationTest {
                                "quote": "repayments carry an invoice number"}], "risk": null, "component": null},
                 """.formatted(documentVersionId, documentVersionId);
         fake.cannedReply("ba.phase-b", """
-                {"items": [
+                {"feasibility": {"verdict": "FEASIBLE", "reasons": ["Fits the existing code."]}, "items": [
                   {"kind": "FACT", "section": "FACTS", "statement": "Loans are served by the controller mapped to /loans.",
                    "evidence": [{"type": "REPOSITORY", "path": "%1$s", "startLine": 3, "endLine": 6, "documentVersionId": null, "chunk": null,
                                  "quote": "RequestMapping(\\"/loans\\")"}], "risk": null, "component": "Loan API"},
@@ -158,7 +158,7 @@ class AnalysisIT extends ApiIntegrationTest {
         assertThat(admin.queryForList("""
                 SELECT prompt_id || '@' || prompt_version FROM app.model_call_record
                 WHERE requirement_id = ?::uuid AND outcome = 'SUCCEEDED' ORDER BY created_at
-                """, String.class, s.requirementId)).containsExactly("ba.phase-a@1", "ba.phase-b@2");
+                """, String.class, s.requirementId)).containsExactly("ba.phase-a@1", "ba.phase-b@3");
         // Trusted instructions are the registered prompt text only; client content travels as data (TDD 12.7).
         assertThat(fake.calls()).hasSize(2).allSatisfy(call -> {
             assertThat(call.instructions()).doesNotContain(INJECTION).doesNotContain("repayments must carry");

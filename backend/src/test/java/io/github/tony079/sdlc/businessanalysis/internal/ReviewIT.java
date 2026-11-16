@@ -46,7 +46,7 @@ class ReviewIT extends ApiIntegrationTest {
                 {"understanding": "Repayment metadata on the loan API.", "components": [],
                  "relevantPaths": ["%s"]}""".formatted(AnalysisScenario.CONTROLLER));
         fake.cannedReply("ba.phase-b", """
-                {"items": [
+                {"feasibility": {"verdict": "FEASIBLE", "reasons": ["Fits the existing code."]}, "items": [
                   {"kind": "FACT", "section": "FACTS", "statement": "Loans are served by the controller mapped to /loans.",
                    "evidence": [{"type": "REPOSITORY", "path": "%1$s", "startLine": 3, "endLine": 6,
                                  "documentVersionId": null, "chunk": null, "quote": "RequestMapping(\\"/loans\\")"}],
@@ -184,8 +184,9 @@ class ReviewIT extends ApiIntegrationTest {
                 .contains("/loans");
         assertThat(detail.body().path("requirement").path("title").asString()).isNotBlank();
 
-        // Not released yet: the client gets 404 (AC-CORE-08).
-        assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId + "/brd").status()).isEqualTo(404);
+        // GD-24 (reverses AC-CORE-08): the author sees the BRD in review at once.
+        assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId + "/brd").body().path("review").path("stage")
+                .asString()).isEqualTo("AUTHOR_REVIEW");
 
         // Approval is bound to the reviewed content and needs every flag acknowledged.
         assertThat(approve(reviewer, versionId, "0".repeat(64)).errorCode()).isEqualTo("VERSION_CHANGED");
@@ -204,7 +205,8 @@ class ReviewIT extends ApiIntegrationTest {
         // O-16 MANUAL: internal approval alone never releases.
         s.drive();
         assertThat(s.state()).isEqualTo("INTERNAL_APPROVED");
-        assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId + "/brd").status()).isEqualTo(404);
+        assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId + "/brd").body().path("review").path("stage")
+                .asString()).isEqualTo("PUBLISHING");
         // A Release Manager approves the release (bound to hash and commit); the worker executes T25 separately.
         ApiClient manager = AnalysisScenario.staffSession(client(), releaseManager("acme"), "acme", 0);
         Response pending = manager.get("/api/v1/staff/releases");
@@ -340,7 +342,7 @@ class ReviewIT extends ApiIntegrationTest {
         assertThat(revision.body().path("state").asString()).isEqualTo("REVISION_REQUESTED");
         // The revised run drops the billing claim and adds a new (also flagged) statement.
         fake.cannedReply("ba.phase-b", """
-                {"items": [
+                {"feasibility": {"verdict": "FEASIBLE", "reasons": ["Fits the existing code."]}, "items": [
                   {"kind": "FACT", "section": "FACTS", "statement": "Loans are served by the controller mapped to /loans.",
                    "evidence": [{"type": "REPOSITORY", "path": "%1$s", "startLine": 3, "endLine": 6,
                                  "documentVersionId": null, "chunk": null, "quote": "RequestMapping(\\"/loans\\")"}],
@@ -396,7 +398,9 @@ class ReviewIT extends ApiIntegrationTest {
         assertThat(rejected.body().path("state").asString()).isEqualTo("REJECTED");
         assertThat(admin.queryForObject("SELECT status FROM app.brd_version WHERE id = ?::uuid", String.class, v1))
                 .isEqualTo("WITHDRAWN");
-        assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId + "/brd").status()).isEqualTo(404);
+        // GD-24: the author still reads the withdrawn version, but can no longer decide on it.
+        assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId + "/brd").body().path("review")
+                .path("canConfirm").asBoolean()).isFalse();
     }
 
     @Test

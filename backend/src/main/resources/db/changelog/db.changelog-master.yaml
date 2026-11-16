@@ -66,3 +66,5 @@ databaseChangeLog:
   - include: { file: changes/0036-brd-quotes-ai-cost.sql, relativeToChangelogFile: true }
   # GD-23 (2026-11-15): requirements analyse a project environment (all repositories at their branch heads).
   - include: { file: changes/0037-environment-sources.sql, relativeToChangelogFile: true }
+  # GD-24 (2026-11-16): BRDs go to the client: author review and confirmation, BRD Approver approval, automatic release.
+  - include: { file: changes/0038-client-brd-review.sql, relativeToChangelogFile: true }

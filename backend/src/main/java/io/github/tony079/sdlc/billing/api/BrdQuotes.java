@@ -23,4 +23,7 @@ public interface BrdQuotes {
      * a plan, or an accepted quote). A proposed quote is refreshed from the current inputs.
      */
     boolean readyForAnalysis(UUID requirementId, Basis basis);
+
+    /** Worker (GD-24): waives the accepted quote of a requirement closed as not feasible (no charge, allowance freed). */
+    void waive(UUID requirementId, String reason);
 }

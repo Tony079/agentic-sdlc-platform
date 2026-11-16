@@ -51,7 +51,7 @@ class RetentionIT extends ApiIntegrationTest {
                 {"understanding": "Repayment metadata on the loan API.", "components": [],
                  "relevantPaths": ["%s"]}""".formatted(AnalysisScenario.CONTROLLER));
         fake.cannedReply("ba.phase-b", """
-                {"items": [
+                {"feasibility": {"verdict": "FEASIBLE", "reasons": ["Fits the existing code."]}, "items": [
                   {"kind": "FACT", "section": "FACTS", "statement": "Loans are served by the controller mapped to /loans.",
                    "evidence": [{"type": "REPOSITORY", "path": "%1$s", "startLine": 3, "endLine": 6,
                                  "documentVersionId": null, "chunk": null, "quote": "RequestMapping(\\"/loans\\")"}],

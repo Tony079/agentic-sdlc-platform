@@ -326,13 +326,24 @@ class BillingService {
                 }).list().stream().filter(java.util.Objects::nonNull).toList()));
     }
 
-    /** One organisation's accepted BRDs billed in the month. */
+    /**
+     * One organisation's accepted BRDs billed in the month, with waived ones (not feasible, charge 0) and the change
+     * requests beyond the included ones (GD-24), each a line.
+     */
     List<BrdLine> brdCharges(UUID tenantId, YearMonth month) {
         return TenantContext.callAs(tenantId, () -> tx.execute(s -> jdbc.sql("""
-                SELECT q.project_id, p.name, q.requirement_id, r.key, q.size, q.sizing_method, q.included, q.currency,
-                       q.list_price, q.charge, q.accepted_at
+                SELECT q.project_id, p.name, q.requirement_id, r.key, q.size,
+                       CASE WHEN q.waived_at IS NOT NULL THEN 'WAIVED_NOT_FEASIBLE' ELSE q.sizing_method END,
+                       q.included, q.currency, q.list_price, q.charge, q.accepted_at
                 FROM app.brd_quote q JOIN app.project p ON p.id = q.project_id JOIN app.requirement r ON r.id = q.requirement_id
-                WHERE q.status = 'ACCEPTED' AND q.billing_month = :m ORDER BY q.accepted_at
+                WHERE q.status = 'ACCEPTED' AND q.billing_month = :m
+                UNION ALL
+                SELECT c.project_id, p.name, c.requirement_id, r.key, q.size, 'CHANGE_REQUEST_' || c.revision_no, false,
+                       c.currency, c.amount, c.amount, c.created_at
+                FROM app.brd_revision_charge c JOIN app.brd_quote q ON q.id = c.quote_id
+                JOIN app.project p ON p.id = c.project_id JOIN app.requirement r ON r.id = c.requirement_id
+                WHERE c.billing_month = :m
+                ORDER BY 11
                 """).param("m", month.atDay(1)).query((rs, n) -> new BrdLine(tenantId, null, rs.getObject(1, UUID.class),
                 rs.getString(2), rs.getObject(3, UUID.class), rs.getString(4), rs.getString(5), rs.getString(6),
                 rs.getBoolean(7), rs.getString(8), rs.getBigDecimal(9), rs.getBigDecimal(10),
@@ -358,7 +369,7 @@ class BillingService {
         for (BrdLine b : report.brds()) {
             csv.append(String.join(",", "BRD", quote(b.organisationName()), quote(b.projectName()), "", b.currency(), "",
                     b.acceptedOn().toString(), b.acceptedOn().toString(), "", "", b.requirementKey(), b.size(),
-                    b.sizingMethod() + " (estimated)", String.valueOf(b.included()), b.listPrice().toPlainString(),
+                    (b.sizingMethod().startsWith("RULES") ? b.sizingMethod() + " (estimated)" : b.sizingMethod()), String.valueOf(b.included()), b.listPrice().toPlainString(),
                     b.charge().toPlainString())).append('\n');
         }
         return csv.toString();

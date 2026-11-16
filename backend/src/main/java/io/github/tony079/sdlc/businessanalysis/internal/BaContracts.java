@@ -21,7 +21,14 @@ final class BaContracts {
 
     enum Kind { FACT, ASSUMPTION, RECOMMENDATION, QUESTION }
 
-    enum Section { FACTS, ASSUMPTIONS, RISKS, IMPACTED_COMPONENTS, MISSING_REQUIREMENTS, RECOMMENDATIONS, QUESTIONS }
+    enum Section { FACTS, ASSUMPTIONS, RISKS, IMPACTED_COMPONENTS, MISSING_REQUIREMENTS, RECOMMENDATIONS, QUESTIONS,
+        CONTEXT, CURRENT_SYSTEM, SCENARIOS, NON_FUNCTIONAL, ACCEPTANCE_CRITERIA }
+
+    /** GD-24: the agent's feasibility verdict. NOT_FEASIBLE closes the requirement and waives its charge. */
+    enum Verdict { FEASIBLE, FEASIBLE_WITH_RISKS, NOT_FEASIBLE }
+
+    record Feasibility(@NotNull Verdict verdict, @NotNull @Size(min = 1, max = 10) List<@NotBlank @Size(max = 1000) String> reasons) {
+    }
 
     enum EvidenceType { REPOSITORY, DOCUMENT }
 
@@ -36,7 +43,8 @@ final class BaContracts {
     }
 
     /** Phase B: the BRD proposal. */
-    record Proposal(@NotNull @Size(max = 60) List<@Valid Item> items,
+    /** feasibility is optional for compatibility with results proposed before GD-24 (treated as not assessed). */
+    record Proposal(@Valid Feasibility feasibility, @NotNull @Size(max = 60) List<@Valid Item> items,
                     @NotNull @Size(max = 30) List<@Valid Unsupported> unsupported,
                     @NotNull @Size(max = 10) List<@Valid ClarificationProposal> clarifications) {
     }

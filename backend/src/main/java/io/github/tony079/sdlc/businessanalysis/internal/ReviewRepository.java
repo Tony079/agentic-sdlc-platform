@@ -184,11 +184,115 @@ class ReviewRepository {
                 .param("reason", reason).param("notes", notes).update();
     }
 
+    /** The latest revision notes: a Garuda reviewer's (staff) or, since GD-24, the client's change request. */
     Optional<String> latestRevisionNotes(UUID requirementId) {
         return jdbc.sql("""
-                SELECT a.notes::text FROM app.approval a JOIN app.brd_version v ON v.id = a.brd_version_id
-                WHERE v.requirement_id = :r AND a.decision = 'REVISION_REQUESTED' ORDER BY a.decided_at DESC LIMIT 1
+                SELECT notes FROM (
+                  SELECT a.notes::text AS notes, a.decided_at AS at FROM app.approval a
+                  JOIN app.brd_version v ON v.id = a.brd_version_id
+                  WHERE v.requirement_id = :r AND a.decision = 'REVISION_REQUESTED'
+                  UNION ALL
+                  SELECT jsonb_build_array(jsonb_build_object('source', 'CLIENT', 'instruction', d.note))::text, d.decided_at
+                  FROM app.brd_client_decision d WHERE d.requirement_id = :r AND d.kind = 'CHANGES_REQUESTED'
+                ) n ORDER BY at DESC LIMIT 1
                 """).param("r", requirementId).query(String.class).optional();
+    }
+
+    // --- GD-24: the client's review ---------------------------------------------------------------------------
+
+    record ClientDecision(String kind, String itemKey, UUID decidedBy, String decidedByName, String note,
+                          java.time.OffsetDateTime decidedAt) {
+    }
+
+    List<ClientDecision> clientDecisions(UUID versionId) {
+        return jdbc.sql("""
+                SELECT d.kind, d.item_key, d.decided_by, u.display_name, d.note, d.decided_at
+                FROM app.brd_client_decision d JOIN app.app_user u ON u.id = d.decided_by
+                WHERE d.brd_version_id = :v ORDER BY d.decided_at
+                """).param("v", versionId).query((rs, n) -> new ClientDecision(rs.getString(1), rs.getString(2),
+                        rs.getObject(3, UUID.class), rs.getString(4), rs.getString(5),
+                        rs.getObject(6, java.time.OffsetDateTime.class))).list();
+    }
+
+    /** Worker-safe (no user names): whether a BRD Approver approved this version (GD-24). */
+    boolean clientApproved(UUID versionId) {
+        return Boolean.TRUE.equals(jdbc.sql(
+                "SELECT EXISTS (SELECT 1 FROM app.brd_client_decision WHERE brd_version_id = :v AND kind = 'APPROVED')")
+                .param("v", versionId).query(Boolean.class).single());
+    }
+
+    void insertClientDecision(UUID tenantId, UUID projectId, UUID requirementId, UUID versionId, String kind,
+                              String itemKey, String note, UUID userId) {
+        jdbc.sql("""
+                INSERT INTO app.brd_client_decision (tenant_id, project_id, requirement_id, brd_version_id, kind, item_key,
+                                                     note, decided_by)
+                VALUES (:t, :p, :r, :v, :k, :i, :n, :u)
+                """).param("t", tenantId).param("p", projectId).param("r", requirementId).param("v", versionId)
+                .param("k", kind).param("i", itemKey).param("n", note).param("u", userId).update();
+    }
+
+    /** Flagged items of a version that neither the author (GD-24) nor a Garuda reviewer has accepted. */
+    List<String> unacceptedFlags(UUID versionId) {
+        return jdbc.sql("""
+                SELECT i.item_key FROM app.brd_item i WHERE i.brd_version_id = :v AND i.support_state = 'FLAGGED'
+                  AND NOT EXISTS (SELECT 1 FROM app.brd_flag_ack a WHERE a.brd_version_id = i.brd_version_id
+                                  AND a.item_key = i.item_key)
+                  AND NOT EXISTS (SELECT 1 FROM app.brd_client_decision d WHERE d.brd_version_id = i.brd_version_id
+                                  AND d.kind = 'FLAG_ACCEPTED' AND d.item_key = i.item_key)
+                ORDER BY i.ordinal
+                """).param("v", versionId).query(String.class).list();
+    }
+
+    int clientRevisionRequests(UUID requirementId) {
+        return jdbc.sql("SELECT count(*) FROM app.brd_client_decision WHERE requirement_id = :r AND kind = 'CHANGES_REQUESTED'")
+                .param("r", requirementId).query(Integer.class).single();
+    }
+
+    UUID projectOf(UUID requirementId) {
+        return jdbc.sql("SELECT project_id FROM app.requirement WHERE id = :r").param("r", requirementId)
+                .query(UUID.class).single();
+    }
+
+    boolean isBrdApprover(UUID projectId) {
+        return Boolean.TRUE.equals(jdbc.sql("SELECT app.is_brd_approver(:p)").param("p", projectId)
+                .query(Boolean.class).single());
+    }
+
+    List<UUID> brdApprovers(UUID projectId) {
+        return jdbc.sql("""
+                SELECT m.user_id FROM app.project_member m JOIN app.app_user u ON u.id = m.user_id
+                WHERE m.project_id = :p AND m.role = 'BRD_APPROVER' AND m.removed_at IS NULL AND u.status = 'ACTIVE'
+                """).param("p", projectId).query(UUID.class).list();
+    }
+
+    record Feasibility(String verdict, String reasonsJson) {
+    }
+
+    Feasibility feasibility(UUID versionId) {
+        return jdbc.sql("SELECT feasibility, feasibility_reasons::text FROM app.brd_version WHERE id = :v")
+                .param("v", versionId).query((rs, n) -> new Feasibility(rs.getString(1), rs.getString(2))).single();
+    }
+
+    record RevisionPrice(UUID quoteId, UUID projectId, String currency, java.math.BigDecimal amount) {
+    }
+
+    /** The accepted quote's size price, for change requests beyond those included (none without billing). */
+    Optional<RevisionPrice> revisionPrice(UUID requirementId) {
+        return jdbc.sql("""
+                SELECT id, project_id, currency, list_price FROM app.brd_quote
+                WHERE requirement_id = :r AND status = 'ACCEPTED' AND waived_at IS NULL
+                """).param("r", requirementId).query((rs, n) -> new RevisionPrice(rs.getObject(1, UUID.class),
+                        rs.getObject(2, UUID.class), rs.getString(3), rs.getBigDecimal(4))).optional();
+    }
+
+    void insertRevisionCharge(UUID tenantId, RevisionPrice price, UUID requirementId, int revisionNo, UUID userId) {
+        jdbc.sql("""
+                INSERT INTO app.brd_revision_charge (tenant_id, project_id, requirement_id, quote_id, revision_no, currency,
+                                                     amount, billing_month, requested_by)
+                VALUES (:t, :p, :r, :q, :n, :c, :a, date_trunc('month', now() AT TIME ZONE 'UTC')::date, :u)
+                """).param("t", tenantId).param("p", price.projectId()).param("r", requirementId)
+                .param("q", price.quoteId()).param("n", revisionNo).param("c", price.currency())
+                .param("a", price.amount()).param("u", userId).update();
     }
 
     Optional<String> latestClientChange(UUID requirementId) {

@@ -102,4 +102,10 @@ public interface WorkflowEngine {
 
     /** Engine only: T19 after the BA job is dead or fatal. Empty if the requirement is no longer ANALYSING. */
     Optional<WorkflowState> failAnalysis(UUID requirementId);
+
+    /**
+     * Engine only (GD-24): T23 by the engine when the agent's verdict is NOT_FEASIBLE; the requirement closes as
+     * rejected. Empty unless INTERNAL_REVIEW.
+     */
+    Optional<WorkflowState> closeNotFeasible(UUID requirementId);
 }

@@ -75,6 +75,14 @@ class BrdQuoteGate implements BrdQuotes {
         return false;
     }
 
+    @Override
+    public void waive(UUID requirementId, String reason) {
+        jdbc.sql("""
+                UPDATE app.brd_quote SET charge = 0, included = false, waived_at = clock_timestamp(), waive_reason = :reason
+                WHERE requirement_id = :r AND status = 'ACCEPTED' AND waived_at IS NULL
+                """).param("reason", reason).param("r", requirementId).update();
+    }
+
     private Object[] price(UUID planId, String size) {
         return jdbc.sql("""
                 SELECT currency, CASE :size WHEN 'SMALL' THEN price_small WHEN 'MEDIUM' THEN price_medium ELSE price_large END

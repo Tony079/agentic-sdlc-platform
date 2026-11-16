@@ -114,6 +114,30 @@ class ReviewController {
         return client.released(id);
     }
 
+    // GD-24: the client's review of the BRD.
+    @PostMapping("/api/v1/requirements/{id}/brd/flags/{itemKey}/accept")
+    ClientBrd acceptFlag(@PathVariable UUID id, @PathVariable String itemKey) {
+        return client.acceptFlag(id, itemKey);
+    }
+
+    @PostMapping("/api/v1/requirements/{id}/brd/confirm")
+    ClientBrd confirm(@PathVariable UUID id) {
+        return client.confirm(id);
+    }
+
+    @PostMapping("/api/v1/requirements/{id}/brd/approve")
+    ClientBrd approveBrd(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
+        return client.approve(id, body == null ? null : body.get("expectedContentHash"));
+    }
+
+    record RevisionText(@Size(max = 5000) String text, Boolean acceptCharge) {
+    }
+
+    @PostMapping("/api/v1/requirements/{id}/brd/request-changes")
+    ClientBrd requestRevision(@PathVariable UUID id, @RequestBody RevisionText body) {
+        return client.requestRevision(id, body.text(), Boolean.TRUE.equals(body.acceptCharge()));
+    }
+
     @PostMapping("/api/v1/requirements/{id}/client-changes")
     Map<String, String> clientChanges(@PathVariable UUID id, @Valid @RequestBody ChangeRequest body) {
         return Map.of("changeRequestId", client.requestChanges(id, body.text(), changeRequests).toString(),

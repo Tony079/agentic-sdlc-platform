@@ -158,7 +158,7 @@ class EnvironmentAnalysisIT extends ApiIntegrationTest {
                 {"understanding": "Repayment metadata.", "components": [],
                  "relevantPaths": ["%s", "%s"]}""".formatted(loansPrefix + AnalysisScenario.CONTROLLER, billingPrefix + BILLING));
         fake.cannedReply("ba.phase-b", """
-                {"items": [
+                {"feasibility": {"verdict": "FEASIBLE", "reasons": ["Fits the existing code."]}, "items": [
                   {"kind": "FACT", "section": "FACTS", "statement": "Loans are served by the controller mapped to /loans.",
                    "evidence": [{"type": "REPOSITORY", "path": "%1$s", "startLine": 3, "endLine": 4,
                                  "documentVersionId": null, "chunk": null, "quote": "RequestMapping(\\"/loans\\")"}],

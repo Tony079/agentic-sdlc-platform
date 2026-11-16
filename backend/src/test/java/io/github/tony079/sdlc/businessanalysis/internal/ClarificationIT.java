@@ -37,10 +37,10 @@ class ClarificationIT extends ApiIntegrationTest {
               "evidence": [{"type": "REPOSITORY", "path": "%s", "startLine": 3, "endLine": 6,
                             "documentVersionId": null, "chunk": null, "quote": "RequestMapping(\\"/loans\\")"}],
               "risk": null, "component": "Loan API"}]""".formatted(AnalysisScenario.CONTROLLER);
-    private static final String NO_CLARIFICATIONS = "{\"items\": " + ITEMS + ", \"unsupported\": [], \"clarifications\": []}";
+    private static final String NO_CLARIFICATIONS = "{\"feasibility\": {\"verdict\": \"FEASIBLE\", \"reasons\": [\"Fits the existing code.\"]}, \"items\": " + ITEMS + ", \"unsupported\": [], \"clarifications\": []}";
 
     private static String withClarification(boolean blocking, String assignee) {
-        return "{\"items\": " + ITEMS + ", \"unsupported\": [], \"clarifications\": [{\"question\": "
+        return "{\"feasibility\": {\"verdict\": \"FEASIBLE\", \"reasons\": [\"Fits the existing code.\"]}, \"items\": " + ITEMS + ", \"unsupported\": [], \"clarifications\": [{\"question\": "
                 + "\"Which repayment channels must be supported?\", \"whyItMatters\": \"It decides the field values.\", "
                 + "\"interpretations\": [\"Card only\", \"Card and bank transfer\"], \"recommendedOption\": "
                 + "\"Card and bank transfer\", \"blocking\": " + blocking + ", \"assignedTo\": \"" + assignee + "\"}]}";
@@ -162,12 +162,10 @@ class ClarificationIT extends ApiIntegrationTest {
         assertThat(s.state()).isEqualTo("INTERNAL_REVIEW");
         assertThat(admin.queryForMap("SELECT blocking, status, assigned_role FROM app.clarification WHERE requirement_id = ?::uuid",
                 s.requirementId)).containsEntry("blocking", false).containsEntry("status", "OPEN")
-                .containsEntry("assigned_role", "BUSINESS_REVIEWER");
-        ApiClient reviewer = reviewer();
+                .containsEntry("assigned_role", "REQUIREMENT_OWNER");
+        // GD-24: every agent question goes to the requirement's author, who answers it.
         String id = clarificationId(s);
-        assertThat(reviewer.get("/api/v1/staff/clarifications").body().valueStream()
-                .map(n -> n.path("id").asString())).contains(id);
-        assertThat(reviewer.post("/api/v1/staff/clarifications/" + id + "/answer", Map.of("text", "Both channels."))
+        assertThat(s.alice.post("/api/v1/clarifications/" + id + "/answer", Map.of("text", "Both channels."))
                 .body().path("status").asString()).isEqualTo("ANSWERED");
     }
 

@@ -54,9 +54,9 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
 
     /** items null: nothing to do (already decided) or invalid (invalidCode set). */
     record Outcome(UUID pendingId, List<VerifiedItem> items, String invalidCode,
-                   List<BaContracts.ClarificationProposal> clarifications) {
+                   List<BaContracts.ClarificationProposal> clarifications, BaContracts.Feasibility feasibility) {
         Outcome(UUID pendingId, List<VerifiedItem> items, String invalidCode) {
-            this(pendingId, items, invalidCode, List.of());
+            this(pendingId, items, invalidCode, List.of(), null);
         }
     }
 
@@ -73,11 +73,14 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
     private final JsonMapper json;
     private final JsonMapper strict;
     private final TransactionTemplate readOnly;
+    private final io.github.tony079.sdlc.billing.api.BrdQuotes quotes;
 
     BaCommitHandler(AnalysisRepository repository, ClarificationRepository clarifications, ReviewRepository reviews,
                     RepositoryInputs repositories, DocumentProcessing documents,
                     InputSets inputSets, AnalysisStarter starter, WorkflowEngine workflow, AuditWriter audit,
-                    Validator validator, JsonMapper json, PlatformTransactionManager transactionManager) {
+                    Validator validator, JsonMapper json, PlatformTransactionManager transactionManager,
+                    io.github.tony079.sdlc.billing.api.BrdQuotes quotes) {
+        this.quotes = quotes;
         this.repository = repository;
         this.clarifications = clarifications;
         this.reviews = reviews;
@@ -138,7 +141,7 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
             throw JobFailure.retryable("SNAPSHOT_READ_FAILED", e);
         }
         return new Outcome(pendingId, EvidenceVerifier.verify(proposal, files, loaded.documents()), null,
-                proposal.clarifications());
+                proposal.clarifications(), proposal.feasibility());
     }
 
     private Loaded load(UUID pendingId) {
@@ -200,14 +203,12 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         for (BaContracts.ClarificationProposal c : outcome.clarifications()) {
             clarifications.insert(job.tenantId(), requirementId, "AGENT", pending.stageExecutionId(), null,
                     set.revisionNo(), set.commitSha(), pending.inputHash(), c.blocking(),
-                    c.assignedTo() == BaContracts.Assignee.CLIENT ? "REQUIREMENT_OWNER" : "BUSINESS_REVIEWER",
+                    "REQUIREMENT_OWNER", // GD-24: every clarification goes to the client who asked
                     c.question().strip(), c.whyItMatters(), json.writeValueAsString(c.interpretations()),
                     c.recommendedOption());
             blocking |= c.blocking();
-            if (c.assignedTo() == BaContracts.Assignee.CLIENT) {
-                reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "CLARIFICATION_ASSIGNED",
-                        requirementId);
-            }
+            reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "CLARIFICATION_ASSIGNED",
+                    requirementId);
         }
         if (!outcome.clarifications().isEmpty()) {
             audit.record(AuditAction.CLARIFICATION_OPENED, "REQUIREMENT", requirementId, AuditResult.SUCCESS);
@@ -228,7 +229,21 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         if (outcome.items().stream().anyMatch(i -> i.rejectedCitations() > 0)) {
             audit.record(AuditAction.CITATION_REJECTED, "BRD_VERSION", version, AuditResult.DENIED);
         }
+        if (outcome.feasibility() != null) {
+            repository.setFeasibility(version, outcome.feasibility().verdict().name(),
+                    json.writeValueAsString(outcome.feasibility().reasons()));
+        }
         workflow.completeAnalysis(requirementId, pending.stageExecutionId(), version);
+        if (outcome.feasibility() != null && outcome.feasibility().verdict() == BaContracts.Verdict.NOT_FEASIBLE) {
+            // GD-24: a requirement that cannot be delivered on this code base closes; its BRD charge is waived.
+            workflow.closeNotFeasible(requirementId);
+            quotes.waive(requirementId, "NOT_FEASIBLE");
+            reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "BRD_NOT_FEASIBLE", requirementId);
+            audit.record(AuditAction.BRD_VERSION_CREATED, "BRD_VERSION", version, AuditResult.DENIED);
+            return;
+        }
+        // GD-24: the BRD goes straight to its author for review.
+        reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "BRD_READY_FOR_REVIEW", requirementId);
     }
 
     private void reject(PendingRow pending, String status, String reason) {

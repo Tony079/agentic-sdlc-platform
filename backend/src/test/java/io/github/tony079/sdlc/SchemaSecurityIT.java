@@ -33,7 +33,7 @@ class SchemaSecurityIT {
                 WHERE n.nspname = 'app' AND c.relkind = 'r' ORDER BY 1
                 """, String.class);
         assertThat(tenantTables).containsExactly("admin_retry_request", "ai_cost_daily", "analysis_input_set", "app_user", "approval", "approved_scope_version", "audit_event",
-                "ba_result_pending", "brd", "brd_flag_ack", "brd_item", "brd_item_evidence", "brd_quote", "brd_version",
+                "ba_result_pending", "brd", "brd_client_decision", "brd_flag_ack", "brd_item", "brd_item_evidence", "brd_quote", "brd_revision_charge", "brd_version",
                 "build_dependency", "change_request", "change_request_diff", "clarification", "clarification_message", "client_change_request", "code_symbol",
                 "document", "document_chunk", "document_decision",
                 "document_extraction", "document_version", "environment", "environment_branch",
@@ -45,7 +45,7 @@ class SchemaSecurityIT {
                 "user_invitation", "workflow_instance", "workflow_transition");
         // Garuda GD-13: project-scoped tables carry one extra RESTRICTIVE policy for signed-in client users.
         java.util.Set<String> projectScoped = java.util.Set.of("admin_retry_request", "ai_cost_daily", "analysis_input_set",
-                "approved_scope_version", "ba_result_pending", "brd", "brd_quote", "brd_version", "change_request", "clarification",
+                "approved_scope_version", "ba_result_pending", "brd", "brd_client_decision", "brd_quote", "brd_revision_charge", "brd_version", "change_request", "clarification",
                 "client_change_request", "document", "document_decision", "document_version", "environment",
                 "environment_branch", "environment_change_request", "model_call_record",
                 "notification", "project", "project_member", "release_approval", "repository_link_request",

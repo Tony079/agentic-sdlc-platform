@@ -450,10 +450,34 @@ export interface BrdVersion {
   items: BrdItem[];
 }
 
+/** GD-24: the client's review of a BRD. */
+export interface ClientReview {
+  stage: 'AUTHOR_REVIEW' | 'AWAITING_APPROVAL' | 'PUBLISHING' | 'APPROVED' | 'CLOSED_NOT_FEASIBLE';
+  feasibility: 'FEASIBLE' | 'FEASIBLE_WITH_RISKS' | 'NOT_FEASIBLE' | null;
+  feasibilityReasons: string[];
+  unacceptedFlags: string[];
+  acceptedFlags: string[];
+  authorConfirmedBy: string | null;
+  authorConfirmedAt: string | null;
+  approvedBy: string | null;
+  revisionsUsed: number;
+  revisionsIncluded: number;
+  nextRevisionCurrency: string | null;
+  nextRevisionPrice: number | null;
+  isAuthor: boolean;
+  isApprover: boolean;
+  canAcceptFlags: boolean;
+  canConfirm: boolean;
+  canApprove: boolean;
+  canRequestChanges: boolean;
+  blockedReason: string | null;
+}
+
 export interface ClientBrd {
   requirementId: string;
   state: string;
   version: BrdVersion;
+  review?: ClientReview;
 }
 
 export interface ReviewQueueEntry {

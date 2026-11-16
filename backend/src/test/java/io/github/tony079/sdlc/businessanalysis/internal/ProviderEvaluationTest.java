@@ -37,7 +37,8 @@ class ProviderEvaluationTest {
         ProviderEvaluation.Task task = ProviderEvaluation.dataset().get(0);
         assertThat(task.id()).isEqualTo("loan-repayment-metadata");
         String good = """
-                {"items": [
+                {"feasibility": {"verdict": "FEASIBLE", "reasons": ["Repayments exist and can carry metadata."]},
+                 "items": [
                   {"kind": "FACT", "section": "FACTS", "statement": "Repayments are served under /loans.",
                    "evidence": [{"type": "REPOSITORY", "path": "src/main/java/com/acme/LoanController.java",
                      "startLine": 3, "endLine": 5, "documentVersionId": null, "chunk": null,

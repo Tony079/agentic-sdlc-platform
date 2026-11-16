@@ -24,6 +24,14 @@ When the App is not installed on a repository, its Environment Manager sees **Ap
 - The environment cannot be changed once the quote is accepted, and an environment that requirements were analysed against cannot be removed.
 - Every 15 minutes the worker re-reads all branch heads. The requirement page then shows which repositories have moved since the analysis. After release, the requirement's owner can choose **Re-analyse with the latest code**.
 
+## BRD review by the client (GD-24)
+
+- The BRD appears on the requirement page for its **author** as soon as the analysis finishes, with the feasibility verdict.
+- The author decides on every **flagged** statement (*Accept as is*, or *Request changes*), then **confirms**.
+- A **BRD Approver** of the project (not the author) **approves**. The BRD is published to the project automatically when the automated checks pass. If a check blocks it, the author is notified.
+- Three change requests are included; from the fourth, each one is charged at the BRD's size price after the client agrees. These appear in billing as `CHANGE_REQUEST_n` lines.
+- A *Not feasible* verdict closes the requirement; its BRD shows why, and the quote is waived (`WAIVED_NOT_FEASIBLE` in billing).
+
 ## BRD quotes and billing
 
 - Garuda Admins propose and approve plans (two people). A plan sets the monthly fee per active project, the BRDs included per month, and a price for Small, Medium and Large BRDs.
