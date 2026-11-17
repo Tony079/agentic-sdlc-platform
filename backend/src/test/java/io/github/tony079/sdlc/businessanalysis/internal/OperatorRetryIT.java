@@ -131,6 +131,38 @@ class OperatorRetryIT extends ApiIntegrationTest {
                 Map.of("reason", "Model output fixed after review of the failure.")).errorCode()).isEqualTo("NOT_FAILED");
     }
 
+    /** The author retries a failed analysis from the requirement page, at most three times; others cannot. */
+    @Test
+    void theAuthorRetriesAFailedAnalysis() {
+        AnalysisScenario s = failed();
+        String path = "/api/v1/requirements/" + s.requirementId + "/analysis-retry";
+        Response status = s.alice.get(path);
+        assertThat(status.status()).as(status.body().toString()).isEqualTo(200);
+        assertThat(status.body().path("canRetry").asBoolean()).isTrue();
+        assertThat(status.body().path("failureCode").asString()).isNotBlank();
+        // An approver of the project sees the state but cannot retry.
+        ApiClient aaron = loggedIn("acme", "aaron@acme.test");
+        assertThat(aaron.get(path).body().path("canRetry").asBoolean()).isFalse();
+        assertThat(aaron.post(path, Map.of()).errorCode()).isEqualTo("RETRY_NOT_AVAILABLE");
+
+        fake.reset();
+        fake.cannedReply("ba.phase-a", """
+                {"understanding": "Loans.", "components": [], "relevantPaths": ["%s"]}""".formatted(AnalysisScenario.CONTROLLER));
+        fake.cannedReply("ba.phase-b", """
+                {"feasibility": {"verdict": "FEASIBLE", "reasons": ["Fits the existing code."]}, "items": [],
+                 "unsupported": [], "clarifications": []}""");
+        Response retried = s.alice.post(path, Map.of());
+        assertThat(retried.status()).as(retried.body().toString()).isEqualTo(200);
+        assertThat(retried.body().path("used").asInt()).isEqualTo(1);
+        assertThat(s.alice.post(path, Map.of()).errorCode()).isEqualTo("RETRY_NOT_AVAILABLE"); // one at a time
+        s.drive();
+        assertThat(s.state()).isEqualTo("INTERNAL_REVIEW");
+        assertThat(admin.queryForObject("""
+                SELECT count(*) FROM app.admin_retry_request WHERE requirement_id = ?::uuid AND requested_by_user IS NOT NULL
+                  AND status = 'COMPLETED'
+                """, Integer.class, UUID.fromString(s.requirementId))).isEqualTo(1);
+    }
+
     @Test
     void permanentFailuresAreNeverRetried() throws Exception {
         AnalysisScenario s = failed();

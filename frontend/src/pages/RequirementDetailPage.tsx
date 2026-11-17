@@ -14,6 +14,7 @@ import { DocumentsPanel } from '../components/DocumentsPanel';
 import { BrdPanel } from '../components/BrdPanel';
 import { RepositoryLinkPanel } from '../components/RepositoryLinkPanel';
 import { SourcesPanel } from '../components/SourcesPanel';
+import { AnalysisRetryPanel } from '../components/AnalysisRetryPanel';
 import { BrdQuotePanel } from '../components/BrdQuotePanel';
 import { Icon } from '../ui/Icon';
 import {
@@ -258,6 +259,7 @@ export function RequirementDetailPage() {
         </div>
       )}
 
+      {detail.state === 'FAILED' && <AnalysisRetryPanel requirementId={detail.id} />}
       <div className="grid grid-main-side">
         <div>
           <Card title="Requirement">

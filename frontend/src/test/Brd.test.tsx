@@ -108,3 +108,19 @@ describe('StaffReviewPage', () => {
     expect(JSON.parse(String(approve?.init.body))).toEqual({ expectedContentHash: 'c'.repeat(64) });
   });
 });
+
+describe('AnalysisRetryPanel', () => {
+  it('explains the failure and lets the author retry', async () => {
+    document.cookie = 'XSRF-TOKEN=r9; path=/';
+    const { AnalysisRetryPanel } = await import('../components/AnalysisRetryPanel');
+    const calls = mockFetch((_url, init) => ({
+      status: 200,
+      body: { failed: true, canRetry: init.method !== 'POST', used: init.method === 'POST' ? 1 : 0, limit: 3,
+        failureCode: 'MODEL_INVALID_OUTPUT', message: '3 of 3 retries left. A retry is not charged again.', pending: false },
+    }));
+    renderWithProviders(<AnalysisRetryPanel requirementId="r1" />);
+    expect(await screen.findByText(/could not use/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Retry analysis' }));
+    expect(calls.some((c) => c.url === '/api/v1/requirements/r1/analysis-retry' && c.init.method === 'POST')).toBe(true);
+  });
+});

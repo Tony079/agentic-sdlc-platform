@@ -117,6 +117,85 @@ class OperatorRetryService implements EventConsumer {
         return Map.of("retryRequestId", id.toString(), "status", "PENDING");
     }
 
+    // ---- the author (2026-11-17): retry a failed analysis from the requirement page --------------------------
+
+    static final int AUTHOR_RETRIES = 3;
+
+    /** canRetry and why not; failureCode is the dead job's code (content-free). */
+    record AuthorRetry(boolean failed, boolean canRetry, int used, int limit, String failureCode, String message,
+                       boolean pending) {
+    }
+
+    @Transactional(readOnly = true)
+    public AuthorRetry authorRetry(UUID requirementId) {
+        var me = io.github.tony079.sdlc.identity.api.ClientUsers.require();
+        UUID owner = jdbc.sql("SELECT created_by FROM app.requirement WHERE id = :r").param("r", requirementId)
+                .query(UUID.class).optional().orElseThrow(ApiException::notFound);
+        boolean failed = workflow.state(requirementId) == WorkflowState.FAILED;
+        int used = jdbc.sql("""
+                SELECT count(*) FROM app.admin_retry_request WHERE requirement_id = :r AND requested_by_user IS NOT NULL
+                """).param("r", requirementId).query(Integer.class).single();
+        boolean pending = Boolean.TRUE.equals(jdbc.sql("""
+                SELECT EXISTS (SELECT 1 FROM app.admin_retry_request WHERE requirement_id = :r AND status = 'PENDING')
+                """).param("r", requirementId).query(Boolean.class).single());
+        DeadJob job = lastDeadJob(requirementId);
+        String code = job == null ? null : job.lastErrorCode();
+        String message;
+        boolean can = false;
+        if (!failed) {
+            message = null;
+        } else if (!me.userId().equals(owner)) {
+            message = "The requirement's author can retry the analysis.";
+        } else if (pending) {
+            message = "A retry is already on its way.";
+        } else if (job == null || !retryable(job.jobType(), job.deadReason(), job.lastErrorCode())) {
+            message = "COST_CAP".equals(code)
+                    ? "The analysis stopped at the spending cap. Ask your Organisation Admin to contact Garuda."
+                    : "This failure cannot be retried from here. Contact Garuda support.";
+        } else if (used >= AUTHOR_RETRIES) {
+            message = "The " + AUTHOR_RETRIES + " retries are used. Contact Garuda support.";
+        } else {
+            can = true;
+            message = (AUTHOR_RETRIES - used) + " of " + AUTHOR_RETRIES + " retries left. A retry is not charged again.";
+        }
+        return new AuthorRetry(failed, can, used, AUTHOR_RETRIES, code, message, pending);
+    }
+
+    @Transactional
+    public AuthorRetry requestAuthorRetry(UUID requirementId) {
+        var me = io.github.tony079.sdlc.identity.api.ClientUsers.require();
+        AuthorRetry state = authorRetry(requirementId);
+        if (!state.canRetry()) {
+            throw ApiException.conflict("RETRY_NOT_AVAILABLE",
+                    state.message() == null ? "This requirement has not failed." : state.message());
+        }
+        DeadJob job = lastDeadJob(requirementId);
+        UUID id;
+        try {
+            id = jdbc.sql("""
+                    INSERT INTO app.admin_retry_request (tenant_id, job_id, requirement_id, requested_by_user, reason)
+                    VALUES (:t, :j, :r, :u, 'Retry requested by the requirement''s author') RETURNING id
+                    """).param("t", me.tenantId()).param("j", job.id()).param("r", requirementId)
+                    .param("u", me.userId()).query(UUID.class).single();
+        } catch (DuplicateKeyException e) {
+            throw ApiException.conflict("RETRY_ALREADY_REQUESTED", "A retry is already on its way.");
+        }
+        outbox.publish("REQUIREMENT", requirementId, EventTypes.ADMIN_RETRY_REQUESTED,
+                Map.of("requirementId", requirementId.toString(), "retryRequestId", id.toString()));
+        audit.record(AuditAction.ADMIN_RETRY_REQUESTED, "JOB", job.id(), AuditResult.SUCCESS);
+        return authorRetry(requirementId);
+    }
+
+    private DeadJob lastDeadJob(UUID requirementId) {
+        return jdbc.sql("""
+                SELECT id, job_type, aggregate_id, last_error_code, dead_reason, attempt_count, finished_at
+                FROM app.dead_job WHERE aggregate_id = :r AND job_type IN ('BA_ANALYSIS', 'BA_COMMIT_RESULT')
+                ORDER BY finished_at DESC LIMIT 1
+                """).param("r", requirementId).query((rs, n) -> new DeadJob(rs.getObject(1, UUID.class),
+                rs.getString(2), rs.getObject(3, UUID.class), rs.getString(4), rs.getString(5), rs.getInt(6),
+                rs.getObject(7, OffsetDateTime.class), false)).optional().orElse(null);
+    }
+
     static boolean retryable(String jobType, String deadReason, String lastErrorCode) {
         if (!RETRYABLE_TYPES.contains(jobType)) {
             return false;

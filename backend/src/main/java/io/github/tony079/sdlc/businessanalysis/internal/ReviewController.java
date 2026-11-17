@@ -64,6 +64,17 @@ class ReviewController {
         return retries.requestRetry(id, body.reason());
     }
 
+    // The author retries a failed analysis (at most three times, not charged again).
+    @GetMapping("/api/v1/requirements/{id}/analysis-retry")
+    OperatorRetryService.AuthorRetry authorRetry(@PathVariable UUID id) {
+        return retries.authorRetry(id);
+    }
+
+    @PostMapping("/api/v1/requirements/{id}/analysis-retry")
+    OperatorRetryService.AuthorRetry requestAuthorRetry(@PathVariable UUID id) {
+        return retries.requestAuthorRetry(id);
+    }
+
     record RetryRequest(@jakarta.validation.constraints.Size(max = 2000) String reason) {
     }
 
