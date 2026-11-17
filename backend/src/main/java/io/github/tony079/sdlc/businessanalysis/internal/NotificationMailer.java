@@ -129,29 +129,41 @@ class NotificationMailer {
                 """).param("s", status).param("a", attempted).param("id", id).update();
     }
 
-    private static final Map<String, String[]> KINDS = Map.of(
-            "CLARIFICATION_ASSIGNED", new String[] {"Questions about %s need your answer",
+    private static final Map<String, String[]> KINDS = Map.ofEntries(
+            Map.entry("TDD_READY_FOR_REVIEW", new String[] {"Technical design ready for your review: %s",
+                    "Your technical design is ready", "The Architect agent finished the technical design for %s. "
+                            + "Review it, then confirm it or request changes.", "Review the design", null}),
+            Map.entry("TDD_AWAITING_APPROVAL", new String[] {"Technical design waiting for your approval: %s",
+                    "A technical design needs your approval", "The author confirmed the technical design for %s. As a "
+                            + "BRD Approver, give the final approval or request changes.", "Open the design", null}),
+            Map.entry("TDD_APPROVED", new String[] {"Technical design approved: %s", "The technical design was approved",
+                    "The technical design for %s was approved. You can download it as PDF or Word.", "Open the design",
+                    null}),
+            Map.entry("TDD_FAILED", new String[] {"Technical design could not be written: %s",
+                    "The technical design could not be written", "The Architect agent could not produce the technical "
+                            + "design for %s. You can try again from the requirement page.", "Try again", null}),
+            Map.entry("CLARIFICATION_ASSIGNED", new String[] {"Questions about %s need your answer",
                     "The BA agent has questions for you",
                     "The BA agent needs your answers about %s before it can finish the BRD. The analysis continues "
-                            + "as soon as you answer.", "Answer the questions", "/clarifications"},
-            "BRD_READY_FOR_REVIEW", new String[] {"BRD ready for your review: %s", "Your BRD is ready",
+                            + "as soon as you answer.", "Answer the questions", "/clarifications"}),
+            Map.entry("BRD_READY_FOR_REVIEW", new String[] {"BRD ready for your review: %s", "Your BRD is ready",
                     "The business requirements document for %s is ready. Review it, then confirm it or request "
-                            + "changes.", "Review the BRD", null},
-            "BRD_AWAITING_APPROVAL", new String[] {"BRD waiting for your approval: %s", "A BRD needs your approval",
+                            + "changes.", "Review the BRD", null}),
+            Map.entry("BRD_AWAITING_APPROVAL", new String[] {"BRD waiting for your approval: %s", "A BRD needs your approval",
                     "The author confirmed the business requirements document for %s. As a BRD Approver, give the "
-                            + "final approval or request changes.", "Open the BRD", null},
-            "BRD_APPROVED", new String[] {"BRD approved: %s", "The BRD was approved",
+                            + "final approval or request changes.", "Open the BRD", null}),
+            Map.entry("BRD_APPROVED", new String[] {"BRD approved: %s", "The BRD was approved",
                     "The business requirements document for %s was approved and is being published to the project.",
-                    "View the requirement", null},
-            "BRD_RELEASED", new String[] {"BRD published: %s", "The approved BRD is available",
+                    "View the requirement", null}),
+            Map.entry("BRD_RELEASED", new String[] {"BRD published: %s", "The approved BRD is available",
                     "The approved business requirements document for %s is available to the project. You can "
-                            + "download it as PDF or Word.", "Open the BRD", null},
-            "BRD_PUBLISH_BLOCKED", new String[] {"BRD not published yet: %s", "Publishing is waiting",
+                            + "download it as PDF or Word.", "Open the BRD", null}),
+            Map.entry("BRD_PUBLISH_BLOCKED", new String[] {"BRD not published yet: %s", "Publishing is waiting",
                     "The approved BRD for %s could not be published yet because an automatic check did not pass.",
-                    "See why", null},
-            "BRD_NOT_FEASIBLE", new String[] {"Requirement not feasible: %s", "The requirement was found not feasible",
+                    "See why", null}),
+            Map.entry("BRD_NOT_FEASIBLE", new String[] {"Requirement not feasible: %s", "The requirement was found not feasible",
                     "The BA agent found %s not feasible. The requirement is closed and its BRD charge is waived. "
-                            + "The reasons are on the requirement page.", "See the reasons", null});
+                            + "The reasons are on the requirement page.", "See the reasons", null}));
 
     private Template template(Pending p) {
         String subject = p.requirementKey() == null ? "the requirement" : p.requirementKey();

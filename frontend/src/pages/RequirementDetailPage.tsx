@@ -12,6 +12,7 @@ import type {
 import { fieldMessage } from '../components/RequirementForm';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { BrdPanel } from '../components/BrdPanel';
+import { DesignPanel } from '../components/DesignPanel';
 import { RepositoryLinkPanel } from '../components/RepositoryLinkPanel';
 import { SourcesPanel } from '../components/SourcesPanel';
 import { AnalysisRetryPanel } from '../components/AnalysisRetryPanel';
@@ -272,6 +273,12 @@ export function RequirementDetailPage() {
           <div className="card">
             <BrdPanel requirementId={detail.id} requirementState={detail.state} />
           </div>
+          {detail.state === 'SHARED_WITH_CLIENT' && (
+            // GD-26: an approved BRD moves on to the Technical design stage.
+            <div className="card">
+              <DesignPanel requirementId={detail.id} />
+            </div>
+          )}
           {detail.content.repositoryUrl && (
             // Earlier requirements linked one repository by URL (C-18); new ones analyse a project environment (GD-23).
             <div className="card">
