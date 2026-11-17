@@ -45,16 +45,10 @@ final class BrdDocxRenderer {
     }
 
     private void write(BrdDocument d) {
-        para("Kicker", run("BUSINESS REQUIREMENTS DOCUMENT", false));
+        para("Kicker", run(d.kind().title.toUpperCase(java.util.Locale.ROOT), false));
         para("Title", run(d.requirementTitle(), false));
         para("Subtitle", run(d.requirementKey() + "  ·  Version " + d.versionNo() + "  ·  " + d.status(), false));
-        table(List.of(
-                new BrdDocument.Field("Organisation", d.organisation()),
-                new BrdDocument.Field("Project", d.project()),
-                new BrdDocument.Field("Requirement", d.requirementKey() + " — " + d.requirementTitle()),
-                new BrdDocument.Field("BRD version", d.versionNo() + ", produced " + d.producedAt()),
-                new BrdDocument.Field("Feasibility", d.feasibility() == null ? "Not assessed" : d.feasibility()),
-                new BrdDocument.Field("Exported", d.generatedAt() + " by " + d.generatedBy())));
+        table(d.cover());
 
         int n = 1;
         if (!d.requirement().isEmpty()) {
@@ -86,7 +80,7 @@ final class BrdDocxRenderer {
         }
         para("Heading1", run(n + ". Approval record", false));
         table(d.approval());
-        para("Detail", run("This document was generated from the approved BRD version stored in Garuda. The content "
+        para("Detail", run("This document was generated from the approved " + d.kind().shortName + " version stored in Garuda. The content "
                 + "fingerprint identifies that version exactly; any change to the content produces a different "
                 + "fingerprint.", false));
     }
@@ -189,7 +183,7 @@ final class BrdDocxRenderer {
                 <dc:title>%s</dc:title><dc:subject>%s</dc:subject><dc:creator>%s</dc:creator>\
                 <cp:keywords>BRD; %s; v%d</cp:keywords>\
                 <dcterms:created xsi:type="dcterms:W3CDTF">%s</dcterms:created></cp:coreProperties>"""
-                .formatted(xml(d.requirementKey() + " Business Requirements Document v" + d.versionNo()),
+                .formatted(xml(d.requirementKey() + " " + d.kind().title + " v" + d.versionNo()),
                         xml(d.requirementTitle()), xml(d.organisation()), xml(d.requirementKey()), d.versionNo(),
                         Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
     }
@@ -200,8 +194,8 @@ final class BrdDocxRenderer {
                 <w:hdr xmlns:w="%s"><w:p><w:pPr><w:pStyle w:val="HeaderText"/>\
                 <w:tabs><w:tab w:val="right" w:pos="9638"/></w:tabs></w:pPr>\
                 <w:r><w:t xml:space="preserve">%s  ·  Confidential</w:t></w:r><w:r><w:tab/></w:r>\
-                <w:r><w:t xml:space="preserve">%s  ·  BRD v%d</w:t></w:r></w:p></w:hdr>"""
-                .formatted(W, xml(d.organisation()), xml(d.requirementKey()), d.versionNo());
+                <w:r><w:t xml:space="preserve">%s  ·  %s v%d</w:t></w:r></w:p></w:hdr>"""
+                .formatted(W, xml(d.organisation()), xml(d.requirementKey()), d.kind().shortName, d.versionNo());
     }
 
     private static final String FOOTER = """

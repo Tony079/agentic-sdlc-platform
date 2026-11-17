@@ -46,6 +46,8 @@ public final class EventTypes {
     public static final String ENVIRONMENT_BRANCHES_CHANGED = "EnvironmentBranchesChanged";
     public static final String BRD_QUOTE_ACCEPTED = "BrdQuoteAccepted";
     public static final String SOURCES_ROUND_OPENED = "SourcesRoundOpened";
+    /** GD-26: a technical design was requested (or retried); the worker enqueues TDD_GENERATION. */
+    public static final String TDD_REQUESTED = "TddRequested";
 
     private static final Map<String, Integer> VERSIONS = Map.ofEntries(
             Map.entry(REQUIREMENT_SUBMITTED, 1),
@@ -84,7 +86,8 @@ public final class EventTypes {
             Map.entry(CHANGE_REQUEST_ACCEPTED, 1),
             Map.entry(ENVIRONMENT_BRANCHES_CHANGED, 1),
             Map.entry(BRD_QUOTE_ACCEPTED, 1),
-            Map.entry(SOURCES_ROUND_OPENED, 1));
+            Map.entry(SOURCES_ROUND_OPENED, 1),
+            Map.entry(TDD_REQUESTED, 1));
 
     private EventTypes() {
     }

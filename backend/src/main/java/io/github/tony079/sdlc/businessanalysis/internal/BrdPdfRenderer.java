@@ -52,7 +52,7 @@ final class BrdPdfRenderer {
             r.out.close();
             r.decorate(d);
             PDDocumentInformation info = pdf.getDocumentInformation();
-            info.setTitle(d.requirementKey() + " Business Requirements Document v" + d.versionNo());
+            info.setTitle(d.requirementKey() + " " + d.kind().title + " v" + d.versionNo());
             info.setSubject(d.requirementTitle());
             info.setAuthor(d.organisation());
             info.setCreator("Garuda");
@@ -67,17 +67,11 @@ final class BrdPdfRenderer {
 
     private void write(BrdDocument d) throws IOException {
         newPage();
-        text("BUSINESS REQUIREMENTS DOCUMENT", bold, 9, ACCENT, 0, 14);
+        text(d.kind().title.toUpperCase(java.util.Locale.ROOT), bold, 9, ACCENT, 0, 14);
         text(d.requirementTitle(), bold, 20, INK, 0, 26);
         text(d.requirementKey() + "  ·  Version " + d.versionNo() + "  ·  " + d.status(), regular, 11, MUTED, 0, 22);
         y -= 4;
-        table(List.of(
-                new BrdDocument.Field("Organisation", d.organisation()),
-                new BrdDocument.Field("Project", d.project()),
-                new BrdDocument.Field("Requirement", d.requirementKey() + " — " + d.requirementTitle()),
-                new BrdDocument.Field("BRD version", d.versionNo() + ", produced " + d.producedAt()),
-                new BrdDocument.Field("Feasibility", d.feasibility() == null ? "Not assessed" : d.feasibility()),
-                new BrdDocument.Field("Exported", d.generatedAt() + " by " + d.generatedBy())));
+        table(d.cover());
 
         int n = 1;
         if (!d.requirement().isEmpty()) {
@@ -113,7 +107,7 @@ final class BrdPdfRenderer {
         heading(n + ". Approval record");
         table(d.approval());
         y -= 6;
-        paragraph("This document was generated from the approved BRD version stored in Garuda. The content fingerprint "
+        paragraph("This document was generated from the approved " + d.kind().shortName + " version stored in Garuda. The content fingerprint "
                 + "identifies that version exactly; any change to the content produces a different fingerprint.",
                 regular, 8.5f, MUTED, 0);
     }
@@ -238,7 +232,7 @@ final class BrdPdfRenderer {
                 out = s;
                 float top = PAGE.getHeight() - 34;
                 draw(clip(d.organisation() + "  ·  Confidential", 70), regular, 7.5f, MUTED, MARGIN, top);
-                String right = d.requirementKey() + "  ·  BRD v" + d.versionNo();
+                String right = d.requirementKey() + "  ·  " + d.kind().shortName + " v" + d.versionNo();
                 draw(right, regular, 7.5f, MUTED, MARGIN + WIDTH - width(right, regular, 7.5f), top);
                 line(MARGIN, top - 6, MARGIN + WIDTH, top - 6, RULE, 0.5f);
                 line(MARGIN, 44, MARGIN + WIDTH, 44, RULE, 0.5f);

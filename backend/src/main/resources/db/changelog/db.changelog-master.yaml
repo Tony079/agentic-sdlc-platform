@@ -78,3 +78,5 @@ databaseChangeLog:
   - include: { file: changes/0042-ba-phase-b-v5.sql, relativeToChangelogFile: true }
   # GD-25 (2026-11-17): notifications are also emailed; members can turn email off.
   - include: { file: changes/0043-email-notifications.sql, relativeToChangelogFile: true }
+  # GD-26 (2026-11-17): Technical design stage (Architect agent, review, approval).
+  - include: { file: changes/0044-technical-design.sql, relativeToChangelogFile: true }

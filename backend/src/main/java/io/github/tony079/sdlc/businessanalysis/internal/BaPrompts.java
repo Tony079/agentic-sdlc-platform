@@ -19,6 +19,10 @@ final class BaPrompts {
      */
     static final PromptTemplate PHASE_B = load("ba.phase-b", 5, "prompts/ba-phase-b-v5.txt");
 
+    /** GD-26 Architect agent: choose the code to read, then write the technical design. */
+    static final PromptTemplate ARCH_FILES = load("arch.files", 1, "prompts/arch-files-v1.txt");
+    static final PromptTemplate ARCH_DESIGN = load("arch.design", 1, "prompts/arch-design-v1.txt");
+
     private BaPrompts() {
     }
 

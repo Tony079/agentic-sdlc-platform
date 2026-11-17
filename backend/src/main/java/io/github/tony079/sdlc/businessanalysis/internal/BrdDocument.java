@@ -18,12 +18,26 @@ import io.github.tony079.sdlc.businessanalysis.internal.BrdViews.VersionView;
  * the requirement it answers and its approval record. Both renderers (PDF, Word) draw from this one model, so the
  * two files always say the same thing. No source excerpts are included (AC-EXT-29).
  */
-record BrdDocument(String organisation, String project, String requirementKey, String requirementTitle,
+record BrdDocument(DocKind kind, List<Field> cover, String organisation, String project, String requirementKey, String requirementTitle,
                    List<Field> requirement, int versionNo, String status, String contentHash, String producedAt,
                    String feasibility, List<String> feasibilityReasons, String summary, List<Section> sections,
                    List<String> excludedDocuments, List<Field> approval, String generatedAt, String generatedBy) {
 
     record Field(String label, String value) {
+    }
+
+    /** Which document this is; the renderers take titles and short names from it. */
+    enum DocKind {
+        BRD("Business Requirements Document", "BRD"),
+        TDD("Technical Design Document", "TDD");
+
+        final String title;
+        final String shortName;
+
+        DocKind(String title, String shortName) {
+            this.title = title;
+            this.shortName = shortName;
+        }
     }
 
     record Section(String title, List<Entry> entries) {
@@ -111,7 +125,14 @@ record BrdDocument(String organisation, String project, String requirementKey, S
         }
         approval.add(new Field("Content fingerprint (SHA-256)", version.contentHash()));
 
-        return new BrdDocument(header.organisation(), header.project(), header.requirementKey(), header.title(),
+        String exported = when.format(OffsetDateTime.now());
+        List<Field> cover = List.of(new Field("Organisation", header.organisation()),
+                new Field("Project", header.project()),
+                new Field("Requirement", header.requirementKey() + " — " + header.title()),
+                new Field("BRD version", version.versionNo() + ", produced " + when.format(version.createdAt())),
+                new Field("Feasibility", feasibility == null ? "Not assessed" : VERDICTS.getOrDefault(feasibility, feasibility)),
+                new Field("Exported", exported + " by " + generatedBy));
+        return new BrdDocument(DocKind.BRD, cover, header.organisation(), header.project(), header.requirementKey(), header.title(),
                 requirement, version.versionNo(),
                 "RELEASED".equals(version.status()) ? "Approved" : "Approved, replaced by a later version",
                 version.contentHash(), when.format(version.createdAt()),
@@ -151,6 +172,7 @@ record BrdDocument(String organisation, String project, String requirementKey, S
 
     /** File name stem, e.g. REQ-000001-BRD-v2. */
     String fileStem() {
-        return (requirementKey == null ? "BRD" : requirementKey.replaceAll("[^A-Za-z0-9-]", "")) + "-BRD-v" + versionNo;
+        return (requirementKey == null ? kind.shortName : requirementKey.replaceAll("[^A-Za-z0-9-]", "")) + "-"
+                + kind.shortName + "-v" + versionNo;
     }
 }

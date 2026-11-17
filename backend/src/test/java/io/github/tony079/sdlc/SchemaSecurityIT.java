@@ -42,7 +42,7 @@ class SchemaSecurityIT {
                 "outbox_event", "processed_event", "project", "project_member", "project_repository", "release_approval", "repository",
                 "repository_file", "repository_link_request", "repository_snapshot", "requirement",
                 "requirement_closure", "requirement_key_counter", "requirement_repository", "requirement_repository_link", "requirement_revision", "retention_policy", "security_finding", "security_scan_run", "stage_execution",
-                "user_invitation", "workflow_instance", "workflow_transition");
+                "tdd_decision", "tdd_item", "tdd_version", "user_invitation", "workflow_instance", "workflow_transition");
         // Garuda GD-13: project-scoped tables carry one extra RESTRICTIVE policy for signed-in client users.
         java.util.Set<String> projectScoped = java.util.Set.of("admin_retry_request", "ai_cost_daily", "analysis_input_set",
                 "approved_scope_version", "ba_result_pending", "brd", "brd_client_decision", "brd_quote", "brd_revision_charge", "brd_version", "change_request", "clarification",
@@ -50,7 +50,7 @@ class SchemaSecurityIT {
                 "environment_branch", "environment_change_request", "model_call_record",
                 "notification", "project", "project_member", "release_approval", "repository_link_request",
                 "requirement", "requirement_closure", "requirement_repository", "requirement_repository_link",
-                "requirement_revision", "workflow_instance");
+                "requirement_revision", "tdd_decision", "tdd_version", "workflow_instance");
 
         for (String table : tenantTables) {
             Map<String, Object> rls = admin.queryForMap("""
