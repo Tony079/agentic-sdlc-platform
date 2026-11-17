@@ -1856,3 +1856,48 @@ button.link {
 button.link:hover {
   text-decoration: underline;
 }
+
+/* GD-25 notifications list */
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notification {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.notification:first-child {
+  border-top: 0;
+}
+
+.notification.unread {
+  background: var(--surface-2);
+}
+
+.notification-main {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.notification-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .notification {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

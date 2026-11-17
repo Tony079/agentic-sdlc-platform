@@ -34,9 +34,12 @@ class ReviewController {
     private final ReleaseService releases;
     private final OperatorRetryService retries;
     private final ChangeRequestService changeRequests;
+    private final io.github.tony079.sdlc.common.api.MailSender mail;
 
     ReviewController(ReviewService reviews, ClientBrdService client, ReleaseService releases,
-                     OperatorRetryService retries, ChangeRequestService changeRequests) {
+                     OperatorRetryService retries, ChangeRequestService changeRequests,
+                     io.github.tony079.sdlc.common.api.MailSender mail) {
+        this.mail = mail;
         this.changeRequests = changeRequests;
         this.reviews = reviews;
         this.client = client;
@@ -190,6 +193,19 @@ class ReviewController {
     Map<String, String> clientChanges(@PathVariable UUID id, @Valid @RequestBody ChangeRequest body) {
         return Map.of("changeRequestId", client.requestChanges(id, body.text(), changeRequests).toString(),
                 "status", "SUBMITTED");
+    }
+
+    @GetMapping("/api/v1/notifications/settings")
+    Map<String, Boolean> notificationSettings() {
+        return client.notificationSettings(mail.configured());
+    }
+
+    record NotificationSettings(Boolean email) {
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/api/v1/notifications/settings")
+    Map<String, Boolean> setNotificationSettings(@RequestBody NotificationSettings body) {
+        return client.setNotificationSettings(Boolean.TRUE.equals(body.email()), mail.configured());
     }
 
     @GetMapping("/api/v1/notifications")

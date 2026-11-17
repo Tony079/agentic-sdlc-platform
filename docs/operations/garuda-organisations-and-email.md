@@ -72,3 +72,17 @@ Without `SDLC_MAIL_HOST`, Garuda uses copy-link only. Self-service "forgot passw
 The api refuses to start in production in either of these cases:
 - `sdlc.security.org-admin-mfa-required=false` (`ORG_ADMIN_MFA_DISABLED`);
 - `SDLC_PUBLIC_BASE_URL` is not `https://` (`PUBLIC_BASE_URL_NOT_HTTPS`).
+
+## Notification emails (GD-25)
+
+With `SDLC_MAIL_HOST` set, the **api** process also emails every new in-app notification (questions from the BA
+agent, BRD ready for review, BRD waiting for approval, BRD approved, published, not feasible). It runs every 30
+seconds (`sdlc.notifications.email-interval`) and needs no extra configuration.
+
+- An email names the requirement (key and title) and links to it. It never contains BRD, clarification or document
+  content; the reader signs in to see it.
+- Each member turns email on or off on the **Notifications** page (default on).
+- `app.notification.email_status` records the result: `SENT`, `SKIPPED` (email off, inactive member, or older than a
+  day), `FAILED` (three failed attempts; see the api log line `notification email not delivered: <code>`), or
+  `PENDING`.
+- Without `SDLC_MAIL_HOST`, notifications stay in-app only.

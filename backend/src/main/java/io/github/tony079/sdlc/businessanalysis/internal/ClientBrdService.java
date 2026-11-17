@@ -333,6 +333,21 @@ class ClientBrdService {
         return reviews.notifications(TenantContext.currentActor().orElseThrow());
     }
 
+    /** GD-25: whether the signed-in member receives notifications by email (and whether email is set up at all). */
+    @Transactional(readOnly = true)
+    public Map<String, Boolean> notificationSettings(boolean mailConfigured) {
+        return Map.of("email", reviews.emailNotifications(TenantContext.currentActor().orElseThrow()),
+                "emailAvailable", mailConfigured);
+    }
+
+    @Transactional
+    public Map<String, Boolean> setNotificationSettings(boolean email, boolean mailConfigured) {
+        reviews.setEmailNotifications(TenantContext.currentActor().orElseThrow(), email);
+        audit.record(AuditAction.NOTIFICATION_SETTINGS_CHANGED, "USER", TenantContext.currentActor().orElseThrow(),
+                AuditResult.SUCCESS);
+        return notificationSettings(mailConfigured);
+    }
+
     @Transactional
     public void markRead(UUID notificationId) {
         if (!reviews.markRead(notificationId, TenantContext.currentActor().orElseThrow())) {

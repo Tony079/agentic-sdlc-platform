@@ -377,6 +377,16 @@ class ReviewRepository {
                 """).param("t", tenantId).param("u", recipient).param("k", kind).param("r", requirementId).update();
     }
 
+    boolean emailNotifications(UUID userId) {
+        return jdbc.sql("SELECT email_notifications FROM app.app_user WHERE id = :u").param("u", userId)
+                .query(Boolean.class).optional().orElse(false);
+    }
+
+    void setEmailNotifications(UUID userId, boolean enabled) {
+        jdbc.sql("UPDATE app.app_user SET email_notifications = :e WHERE id = :u").param("e", enabled)
+                .param("u", userId).update();
+    }
+
     List<NotificationView> notifications(UUID userId) {
         return jdbc.sql("""
                 SELECT id, kind, requirement_id, created_at, read_at FROM app.notification WHERE recipient_id = :u
