@@ -129,6 +129,14 @@ class HostedProviderAdaptersTest {
         assertThat(lastHeaders.get()).doesNotContainKey("Authorization");
         assertThat(lastBody.get().path("model").asString()).isEqualTo("model-under-test");
         assertThat(result.text()).isEqualTo("{\"ok\":2}");
+        // With an output schema the answer is constrained by strict structured output.
+        ModelProvider.Call base = call(false);
+        provider.complete(new ModelProvider.Call(base.requestId(), base.correlationId(), base.modelId(), base.promptId(),
+                base.promptVersion(), base.instructions(), base.data(), base.maxOutputTokens(), base.timeout(),
+                base.tools(), base.exchanges(), Map.of("type", "object", "properties", Map.of(), "required", List.of(),
+                        "additionalProperties", false)));
+        assertThat(lastBody.get().path("response_format").path("type").asString()).isEqualTo("json_schema");
+        assertThat(lastBody.get().path("response_format").path("json_schema").path("strict").asBoolean()).isTrue();
         assertThat(result.usage()).isEqualTo(new ModelProvider.Usage(70, 9, false));
         assertThat(provider.name()).isEqualTo("azure-openai");
         // Only Azure hosts, over HTTPS.

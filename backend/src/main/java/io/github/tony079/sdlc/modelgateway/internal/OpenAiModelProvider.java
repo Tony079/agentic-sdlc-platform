@@ -79,7 +79,11 @@ public class OpenAiModelProvider implements ModelProvider {
         body.put("model", call.modelId());
         body.put("max_completion_tokens", call.maxOutputTokens());
         body.put("messages", messages);
-        if (call.tools().isEmpty()) {
+        if (call.tools().isEmpty() && call.outputSchema() != null) {
+            // Strict structured output: the answer is constrained to the schema (enum labels, required fields).
+            body.put("response_format", Map.of("type", "json_schema", "json_schema",
+                    Map.of("name", "output", "strict", true, "schema", call.outputSchema())));
+        } else if (call.tools().isEmpty()) {
             body.put("response_format", Map.of("type", "json_object"));
         } else {
             body.put("tools", call.tools().stream().map(t -> Map.of("type", "function", "function", Map.of(

@@ -166,7 +166,8 @@ class DefaultModelGateway implements ModelGateway {
         while (true) {
             String instructions = request.prompt().instructions() + (repaired ? REPAIR_NOTE : "");
             ModelProvider.Call call = new ModelProvider.Call(requestId, correlationId, modelId, request.prompt().id(),
-                    request.prompt().version(), instructions, request.data(), maxTokens, timeout, specs, exchanges);
+                    request.prompt().version(), instructions, request.data(), maxTokens, timeout, specs, exchanges,
+                    JsonSchemas.forType(request.outputType()));
             ModelProvider.Result result;
             try {
                 attempts.count++;
