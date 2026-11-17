@@ -28,6 +28,12 @@ const STAGE: Record<ClientReview['stage'], { label: string; tone: Tone }> = {
   CLOSED_NOT_FEASIBLE: { label: 'Closed: not feasible', tone: 'danger' },
 };
 
+/** The approved BRD as a file; dates are printed in the reader's time zone. */
+function exportUrl(requirementId: string, format: 'pdf' | 'docx'): string {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return `/api/v1/requirements/${requirementId}/brd/export?format=${format}&tz=${encodeURIComponent(tz)}`;
+}
+
 /**
  * GD-24: the BRD goes straight to the client. The author accepts flagged statements and confirms (or requests
  * changes); a BRD Approver other than the author approves; the BRD is then released automatically.
@@ -85,7 +91,19 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
     <section aria-label="Business requirements document">
       <div className="spread">
         <h2>Business requirements document</h2>
-        {review && <Badge tone={STAGE[review.stage].tone}>{STAGE[review.stage].label}</Badge>}
+        <div className="row">
+          {review?.stage === 'APPROVED' && (
+            <>
+              <a className="btn btn-secondary btn-sm" href={exportUrl(requirementId, 'pdf')} download>
+                Download PDF
+              </a>
+              <a className="btn btn-secondary btn-sm" href={exportUrl(requirementId, 'docx')} download>
+                Download Word
+              </a>
+            </>
+          )}
+          {review && <Badge tone={STAGE[review.stage].tone}>{STAGE[review.stage].label}</Badge>}
+        </div>
       </div>
       {brd.isPending && <p>Loading…</p>}
       {!brd.isPending && !version?.items && (

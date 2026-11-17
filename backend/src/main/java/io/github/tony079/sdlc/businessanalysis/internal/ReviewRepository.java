@@ -265,6 +265,26 @@ class ReviewRepository {
                 """).param("p", projectId).query(UUID.class).list();
     }
 
+    /** Organisation, project and requirement text printed on an exported BRD. */
+    BrdDocument.Header exportHeader(UUID requirementId) {
+        return jdbc.sql("""
+                SELECT t.name, p.name, r.key, rv.title, rv.description, rv.business_objective, rv.expected_outcomes,
+                       rv.acceptance_criteria, rv.constraints
+                FROM app.requirement r
+                JOIN app.requirement_revision rv ON rv.requirement_id = r.id AND rv.revision_no = r.current_revision_no
+                JOIN app.project p ON p.id = r.project_id
+                JOIN app.tenant t ON t.id = r.tenant_id
+                WHERE r.id = :r
+                """).param("r", requirementId).query((rs, n) -> new BrdDocument.Header(rs.getString(1),
+                        rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6),
+                        rs.getString(7), rs.getString(8), rs.getString(9))).single();
+    }
+
+    String displayName(UUID userId) {
+        return jdbc.sql("SELECT display_name FROM app.app_user WHERE id = :u").param("u", userId)
+                .query(String.class).optional().orElse("a member");
+    }
+
     record Feasibility(String verdict, String reasonsJson) {
     }
 

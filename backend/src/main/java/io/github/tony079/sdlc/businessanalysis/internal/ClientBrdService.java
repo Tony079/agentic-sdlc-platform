@@ -108,6 +108,35 @@ class ClientBrdService {
                 inReview && approver && !author && confirmed != null, inReview && (author || approver), blocked);
     }
 
+    /**
+     * The approved (released) BRD as a document for PDF or Word export. Any member who can see the requirement may
+     * export it; a BRD still in review is not exportable, so an unapproved draft never circulates as a file.
+     */
+    @Transactional
+    public BrdDocument export(UUID requirementId, java.time.ZoneId zone) {
+        owned(requirementId);
+        VersionRow version = reviews.latestWithStatus(requirementId, Set.of("RELEASED"))
+                .orElseThrow(() -> ApiException.conflict("BRD_NOT_APPROVED",
+                        "Only an approved BRD can be downloaded. This BRD is not approved yet."));
+        ReviewRepository.Feasibility f = reviews.feasibility(version.id());
+        List<String> reasons = new java.util.ArrayList<>();
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        if (f.reasonsJson() != null) {
+            mapper.readTree(f.reasonsJson()).forEach(n -> reasons.add(n.asString()));
+        }
+        BrdViews.VersionView view = reviews.view(version.id(), false);
+        List<String> excluded = new java.util.ArrayList<>();
+        if (view.excludedDocuments() != null) {
+            mapper.readTree(view.excludedDocuments()).forEach(n -> excluded.add(n.path("fileName").asString("document")
+                    + " (" + n.path("state").asString("not processed").toLowerCase().replace('_', ' ') + ")"));
+        }
+        UUID me = TenantContext.currentActor().orElseThrow();
+        BrdDocument document = BrdDocument.of(reviews.exportHeader(requirementId), view, f.verdict(), reasons,
+                reviews.clientDecisions(version.id()), excluded, reviews.displayName(me), zone);
+        audit.record(AuditAction.BRD_EXPORTED, "BRD_VERSION", version.id(), AuditResult.SUCCESS);
+        return document;
+    }
+
     /** The author accepts a flagged statement as it stands (the evidence could not be verified automatically). */
     @Transactional
     public ClientBrd acceptFlag(UUID requirementId, String itemKey) {

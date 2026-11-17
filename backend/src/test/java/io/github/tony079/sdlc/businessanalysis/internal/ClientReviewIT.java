@@ -72,7 +72,7 @@ class ClientReviewIT extends ApiIntegrationTest {
     }
 
     @Test
-    void theAuthorConfirmsABrdApproverApprovesAndTheBrdIsReleasedWithoutStaff() {
+    void theAuthorConfirmsABrdApproverApprovesAndTheBrdIsReleasedWithoutStaff() throws Exception {
         AnalysisScenario s = analysed("FEASIBLE_WITH_RISKS");
         assertThat(s.state()).isEqualTo("INTERNAL_REVIEW");
         ApiClient alice = s.alice;
@@ -91,6 +91,8 @@ class ClientReviewIT extends ApiIntegrationTest {
         // A BRD Approver cannot approve before the author confirms, and the author never approves.
         assertThat(aaron.post(brd + "/approve", Map.of()).errorCode()).isEqualTo("AUTHOR_CONFIRMATION_REQUIRED");
 
+        // An unapproved BRD is never exported as a file.
+        assertThat(alice.download(brd + "/export?format=pdf").status()).isEqualTo(409);
         assertThat(alice.post(brd + "/flags/" + flagged + "/accept", Map.of()).status()).isEqualTo(200);
         Response confirmed = alice.post(brd + "/confirm", Map.of());
         assertThat(confirmed.status()).as(confirmed.body().toString()).isEqualTo(200);
@@ -104,6 +106,36 @@ class ClientReviewIT extends ApiIntegrationTest {
         s.drive();
         assertThat(s.state()).isEqualTo("SHARED_WITH_CLIENT");
         assertThat(alice.get(brd).body().path("review").path("stage").asString()).isEqualTo("APPROVED");
+
+        // The approved BRD downloads as PDF and Word, with its statements, approval record and fingerprint.
+        String hash = alice.get(brd).body().path("version").path("contentHash").asString();
+        ApiClient.Download pdf = aaron.download(brd + "/export?format=pdf&tz=Asia/Kolkata");
+        assertThat(pdf.status()).isEqualTo(200);
+        assertThat(pdf.header("Content-Type")).startsWith("application/pdf");
+        assertThat(pdf.header("Content-Disposition")).contains("-BRD-v1.pdf");
+        try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf.body())) {
+            String text = new org.apache.pdfbox.text.PDFTextStripper().getText(doc).replaceAll("\\s+", " ");
+            assertThat(text).contains("Loans are served by the controller mapped to /loans.")
+                    .contains("Feasibility: Feasible with risks").contains("Approval record").contains("Page 1 of");
+            assertThat(text.replace(" ", "")).contains(hash);
+        }
+        ApiClient.Download word = alice.download(brd + "/export?format=docx");
+        assertThat(word.status()).isEqualTo(200);
+        assertThat(word.header("Content-Disposition")).contains("-BRD-v1.docx");
+        String documentXml = null;
+        try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(word.body()))) {
+            for (var e = zip.getNextEntry(); e != null; e = zip.getNextEntry()) {
+                if (e.getName().equals("word/document.xml")) {
+                    documentXml = new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+            }
+        }
+        assertThat(documentXml).isNotNull().contains("A repayment without a channel is rejected.").contains(hash);
+        javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(new java.io.ByteArrayInputStream(documentXml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(alice.download(brd + "/export?format=exe").status()).isEqualTo(422);
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.audit_event WHERE action = 'BRD_EXPORTED'",
+                Integer.class)).isGreaterThanOrEqualTo(2);
         assertThat(admin.queryForObject("""
                 SELECT count(*) FROM app.workflow_transition t JOIN app.workflow_instance i ON i.id = t.instance_id
                 WHERE i.requirement_id = ?::uuid AND t.actor_type = 'STAFF'

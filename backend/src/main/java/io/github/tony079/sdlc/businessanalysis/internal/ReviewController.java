@@ -125,6 +125,37 @@ class ReviewController {
         return client.released(id);
     }
 
+    /** GD-24: the approved BRD as a PDF or Word file (format=pdf|docx); tz names the reader's time zone for dates. */
+    @GetMapping("/api/v1/requirements/{id}/brd/export")
+    ResponseEntity<byte[]> export(@PathVariable UUID id,
+                                  @org.springframework.web.bind.annotation.RequestParam(defaultValue = "pdf") String format,
+                                  @org.springframework.web.bind.annotation.RequestParam(required = false) String tz) {
+        boolean word = "docx".equalsIgnoreCase(format);
+        if (!word && !"pdf".equalsIgnoreCase(format)) {
+            throw io.github.tony079.sdlc.common.api.ApiException.validation(
+                    List.of(new io.github.tony079.sdlc.common.api.ApiError.FieldError("format", "UNSUPPORTED")));
+        }
+        java.time.ZoneId zone = java.time.ZoneOffset.UTC;
+        if (tz != null && !tz.isBlank()) {
+            try {
+                zone = java.time.ZoneId.of(tz);
+            } catch (java.time.DateTimeException e) {
+                zone = java.time.ZoneOffset.UTC;
+            }
+        }
+        BrdDocument document = client.export(id, zone);
+        byte[] bytes = word ? BrdDocxRenderer.render(document) : BrdPdfRenderer.render(document);
+        return ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        org.springframework.http.ContentDisposition.attachment()
+                                .filename(document.fileStem() + (word ? ".docx" : ".pdf")).build().toString())
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "no-store")
+                .contentType(word ? org.springframework.http.MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                        : org.springframework.http.MediaType.APPLICATION_PDF)
+                .body(bytes);
+    }
+
     // GD-24: the client's review of the BRD.
     @PostMapping("/api/v1/requirements/{id}/brd/flags/{itemKey}/accept")
     ClientBrd acceptFlag(@PathVariable UUID id, @PathVariable String itemKey) {
