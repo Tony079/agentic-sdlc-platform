@@ -13,7 +13,7 @@ export function ClarificationsPage() {
   });
   return (
     <section>
-      <PageHeader title="Clarifications" description="Questions from the analysts that need an answer before the BRD can be completed." />
+      <PageHeader title="Clarifications" description="Questions from the BA agent about your requirements. A blocking question pauses the analysis until you answer it." />
       {inbox.isPending && <p>Loading…</p>}
       {inbox.isError && <p role="alert">The clarifications could not be loaded.</p>}
       {inbox.data?.length === 0 && <p>No questions are waiting for you.</p>}

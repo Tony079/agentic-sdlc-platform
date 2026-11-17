@@ -6,6 +6,12 @@ import { PageHeader } from '../ui/components';
 
 const KINDS: Record<string, string> = {
   BRD_RELEASED: 'A business requirements document was shared with you.',
+  CLARIFICATION_ASSIGNED: 'The BA agent has questions for you. Analysis continues after your answers.',
+  BRD_READY_FOR_REVIEW: 'A BRD is ready for your review.',
+  BRD_AWAITING_APPROVAL: 'A BRD was confirmed by its author and waits for your approval.',
+  BRD_APPROVED: 'A BRD was approved and published to the project.',
+  BRD_PUBLISH_BLOCKED: 'An approved BRD could not be published yet: an automatic check did not pass.',
+  BRD_NOT_FEASIBLE: 'The BA agent found a requirement not feasible; it was closed and not charged.',
 };
 
 /** In-app notifications only (PRD AC-EXT-40). */

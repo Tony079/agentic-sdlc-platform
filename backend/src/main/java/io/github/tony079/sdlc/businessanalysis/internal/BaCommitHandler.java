@@ -207,10 +207,11 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
                     c.question().strip(), c.whyItMatters(), json.writeValueAsString(c.interpretations()),
                     c.recommendedOption());
             blocking |= c.blocking();
-            reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "CLARIFICATION_ASSIGNED",
-                    requirementId);
         }
         if (!outcome.clarifications().isEmpty()) {
+            // One notification per analysis, however many questions it raised.
+            reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "CLARIFICATION_ASSIGNED",
+                    requirementId);
             audit.record(AuditAction.CLARIFICATION_OPENED, "REQUIREMENT", requirementId, AuditResult.SUCCESS);
         }
         if (blocking) {

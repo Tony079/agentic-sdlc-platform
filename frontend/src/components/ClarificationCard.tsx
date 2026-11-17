@@ -12,6 +12,24 @@ const ERRORS: Record<string, string> = {
  * One clarification (TDD 17, FR-CLR): the question, why it matters, the interpretations and the recommended option,
  * the conversation, and answer / reject actions. {@code basePath} is the client or the staff endpoint.
  */
+const SOURCE: Record<string, string> = { AGENT: 'BA agent', REVIEWER: 'Garuda reviewer', CLIENT: 'client' };
+const STATUS: Record<string, string> = {
+  OPEN: 'Open', NEEDS_INFO: 'More information needed', ANSWERED: 'Answered', RESOLVED: 'Resolved',
+  REJECTED: 'Not applicable', WITHDRAWN: 'Withdrawn',
+};
+
+/** The agent's interpretations arrive as a JSON array of strings; older or plain text is shown as it is. */
+function parseInterpretations(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === 'string');
+  } catch {
+    // not JSON
+  }
+  return [value];
+}
+
 export function ClarificationCard({
   clarification: c,
   basePath,
@@ -47,22 +65,38 @@ export function ClarificationCard({
     <article className="card" aria-label={`Clarification: ${c.question}`}>
       <h3>{c.question}</h3>
       <p className="small">
-        {c.status} · {c.blocking ? 'blocking' : 'non-blocking'} · from {c.source} · for {c.assignedRole} · asked{' '}
-        {new Date(c.createdAt).toLocaleString()}
+        {STATUS[c.status] ?? c.status} · {c.blocking ? 'blocking: the analysis waits for your answer' : 'non-blocking'} ·
+        asked by the {SOURCE[c.source] ?? c.source} · {new Date(c.createdAt).toLocaleString()}
       </p>
       {c.whyItMatters && (
         <p>
           <strong>Why it matters:</strong> {c.whyItMatters}
         </p>
       )}
-      {c.interpretations && (
-        <p>
-          <strong>Possible interpretations:</strong> {c.interpretations}
-        </p>
+      {parseInterpretations(c.interpretations).length > 0 && (
+        <div>
+          <strong>Possible answers</strong>
+          {open && <span className="small"> (choose one to use it as your answer, then edit it if needed)</span>}
+          <ul className="stack" style={{ listStyle: 'none', paddingLeft: 0, marginTop: '0.4rem' }}>
+            {parseInterpretations(c.interpretations).map((option) => (
+              <li key={option} className="row" style={{ alignItems: 'flex-start' }}>
+                {open && (
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setText(option)}>
+                    Use
+                  </button>
+                )}
+                <span>
+                  {option}
+                  {option === c.recommendedOption && <span className="small"> · recommended by the agent</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-      {c.recommendedOption && (
+      {c.recommendedOption && !parseInterpretations(c.interpretations).includes(c.recommendedOption) && (
         <p>
-          <strong>Recommended:</strong> {c.recommendedOption}
+          <strong>Recommended by the agent:</strong> {c.recommendedOption}
         </p>
       )}
       {c.messages.length > 0 && (
