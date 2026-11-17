@@ -74,3 +74,5 @@ databaseChangeLog:
   - include: { file: changes/0040-author-analysis-retry.sql, relativeToChangelogFile: true }
   # 2026-11-17: BA Phase B prompt v4 (explicit kind and section values).
   - include: { file: changes/0041-ba-phase-b-v4.sql, relativeToChangelogFile: true }
+  # 2026-11-17: BA Phase B prompt v5 (answered clarifications are settled; never asked again).
+  - include: { file: changes/0042-ba-phase-b-v5.sql, relativeToChangelogFile: true }

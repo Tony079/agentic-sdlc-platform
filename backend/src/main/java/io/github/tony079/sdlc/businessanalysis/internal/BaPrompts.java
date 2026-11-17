@@ -17,7 +17,7 @@ final class BaPrompts {
      * v4: v3 (GD-24 template and feasibility verdict) with explicit kind and section values; earlier versions stay
      * registered but unused.
      */
-    static final PromptTemplate PHASE_B = load("ba.phase-b", 4, "prompts/ba-phase-b-v4.txt");
+    static final PromptTemplate PHASE_B = load("ba.phase-b", 5, "prompts/ba-phase-b-v5.txt");
 
     private BaPrompts() {
     }

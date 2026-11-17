@@ -142,6 +142,20 @@ class ClarificationRepository {
                 }).list();
     }
 
+    /** Normalised questions the client already answered or declined for this requirement. */
+    java.util.Set<String> settledQuestions(UUID requirementId) {
+        return jdbc.sql("""
+                SELECT question FROM app.clarification WHERE requirement_id = :r AND status IN ('RESOLVED', 'REJECTED')
+                """).param("r", requirementId).query(String.class).list().stream()
+                .map(ClarificationRepository::normalise).collect(java.util.stream.Collectors.toSet());
+    }
+
+    /** Case, punctuation and spacing do not make a question different. */
+    static String normalise(String question) {
+        return question == null ? ""
+                : question.toLowerCase(java.util.Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", " ").strip();
+    }
+
     int withdrawOpen(UUID requirementId) {
         return jdbc.sql("""
                 UPDATE app.clarification SET status = 'WITHDRAWN', updated_at = clock_timestamp()

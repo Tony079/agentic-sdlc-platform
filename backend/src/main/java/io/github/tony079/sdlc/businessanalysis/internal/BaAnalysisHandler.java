@@ -118,7 +118,21 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
             phaseBData.addAll(ContextAssembler.documents(inputs.chunks()));
             String corrections = inputs.inputSet().correctionsJson();
             if (corrections != null && !"[]".equals(corrections.replace(" ", ""))) {
-                phaseBData.add(new DataBlock("reviewer correction notes (item key, instruction)", corrections));
+                // The client's answers to earlier clarifications are settled decisions, given in their own block so
+                // the model applies them instead of asking again; other notes stay correction notes.
+                List<JsonNode> answers = new ArrayList<>();
+                List<JsonNode> notes = new ArrayList<>();
+                for (JsonNode node : json.readTree(corrections)) {
+                    ("CLARIFICATION".equals(node.path("source").asString("")) ? answers : notes).add(node);
+                }
+                if (!answers.isEmpty()) {
+                    phaseBData.add(new DataBlock("answered clarifications (question and the client's answer; settled"
+                            + " decisions, do not ask again)", json.writeValueAsString(answers)));
+                }
+                if (!notes.isEmpty()) {
+                    phaseBData.add(new DataBlock("reviewer correction notes (item key, instruction)",
+                            json.writeValueAsString(notes)));
+                }
             }
             ModelResponse<Proposal> phaseB = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_B, phaseBData,
                     Proposal.class, job.aggregateId(), 16384, null));

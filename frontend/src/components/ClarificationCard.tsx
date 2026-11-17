@@ -65,7 +65,7 @@ export function ClarificationCard({
     <article className="card" aria-label={`Clarification: ${c.question}`}>
       <h3>{c.question}</h3>
       <p className="small">
-        {STATUS[c.status] ?? c.status} · {c.blocking ? 'blocking: the analysis waits for your answer' : 'non-blocking'} ·
+        {STATUS[c.status] ?? c.status} · {c.blocking ? (open ? 'blocking: the analysis waits for your answer' : 'blocking') : 'non-blocking'} ·
         asked by the {SOURCE[c.source] ?? c.source} · {new Date(c.createdAt).toLocaleString()}
       </p>
       {c.whyItMatters && (

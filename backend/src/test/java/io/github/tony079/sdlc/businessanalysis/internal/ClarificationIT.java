@@ -91,7 +91,9 @@ class ClarificationIT extends ApiIntegrationTest {
 
     @Test
     void aBlockingAgentQuestionPausesTheAnalysisUntilTheOwnerAnswers() {
-        fake.enqueue(new Reply(PHASE_A), new Reply(withClarification(true, "CLIENT")));
+        // The second run repeats the answered question: the engine must not ask it again.
+        fake.enqueue(new Reply(PHASE_A), new Reply(withClarification(true, "CLIENT")),
+                new Reply(PHASE_A), new Reply(withClarification(true, "CLIENT")));
         AnalysisScenario s = scenario(null);
         s.submit();
         s.drive();
@@ -132,6 +134,8 @@ class ClarificationIT extends ApiIntegrationTest {
         assertThat(admin.queryForObject("SELECT status FROM app.clarification WHERE id = ?::uuid", String.class, id))
                 .isEqualTo("RESOLVED");
         assertThat(s.state()).isEqualTo("INTERNAL_REVIEW");
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.clarification WHERE requirement_id = ?::uuid",
+                Integer.class, s.requirementId)).isEqualTo(1);
         assertThat(transitions(s)).containsSubsequence("T11_START_ANALYSIS", "T16_AWAIT_CLARIFICATION",
                 "T17_RESUME_ANALYSIS", "T18_BRD_DRAFTED", "T20_QUEUE_REVIEW");
         // The resumed execution received the answer as input, and the paused one was superseded (FR-CLR-10).
@@ -208,7 +212,9 @@ class ClarificationIT extends ApiIntegrationTest {
 
     @Test
     void cancellationWithdrawsOpenClarifications() {
-        fake.enqueue(new Reply(PHASE_A), new Reply(withClarification(true, "CLIENT")));
+        // The second run repeats the answered question: the engine must not ask it again.
+        fake.enqueue(new Reply(PHASE_A), new Reply(withClarification(true, "CLIENT")),
+                new Reply(PHASE_A), new Reply(withClarification(true, "CLIENT")));
         AnalysisScenario s = scenario(null);
         s.submit();
         s.drive();

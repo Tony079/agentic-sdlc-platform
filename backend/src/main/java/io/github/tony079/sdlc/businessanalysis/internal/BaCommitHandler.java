@@ -200,7 +200,11 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         // FR-CLR-01..03, TDD 17: the engine (never the model) creates the clarifications. A blocking one pauses the
         // result (no BRD) and the workflow (T16); non-blocking ones are recorded and the BRD proceeds.
         boolean blocking = false;
-        for (BaContracts.ClarificationProposal c : outcome.clarifications()) {
+        // A question the client already answered (or declined) is never asked again, even if the model repeats it.
+        Set<String> settled = clarifications.settledQuestions(requirementId);
+        List<BaContracts.ClarificationProposal> asked = outcome.clarifications().stream()
+                .filter(c -> !settled.contains(ClarificationRepository.normalise(c.question()))).toList();
+        for (BaContracts.ClarificationProposal c : asked) {
             clarifications.insert(job.tenantId(), requirementId, "AGENT", pending.stageExecutionId(), null,
                     set.revisionNo(), set.commitSha(), pending.inputHash(), c.blocking(),
                     "REQUIREMENT_OWNER", // GD-24: every clarification goes to the client who asked
@@ -208,7 +212,7 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
                     c.recommendedOption());
             blocking |= c.blocking();
         }
-        if (!outcome.clarifications().isEmpty()) {
+        if (!asked.isEmpty()) {
             // One notification per analysis, however many questions it raised.
             reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "CLARIFICATION_ASSIGNED",
                     requirementId);
