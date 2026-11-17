@@ -101,7 +101,9 @@ class DefaultModelGateway implements ModelGateway {
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+                // An omitted optional field reads as null (hosted models often leave out "x": null); required fields
+                // are enforced by Bean Validation (@NotNull/@NotBlank) right after binding.
+                .disable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
                 .build();
         // Bounded: a provider that ignores interruption after a timeout cannot make the gateway grow without limit.
         // When every slot is busy a call is refused as PROVIDER_UNAVAILABLE (a transient failure for job deferral).
@@ -276,16 +278,31 @@ class DefaultModelGateway implements ModelGateway {
         }
     }
 
-    /** Strict JSON binding (unknown, missing or trailing content rejected) plus Bean Validation of the result. */
+    /**
+     * Strict JSON binding (unknown or trailing content rejected) plus Bean Validation of the result. Why an output is
+     * rejected is logged structurally only (field paths and rule messages, never values or model text).
+     */
     <T> Optional<T> parse(String text, Class<T> type) {
         try {
             T value = strictJson.readValue(text, type);
             if (value == null) {
+                log.warn("model.output rejected: empty JSON value");
                 return Optional.empty();
             }
             Set<ConstraintViolation<T>> violations = validator.validate(value);
-            return violations.isEmpty() ? Optional.of(value) : Optional.empty();
+            if (!violations.isEmpty()) {
+                log.warn("model.output rejected: {}", violations.stream().limit(5)
+                        .map(v -> v.getPropertyPath() + " " + v.getMessage()).sorted().toList());
+                return Optional.empty();
+            }
+            return Optional.of(value);
         } catch (JacksonException e) {
+            String path = e instanceof tools.jackson.databind.DatabindException d
+                    ? d.getPath().stream().map(r -> r.getPropertyName() != null ? r.getPropertyName()
+                            : String.valueOf(r.getIndex())).collect(java.util.stream.Collectors.joining("."))
+                    : "";
+            log.warn("model.output rejected: {} at '{}' (output {} characters)", e.getClass().getSimpleName(), path,
+                    text.length());
             return Optional.empty();
         }
     }

@@ -121,7 +121,7 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
                 phaseBData.add(new DataBlock("reviewer correction notes (item key, instruction)", corrections));
             }
             ModelResponse<Proposal> phaseB = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_B, phaseBData,
-                    Proposal.class, job.aggregateId(), 8192, null));
+                    Proposal.class, job.aggregateId(), 16384, null));
             return new Outcome(json.writeValueAsString(phaseB.output()), phaseA.output().understanding(),
                     phaseB.provider(), phaseB.modelId());
         } catch (ModelException e) {

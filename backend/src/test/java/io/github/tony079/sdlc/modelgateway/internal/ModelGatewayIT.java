@@ -181,6 +181,18 @@ class ModelGatewayIT {
         }
     }
 
+    record Note(@NotBlank String title, String risk) {
+    }
+
+    /** Hosted models often leave out optional fields; that is accepted, a missing required field is not. */
+    @Test
+    void omittedOptionalFieldsAreAcceptedButRequiredOnesAreNot() {
+        DefaultModelGateway parser = (DefaultModelGateway) gateway;
+        assertThat(parser.parse("{\"title\":\"x\"}", Note.class)).hasValueSatisfying(n -> assertThat(n.risk()).isNull());
+        assertThat(parser.parse("{\"risk\":\"y\"}", Note.class)).isEmpty();
+        assertThat(parser.parse("{\"title\":\"x\",\"extra\":1}", Note.class)).isEmpty();
+    }
+
     @Test
     void emptyOutputFailsAfterOneRepair() {
         fake.enqueue(new Reply(""), new Reply("   "));

@@ -26,6 +26,8 @@ import tools.jackson.databind.json.JsonMapper;
 @Profile("!migrate & !provision & !retention")
 public class OpenAiModelProvider implements ModelProvider {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(OpenAiModelProvider.class);
+
     private final SecretsProvider secrets;
     private final JsonMapper json;
     private final String baseUrl;
@@ -88,8 +90,12 @@ public class OpenAiModelProvider implements ModelProvider {
                 json.writeValueAsString(body), call.timeout());
         JsonNode root = json.readTree(response);
         JsonNode choice = root.path("choices").path(0);
-        if ("content_filter".equals(choice.path("finish_reason").asString(""))) {
+        String finish = choice.path("finish_reason").asString("");
+        if ("content_filter".equals(finish)) {
             throw new Failure(Failure.Kind.ERROR);
+        }
+        if ("length".equals(finish)) {
+            LOG.warn("{} output was cut off at the output token limit ({} tokens)", name(), call.maxOutputTokens());
         }
         JsonNode message = choice.path("message");
         List<ToolCall> toolCalls = new ArrayList<>();
