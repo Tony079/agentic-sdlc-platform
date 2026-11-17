@@ -47,7 +47,7 @@ final class BrdDocxRenderer {
     private void write(BrdDocument d) {
         para("Kicker", run("BUSINESS REQUIREMENTS DOCUMENT", false));
         para("Title", run(d.requirementTitle(), false));
-        para("Subtitle", run(d.requirementKey() + "  ·  Version " + d.versionNo() + "  ·  Approved", false));
+        para("Subtitle", run(d.requirementKey() + "  ·  Version " + d.versionNo() + "  ·  " + d.status(), false));
         table(List.of(
                 new BrdDocument.Field("Organisation", d.organisation()),
                 new BrdDocument.Field("Project", d.project()),

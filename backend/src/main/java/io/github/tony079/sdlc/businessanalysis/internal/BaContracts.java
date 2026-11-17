@@ -65,8 +65,24 @@ final class BaContracts {
 
     record Evidence(@NotNull EvidenceType type, @Size(max = 1024) String path, @Min(1) @Max(1_000_000) Integer startLine,
                     @Min(1) @Max(1_000_000) Integer endLine, @Size(max = 36) String documentVersionId,
-                    @Min(1) @Max(5000) Integer chunk, @NotBlank @Size(max = 300) String quote) {
+                    @Min(1) @Max(5000) Integer chunk, @NotBlank @Size(max = QUOTE_MAX) String quote) {
+
+        /**
+         * A quote longer than the limit is shortened to its start instead of rejecting the whole proposal (which cost
+         * a repair call). The start of an exact quote is still exact, so the citation check is unchanged.
+         */
+        Evidence {
+            if (quote != null && quote.length() > QUOTE_MAX) {
+                int end = QUOTE_MAX;
+                if (Character.isHighSurrogate(quote.charAt(end - 1))) {
+                    end--;
+                }
+                quote = quote.substring(0, end).stripTrailing();
+            }
+        }
     }
+
+    static final int QUOTE_MAX = 300;
 
     record Unsupported(@NotBlank @Size(max = 1000) String requirement) {
     }

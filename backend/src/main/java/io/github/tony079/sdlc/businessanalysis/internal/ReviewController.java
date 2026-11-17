@@ -129,7 +129,8 @@ class ReviewController {
     @GetMapping("/api/v1/requirements/{id}/brd/export")
     ResponseEntity<byte[]> export(@PathVariable UUID id,
                                   @org.springframework.web.bind.annotation.RequestParam(defaultValue = "pdf") String format,
-                                  @org.springframework.web.bind.annotation.RequestParam(required = false) String tz) {
+                                  @org.springframework.web.bind.annotation.RequestParam(required = false) String tz,
+                                  @org.springframework.web.bind.annotation.RequestParam(required = false) Integer version) {
         boolean word = "docx".equalsIgnoreCase(format);
         if (!word && !"pdf".equalsIgnoreCase(format)) {
             throw io.github.tony079.sdlc.common.api.ApiException.validation(
@@ -143,7 +144,7 @@ class ReviewController {
                 zone = java.time.ZoneOffset.UTC;
             }
         }
-        BrdDocument document = client.export(id, zone);
+        BrdDocument document = client.export(id, version, zone);
         byte[] bytes = word ? BrdDocxRenderer.render(document) : BrdPdfRenderer.render(document);
         return ResponseEntity.ok()
                 .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
@@ -154,6 +155,11 @@ class ReviewController {
                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
                         : org.springframework.http.MediaType.APPLICATION_PDF)
                 .body(bytes);
+    }
+
+    @GetMapping("/api/v1/requirements/{id}/brd/history")
+    List<BrdViews.HistoryEntry> history(@PathVariable UUID id) {
+        return client.history(id);
     }
 
     // GD-24: the client's review of the BRD.

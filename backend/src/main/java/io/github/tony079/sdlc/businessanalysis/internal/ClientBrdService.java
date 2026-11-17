@@ -113,11 +113,15 @@ class ClientBrdService {
      * export it; a BRD still in review is not exportable, so an unapproved draft never circulates as a file.
      */
     @Transactional
-    public BrdDocument export(UUID requirementId, java.time.ZoneId zone) {
+    public BrdDocument export(UUID requirementId, Integer versionNo, java.time.ZoneId zone) {
         owned(requirementId);
-        VersionRow version = reviews.latestWithStatus(requirementId, Set.of("RELEASED"))
+        VersionRow version = (versionNo == null
+                ? reviews.latestWithStatus(requirementId, Set.of("RELEASED"))
+                : reviews.versionByNumber(requirementId, versionNo).filter(v -> "RELEASED".equals(v.status())
+                        || reviews.clientDecisions(v.id()).stream().anyMatch(d -> "APPROVED".equals(d.kind()))))
+                .filter(v -> !"PURGED".equals(v.status()))
                 .orElseThrow(() -> ApiException.conflict("BRD_NOT_APPROVED",
-                        "Only an approved BRD can be downloaded. This BRD is not approved yet."));
+                        "Only an approved BRD version can be downloaded."));
         ReviewRepository.Feasibility f = reviews.feasibility(version.id());
         List<String> reasons = new java.util.ArrayList<>();
         var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
@@ -135,6 +139,60 @@ class ClientBrdService {
                 reviews.clientDecisions(version.id()), excluded, reviews.displayName(me), zone);
         audit.record(AuditAction.BRD_EXPORTED, "BRD_VERSION", version.id(), AuditResult.SUCCESS);
         return document;
+    }
+
+    /**
+     * Every BRD version of the requirement, newest first, with what changed against the version before it and the
+     * change request that led to it. The author and BRD Approvers see all versions; other members only approved ones.
+     */
+    @Transactional(readOnly = true)
+    public List<BrdViews.HistoryEntry> history(UUID requirementId) {
+        var visible = owned(requirementId);
+        UUID me = TenantContext.currentActor().orElseThrow();
+        boolean insider = me.equals(visible.ownerId()) || reviews.isBrdApprover(visible.projectId());
+        List<BrdViews.VersionRef> refs = new java.util.ArrayList<>(reviews.versionsOf(requirementId));
+        java.util.Collections.reverse(refs); // oldest first while building
+        List<BrdViews.HistoryEntry> entries = new java.util.ArrayList<>();
+        BrdViews.VersionView previous = null;
+        String pendingRequest = null;
+        for (BrdViews.VersionRef ref : refs) {
+            List<ReviewRepository.ClientDecision> decisions = reviews.clientDecisions(ref.id());
+            var approval = decisions.stream().filter(d -> "APPROVED".equals(d.kind())).findFirst().orElse(null);
+            boolean approved = "RELEASED".equals(ref.status()) || approval != null;
+            BrdViews.VersionView view = "PURGED".equals(ref.status()) ? null : reviews.view(ref.id(), false);
+            BrdViews.VersionDiff diff = previous == null || view == null ? null : BrdViews.diff(previous, view);
+            if (insider || approved) {
+                entries.add(new BrdViews.HistoryEntry(ref.versionNo(), ref.status(), historyLabel(ref.status(), approved,
+                        decisions), view == null ? null : view.createdAt(), approved,
+                        approval == null ? null : approval.decidedByName(), approval == null ? null : approval.decidedAt(),
+                        insider ? pendingRequest : null, diff == null ? null : diff.added().size(),
+                        diff == null ? null : diff.changed().size(), diff == null ? null : diff.removed().size(),
+                        approved && !"PURGED".equals(ref.status())));
+            }
+            pendingRequest = decisions.stream().filter(d -> "CHANGES_REQUESTED".equals(d.kind()))
+                    .reduce((a, b) -> b).map(ReviewRepository.ClientDecision::note).orElse(null);
+            if (view != null) {
+                previous = view;
+            }
+        }
+        java.util.Collections.reverse(entries);
+        return entries;
+    }
+
+    private static String historyLabel(String status, boolean approved, List<ReviewRepository.ClientDecision> decisions) {
+        boolean changes = decisions.stream().anyMatch(d -> "CHANGES_REQUESTED".equals(d.kind()));
+        return switch (status) {
+            case "RELEASED" -> "Approved";
+            case "APPROVED_INTERNAL" -> "Approved, publishing";
+            case "IN_REVIEW" -> decisions.stream().anyMatch(d -> "AUTHOR_CONFIRMED".equals(d.kind()))
+                    ? "Waiting for BRD Approver" : "In review";
+            case "SUPERSEDED" -> approved ? "Approved, replaced by a later version"
+                    : changes ? "Changes requested" : "Replaced by a later version";
+            case "WITHDRAWN" -> "Withdrawn";
+            case "STALE" -> "Out of date (inputs changed)";
+            case "PURGED" -> "Deleted under the retention policy";
+            default -> status;
+        };
     }
 
     /** The author accepts a flagged statement as it stands (the evidence could not be verified automatically). */

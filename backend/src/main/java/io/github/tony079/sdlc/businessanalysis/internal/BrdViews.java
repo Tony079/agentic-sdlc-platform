@@ -108,6 +108,15 @@ final class BrdViews {
                         String blockedReason) {
     }
 
+    /**
+     * One entry of a requirement's BRD history. added/changed/removed compare with the previous version (null for
+     * the first); changeRequest is the request that produced this version (shown to the author and approvers only).
+     */
+    record HistoryEntry(int versionNo, String status, String label, OffsetDateTime createdAt, boolean approved,
+                        String approvedBy, OffsetDateTime approvedAt, String changeRequest, Integer added,
+                        Integer changed, Integer removed, boolean downloadable) {
+    }
+
     record ClientBrd(UUID requirementId, String state, VersionView version, ClientReview review) {
     }
 

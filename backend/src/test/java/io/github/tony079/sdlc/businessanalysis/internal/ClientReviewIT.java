@@ -134,6 +134,13 @@ class ClientReviewIT extends ApiIntegrationTest {
         javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
                 .parse(new java.io.ByteArrayInputStream(documentXml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         assertThat(alice.download(brd + "/export?format=exe").status()).isEqualTo(422);
+        Response approvedHistory = aaron.get(brd + "/history");
+        assertThat(approvedHistory.status()).isEqualTo(200);
+        assertThat(approvedHistory.body().size()).isEqualTo(1);
+        assertThat(approvedHistory.body().get(0).path("label").asString()).isEqualTo("Approved");
+        assertThat(approvedHistory.body().get(0).path("approvedBy").asString()).isEqualTo("Aaron Approver");
+        assertThat(approvedHistory.body().get(0).path("downloadable").asBoolean()).isTrue();
+        assertThat(alice.download(brd + "/export?format=pdf&version=1").status()).isEqualTo(200);
         assertThat(admin.queryForObject("SELECT count(*) FROM app.audit_event WHERE action = 'BRD_EXPORTED'",
                 Integer.class)).isGreaterThanOrEqualTo(2);
         assertThat(admin.queryForObject("""
@@ -156,6 +163,16 @@ class ClientReviewIT extends ApiIntegrationTest {
         assertThat(second.body().path("version").path("versionNo").asInt()).isEqualTo(2);
         assertThat(second.body().path("review").path("revisionsUsed").asInt()).isEqualTo(1);
         assertThat(second.body().path("review").path("revisionsIncluded").asInt()).isEqualTo(3);
+        // The history shows both versions, the request that produced v2 and what changed; v1 was never approved.
+        Response history = s.alice.get(brd + "/history");
+        assertThat(history.body().size()).isEqualTo(2);
+        assertThat(history.body().get(0).path("versionNo").asInt()).isEqualTo(2);
+        assertThat(history.body().get(0).path("label").asString()).isEqualTo("In review");
+        assertThat(history.body().get(0).path("changeRequest").asString()).isEqualTo("Also cover refunds of repayments.");
+        assertThat(history.body().get(0).path("added").isNumber()).isTrue();
+        assertThat(history.body().get(1).path("label").asString()).isEqualTo("Changes requested");
+        assertThat(history.body().get(1).path("downloadable").asBoolean()).isFalse();
+        assertThat(s.alice.download(brd + "/export?format=pdf&version=1").status()).isEqualTo(409);
 
         // Not feasible: closed, the author still sees why.
         AnalysisScenario closed = analysed("NOT_FEASIBLE");

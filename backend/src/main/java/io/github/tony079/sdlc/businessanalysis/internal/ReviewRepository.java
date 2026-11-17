@@ -51,6 +51,11 @@ class ReviewRepository {
                 .query(ReviewRepository::versionRow).optional();
     }
 
+    Optional<VersionRow> versionByNumber(UUID requirementId, int versionNo) {
+        return jdbc.sql(VERSION_SELECT + "WHERE v.requirement_id = :r AND v.version_no = :n").param("r", requirementId)
+                .param("n", versionNo).query(ReviewRepository::versionRow).optional();
+    }
+
     List<BrdViews.VersionRef> versionsOf(UUID requirementId) {
         return jdbc.sql("""
                 SELECT id, version_no, status, content_hash FROM app.brd_version

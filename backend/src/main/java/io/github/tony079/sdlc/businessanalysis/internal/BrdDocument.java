@@ -19,7 +19,7 @@ import io.github.tony079.sdlc.businessanalysis.internal.BrdViews.VersionView;
  * two files always say the same thing. No source excerpts are included (AC-EXT-29).
  */
 record BrdDocument(String organisation, String project, String requirementKey, String requirementTitle,
-                   List<Field> requirement, int versionNo, String contentHash, String producedAt,
+                   List<Field> requirement, int versionNo, String status, String contentHash, String producedAt,
                    String feasibility, List<String> feasibilityReasons, String summary, List<Section> sections,
                    List<String> excludedDocuments, List<Field> approval, String generatedAt, String generatedBy) {
 
@@ -112,7 +112,9 @@ record BrdDocument(String organisation, String project, String requirementKey, S
         approval.add(new Field("Content fingerprint (SHA-256)", version.contentHash()));
 
         return new BrdDocument(header.organisation(), header.project(), header.requirementKey(), header.title(),
-                requirement, version.versionNo(), version.contentHash(), when.format(version.createdAt()),
+                requirement, version.versionNo(),
+                "RELEASED".equals(version.status()) ? "Approved" : "Approved, replaced by a later version",
+                version.contentHash(), when.format(version.createdAt()),
                 feasibility == null ? null : VERDICTS.getOrDefault(feasibility, feasibility), reasons,
                 version.understanding(), sections, excludedDocuments, approval,
                 when.format(OffsetDateTime.now()), generatedBy);

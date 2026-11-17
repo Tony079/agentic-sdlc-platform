@@ -473,6 +473,22 @@ export interface ClientReview {
   blockedReason: string | null;
 }
 
+/** One version in a requirement's BRD history (newest first). Counts compare with the previous version. */
+export interface BrdHistoryEntry {
+  versionNo: number;
+  status: string;
+  label: string;
+  createdAt: string | null;
+  approved: boolean;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  changeRequest: string | null;
+  added: number | null;
+  changed: number | null;
+  removed: number | null;
+  downloadable: boolean;
+}
+
 export interface ClientBrd {
   requirementId: string;
   state: string;

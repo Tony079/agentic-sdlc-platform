@@ -78,8 +78,9 @@ export function SourcesPanel({ requirementId, projectId }: { requirementId: stri
       title="Code analysed"
       actions={s.environmentName ? (
         <span className="row">
-          <strong>{s.environmentName}</strong>
-          {s.production && <Badge tone="danger">PROD</Badge>}
+          <span className="small">Environment</span>
+          <Badge tone={s.production ? 'danger' : 'neutral'}>{s.environmentName}</Badge>
+          {s.production && <Badge tone="danger">Production</Badge>}
         </span>
       ) : undefined}
     >

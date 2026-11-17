@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { ClientBrd, ClientReview, RequirementState } from '../api/types';
+import type { BrdHistoryEntry, ClientBrd, ClientReview, RequirementState } from '../api/types';
 import { money } from '../ui/money';
 import { Badge, Callout, formatDateTime, type Tone } from '../ui/components';
 import { BrdItems } from './BrdItems';
@@ -29,9 +29,77 @@ const STAGE: Record<ClientReview['stage'], { label: string; tone: Tone }> = {
 };
 
 /** The approved BRD as a file; dates are printed in the reader's time zone. */
-function exportUrl(requirementId: string, format: 'pdf' | 'docx'): string {
+function exportUrl(requirementId: string, format: 'pdf' | 'docx', versionNo?: number): string {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return `/api/v1/requirements/${requirementId}/brd/export?format=${format}&tz=${encodeURIComponent(tz)}`;
+  const version = versionNo == null ? '' : `&version=${versionNo}`;
+  return `/api/v1/requirements/${requirementId}/brd/export?format=${format}&tz=${encodeURIComponent(tz)}${version}`;
+}
+
+function historyTone(entry: BrdHistoryEntry): Tone {
+  if (entry.status === 'RELEASED') return 'success';
+  if (entry.approved) return 'info';
+  if (entry.status === 'IN_REVIEW' || entry.status === 'APPROVED_INTERNAL') return 'warning';
+  return 'neutral';
+}
+
+function changeSummary(e: BrdHistoryEntry): string {
+  if (e.added == null) return 'First version';
+  const parts = [`${e.added} added`, `${e.changed} changed`, `${e.removed} removed`];
+  return e.added + (e.changed ?? 0) + (e.removed ?? 0) === 0 ? 'No statement changes' : parts.join(' · ');
+}
+
+/** Every BRD version of the requirement: what changed, why, who approved it, and downloads of approved versions. */
+function BrdHistory({ requirementId, requirementState }: { requirementId: string; requirementState: RequirementState }) {
+  const history = useQuery({
+    queryKey: ['brd-history', requirementId, requirementState],
+    queryFn: () => api.get<BrdHistoryEntry[]>(`/api/v1/requirements/${requirementId}/brd/history`),
+  });
+  const entries = history.data ?? [];
+  if (entries.length === 0) return null;
+  return (
+    <details className="brd-history" style={{ marginTop: '1.25rem' }}>
+      <summary>
+        <strong>Version history</strong>{' '}
+        <span className="small">({entries.length} {entries.length === 1 ? 'version' : 'versions'})</span>
+      </summary>
+      <div className="table-wrap" style={{ marginTop: '0.75rem' }}>
+        <table>
+          <thead>
+            <tr>
+              <th>Version</th>
+              <th>Status</th>
+              <th>Produced</th>
+              <th>Changes</th>
+              <th>Approved by</th>
+              <th aria-label="Downloads" />
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e) => (
+              <tr key={e.versionNo}>
+                <td>v{e.versionNo}</td>
+                <td><Badge tone={historyTone(e)}>{e.label}</Badge></td>
+                <td>{e.createdAt ? formatDateTime(e.createdAt) : '—'}</td>
+                <td>
+                  {changeSummary(e)}
+                  {e.changeRequest && <div className="small">Requested: {e.changeRequest}</div>}
+                </td>
+                <td>{e.approvedBy ? `${e.approvedBy} · ${formatDateTime(e.approvedAt)}` : '—'}</td>
+                <td>
+                  {e.downloadable && (
+                    <span className="row" style={{ flexWrap: 'nowrap' }}>
+                      <a className="btn btn-ghost btn-sm" href={exportUrl(requirementId, 'pdf', e.versionNo)} download>PDF</a>
+                      <a className="btn btn-ghost btn-sm" href={exportUrl(requirementId, 'docx', e.versionNo)} download>Word</a>
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
 }
 
 /**
@@ -231,6 +299,7 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
           )}
         </>
       )}
+      {version?.items && <BrdHistory requirementId={requirementId} requirementState={requirementState} />}
       {message && (
         <p className={message.tone === 'danger' ? 'error' : 'notice'} role="status">
           {message.text}

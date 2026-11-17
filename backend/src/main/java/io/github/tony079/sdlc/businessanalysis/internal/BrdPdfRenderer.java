@@ -69,7 +69,7 @@ final class BrdPdfRenderer {
         newPage();
         text("BUSINESS REQUIREMENTS DOCUMENT", bold, 9, ACCENT, 0, 14);
         text(d.requirementTitle(), bold, 20, INK, 0, 26);
-        text(d.requirementKey() + "  ·  Version " + d.versionNo() + "  ·  Approved", regular, 11, MUTED, 0, 22);
+        text(d.requirementKey() + "  ·  Version " + d.versionNo() + "  ·  " + d.status(), regular, 11, MUTED, 0, 22);
         y -= 4;
         table(List.of(
                 new BrdDocument.Field("Organisation", d.organisation()),
