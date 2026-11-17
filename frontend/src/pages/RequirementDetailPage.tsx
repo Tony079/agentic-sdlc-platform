@@ -90,6 +90,10 @@ function errorMessage(error: unknown): string {
   return 'The action failed.';
 }
 
+/** States in which the worker moves the requirement on without user action. */
+const ACTIVE_STATES = new Set(['SUBMITTED', 'REPO_VALIDATING', 'AWAITING_DOCUMENTS', 'ANALYSING', 'BRD_DRAFTED',
+  'REVISION_REQUESTED', 'CLIENT_CHANGES_REQUESTED', 'INTERNAL_APPROVED']);
+
 export function RequirementDetailPage() {
   const { id } = useParams();
   const queryClient = useQueryClient();
@@ -102,13 +106,13 @@ export function RequirementDetailPage() {
   const requirement = useQuery({
     queryKey: ['requirement', id],
     queryFn: () => api.get<RequirementDetail>(`/api/v1/requirements/${id}`),
-    // Routing happens asynchronously in the worker: poll briefly while the requirement is SUBMITTED.
-    refetchInterval: (query) => (query.state.data?.state === 'SUBMITTED' ? 3000 : false),
+    // Work happens asynchronously in the worker: poll while the requirement is moving on its own.
+    refetchInterval: (query) => (ACTIVE_STATES.has(query.state.data?.state ?? '') ? 4000 : false),
   });
   const timeline = useQuery({
     queryKey: ['requirement', id, 'timeline'],
     queryFn: () => api.get<TimelineEntry[]>(`/api/v1/requirements/${id}/timeline`),
-    refetchInterval: requirement.data?.state === 'SUBMITTED' ? 3000 : false,
+    refetchInterval: ACTIVE_STATES.has(requirement.data?.state ?? '') ? 4000 : false,
   });
 
   if (requirement.isPending) {

@@ -13,8 +13,11 @@ import io.github.tony079.sdlc.modelgateway.api.PromptTemplate;
 final class BaPrompts {
 
     static final PromptTemplate PHASE_A = load("ba.phase-a", 1, "prompts/ba-phase-a-v1.txt");
-    /** v3: the GD-24 BRD template and the feasibility verdict; v1 and v2 stay registered but unused. */
-    static final PromptTemplate PHASE_B = load("ba.phase-b", 3, "prompts/ba-phase-b-v3.txt");
+    /**
+     * v4: v3 (GD-24 template and feasibility verdict) with explicit kind and section values; earlier versions stay
+     * registered but unused.
+     */
+    static final PromptTemplate PHASE_B = load("ba.phase-b", 4, "prompts/ba-phase-b-v4.txt");
 
     private BaPrompts() {
     }

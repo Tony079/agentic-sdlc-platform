@@ -184,6 +184,19 @@ class ModelGatewayIT {
     record Note(@NotBlank String title, String risk) {
     }
 
+    enum Label { FACT, QUESTION }
+
+    record Tagged(@jakarta.validation.constraints.NotNull Label kind) {
+    }
+
+    /** Enum labels are read case-insensitively; a value outside the enum is still rejected. */
+    @Test
+    void enumLabelsAreCaseInsensitiveButStillClosed() {
+        DefaultModelGateway parser = (DefaultModelGateway) gateway;
+        assertThat(parser.parse("{\"kind\":\"fact\"}", Tagged.class)).hasValueSatisfying(t -> assertThat(t.kind()).isEqualTo(Label.FACT));
+        assertThat(parser.parse("{\"kind\":\"CONTEXT\"}", Tagged.class)).isEmpty();
+    }
+
     /** Hosted models often leave out optional fields; that is accepted, a missing required field is not. */
     @Test
     void omittedOptionalFieldsAreAcceptedButRequiredOnesAreNot() {

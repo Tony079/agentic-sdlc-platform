@@ -72,3 +72,5 @@ databaseChangeLog:
   - include: { file: changes/0039-azure-openai-model.sql, relativeToChangelogFile: true }
   # 2026-11-17: the author retries a failed analysis (at most three times), through the operator retry path.
   - include: { file: changes/0040-author-analysis-retry.sql, relativeToChangelogFile: true }
+  # 2026-11-17: BA Phase B prompt v4 (explicit kind and section values).
+  - include: { file: changes/0041-ba-phase-b-v4.sql, relativeToChangelogFile: true }

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api, ApiError } from '../api/client';
 import { Callout } from '../ui/components';
 
@@ -26,9 +26,19 @@ export function AnalysisRetryPanel({ requirementId }: { requirementId: string })
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const wasPending = useRef(false);
   const retry = useQuery({
     queryKey: ['analysis-retry', requirementId],
-    queryFn: () => api.get<AuthorRetry>(`/api/v1/requirements/${requirementId}/analysis-retry`),
+    queryFn: async () => {
+      const result = await api.get<AuthorRetry>(`/api/v1/requirements/${requirementId}/analysis-retry`);
+      // The worker picks a retry up within seconds; then the requirement moves on (Analysing).
+      if (wasPending.current && !result.pending) {
+        void queryClient.invalidateQueries({ queryKey: ['requirement', requirementId] });
+      }
+      wasPending.current = result.pending;
+      return result;
+    },
+    refetchInterval: (q) => (q.state.data?.pending ? 3000 : false),
   });
   const r = retry.data;
   if (!r?.failed) return null;
@@ -52,7 +62,7 @@ export function AnalysisRetryPanel({ requirementId }: { requirementId: string })
         {(r.failureCode && REASONS[r.failureCode]) ?? 'The analysis stopped before a BRD was produced.'}
         {r.failureCode && <span className="small"> (code {r.failureCode})</span>}
       </p>
-      {r.message && <p className="small" style={{ margin: '0.4rem 0 0' }}>{r.message}</p>}
+      {r.message && <p className="small" style={{ margin: '0.4rem 0 0' }}>{r.pending ? 'Restarting the analysis…' : r.message}</p>}
       {r.canRetry && (
         <button type="button" className="btn-primary btn-sm" style={{ marginTop: '0.6rem' }} disabled={busy} onClick={() => void run()}>
           Retry analysis

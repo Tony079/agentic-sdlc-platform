@@ -104,6 +104,8 @@ class DefaultModelGateway implements ModelGateway {
                 // An omitted optional field reads as null (hosted models often leave out "x": null); required fields
                 // are enforced by Bean Validation (@NotNull/@NotBlank) right after binding.
                 .disable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES)
+                // "fact" reads as FACT; values outside the enum are still rejected.
+                .enable(tools.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
                 .build();
         // Bounded: a provider that ignores interruption after a timeout cannot make the gateway grow without limit.
         // When every slot is busy a call is refused as PROVIDER_UNAVAILABLE (a transient failure for job deferral).
@@ -301,8 +303,12 @@ class DefaultModelGateway implements ModelGateway {
                     ? d.getPath().stream().map(r -> r.getPropertyName() != null ? r.getPropertyName()
                             : String.valueOf(r.getIndex())).collect(java.util.stream.Collectors.joining("."))
                     : "";
-            log.warn("model.output rejected: {} at '{}' (output {} characters)", e.getClass().getSimpleName(), path,
-                    text.length());
+            // For a value that is not one of an enum's labels, the label itself is logged (short, never free text).
+            String label = e instanceof tools.jackson.databind.exc.InvalidFormatException f && f.getTargetType() != null
+                    && f.getTargetType().isEnum() && f.getValue() instanceof String v && v.length() <= 40
+                    && v.matches("[A-Za-z_ -]*") ? " value '" + v + "'" : "";
+            log.warn("model.output rejected: {} at '{}'{} (output {} characters)", e.getClass().getSimpleName(), path,
+                    label, text.length());
             return Optional.empty();
         }
     }
