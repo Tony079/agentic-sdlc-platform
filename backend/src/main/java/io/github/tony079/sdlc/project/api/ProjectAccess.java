@@ -1,6 +1,6 @@
 package io.github.tony079.sdlc.project.api;
 
-import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -9,8 +9,8 @@ import java.util.UUID;
  */
 public interface ProjectAccess {
 
-    /** The current user's active role in the project, or empty when they are not a member (or it does not exist). */
-    Optional<ProjectRole> roleOf(UUID projectId);
+    /** The current user's active roles in the project; empty when they are not a member (or it does not exist). */
+    List<ProjectRole> rolesOf(UUID projectId);
 
     /** True when the project exists in the current tenant and is not archived. */
     boolean isActive(UUID projectId);

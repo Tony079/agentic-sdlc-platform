@@ -48,8 +48,8 @@ class ProjectService implements ProjectAccess, io.github.tony079.sdlc.project.ap
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY, readOnly = true)
-    public Optional<ProjectRole> roleOf(UUID projectId) {
-        return ClientUsers.current().flatMap(user -> projects.roleOf(projectId, user.userId()));
+    public List<ProjectRole> rolesOf(UUID projectId) {
+        return ClientUsers.current().map(user -> projects.rolesOf(projectId, user.userId())).orElse(List.of());
     }
 
     @Override
@@ -143,32 +143,32 @@ class ProjectService implements ProjectAccess, io.github.tony079.sdlc.project.ap
     public List<Membership> membershipsOf(UUID userId) {
         ClientUsers.requireOrgAdmin();
         return projects.membershipsOf(userId).stream()
-                .map(m -> new Membership(m.id(), m.projectId(), m.projectName(), m.role())).toList();
+                .map(m -> new Membership(m.id(), m.projectId(), m.projectName(), m.roles())).toList();
     }
 
     @Override
     @Transactional
-    public void addMember(UUID projectId, UUID userId, ProjectRole role) {
-        addProjectMember(projectId, userId, role);
+    public void addMember(UUID projectId, UUID userId, List<ProjectRole> roles) {
+        addProjectMember(projectId, userId, roles);
     }
 
     /** Adds a user (INVITED or ACTIVE) to a project with a role. Used directly and by invitations. */
     @Transactional
-    public ProjectRepository.Member addProjectMember(UUID projectId, UUID userId, ProjectRole role) {
+    public ProjectRepository.Member addProjectMember(UUID projectId, UUID userId, List<ProjectRole> roles) {
         CurrentUser admin = ClientUsers.requireOrgAdmin();
         ProjectView project = get(projectId);
         if (!"ACTIVE".equals(project.status()) && !"PENDING".equals(project.status())) {
             throw ApiException.conflict("PROJECT_ARCHIVED", "Members cannot be added to an archived or declined project.");
         }
-        if (role == null) {
-            throw ApiException.validation("Choose a role: REQUIREMENT_AUTHOR, BRD_APPROVER or VIEWER.");
+        if (!ProjectRole.valid(roles)) {
+            throw ApiException.validation(ROLES_MESSAGE);
         }
         if (!projects.userExists(userId)) {
             throw ApiException.notFound();
         }
         UUID id;
         try {
-            id = projects.addMember(TenantContext.requireTenant(), projectId, userId, role, admin.userId());
+            id = projects.addMember(TenantContext.requireTenant(), projectId, userId, roles, admin.userId());
         } catch (DuplicateKeyException e) {
             throw ApiException.conflict("ALREADY_MEMBER", "This user is already a member of the project.");
         }
@@ -176,14 +176,17 @@ class ProjectService implements ProjectAccess, io.github.tony079.sdlc.project.ap
         return projects.member(id).orElseThrow();
     }
 
+    static final String ROLES_MESSAGE = "Choose one or more roles: Requirement Author, BRD Approver, Technical Approver; "
+            + "or Viewer on its own.";
+
     @Transactional
-    public ProjectRepository.Member changeRole(UUID memberId, ProjectRole role) {
+    public ProjectRepository.Member changeRoles(UUID memberId, List<ProjectRole> roles) {
         ClientUsers.requireOrgAdmin();
-        if (role == null) {
-            throw ApiException.validation("Choose a role: REQUIREMENT_AUTHOR, BRD_APPROVER or VIEWER.");
+        if (!ProjectRole.valid(roles)) {
+            throw ApiException.validation(ROLES_MESSAGE);
         }
         projects.member(memberId).orElseThrow(ApiException::notFound);
-        projects.changeRole(memberId, role);
+        projects.changeRoles(memberId, roles);
         audit.record(AuditAction.PROJECT_MEMBER_ROLE_CHANGED, "PROJECT_MEMBER", memberId, AuditResult.SUCCESS);
         return projects.member(memberId).orElseThrow();
     }

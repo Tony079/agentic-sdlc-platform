@@ -49,10 +49,12 @@ class ReviewConsumers implements EventConsumer {
     private final JsonMapper json;
     private final ReleaseGates gates;
     private final org.springframework.jdbc.core.simple.JdbcClient jdbc;
+    private final DesignRepository designs;
 
     ReviewConsumers(ReviewRepository reviews, ClarificationRepository clarificationRepository, InputSets inputSets, AnalysisStarter starter, WorkflowEngine workflow,
                     OutboxPublisher outbox, AuditWriter audit, JsonMapper json, ReleaseGates gates,
-                    org.springframework.jdbc.core.simple.JdbcClient jdbc) {
+                    org.springframework.jdbc.core.simple.JdbcClient jdbc, DesignRepository designs) {
+        this.designs = designs;
         this.gates = gates;
         this.jdbc = jdbc;
         this.reviews = reviews;
@@ -128,6 +130,20 @@ class ReviewConsumers implements EventConsumer {
         workflow.release(requirementId);
         reviews.notify(TenantContext.requireTenant(), owner, "BRD_APPROVED", requirementId);
         audit.record(AuditAction.BRD_RELEASED, "BRD_VERSION", version.id(), AuditResult.SUCCESS);
+        handOverToDesign(requirementId);
+    }
+
+    /**
+     * GD-27: an approved BRD is handed to the project's Technical Approvers for the technical design. Without one, the
+     * Organisation Admins are told to assign one.
+     */
+    private void handOverToDesign(UUID requirementId) {
+        List<UUID> technical = designs.technicalApprovers(designs.projectOf(requirementId));
+        List<UUID> recipients = technical.isEmpty() ? designs.organisationAdmins() : technical;
+        String kind = technical.isEmpty() ? "TDD_NO_TECHNICAL_APPROVER" : "TDD_HANDOVER";
+        for (UUID user : recipients) {
+            reviews.notify(TenantContext.requireTenant(), user, kind, requirementId);
+        }
     }
 
     /** FR-DOC-10: clarification answers given during review feed the next version, never the approved one. */
@@ -174,6 +190,7 @@ class ReviewConsumers implements EventConsumer {
         reviews.notify(TenantContext.requireTenant(), reviews.requirementOwner(requirementId), "BRD_RELEASED",
                 requirementId);
         audit.record(AuditAction.BRD_RELEASED, "BRD_VERSION", version.id(), AuditResult.SUCCESS);
+        handOverToDesign(requirementId);
     }
 
     private void invalidateRelease(UUID releaseApprovalId) {

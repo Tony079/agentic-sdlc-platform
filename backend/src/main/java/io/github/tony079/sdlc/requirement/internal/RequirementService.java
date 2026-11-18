@@ -100,7 +100,7 @@ class RequirementService {
             throw ApiException.validation(List.of(new FieldError("projectId", "INVALID_VALUE")));
         }
         // FR-ACC-01: creating a requirement needs the REQUIREMENT_AUTHOR or BRD_APPROVER role in an active project (GD-02).
-        if (!projects.roleOf(projectId).map(ProjectRole::canRequest).orElse(false)) {
+        if (!ProjectRole.canRequest(projects.rolesOf(projectId))) {
             throw new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ROLE_REQUIRED",
                     "You need the Requester or Approver role in this project to create requirements.");
         }
@@ -145,7 +145,7 @@ class RequirementService {
     @Transactional
     public Detail setRestricted(UUID id, boolean restricted) {
         RequirementRepository.Row row = visible(id);
-        boolean approver = projects.roleOf(row.projectId()).map(ProjectRole::canApprove).orElse(false);
+        boolean approver = ProjectRole.canApprove(projects.rolesOf(row.projectId()));
         if (!row.createdBy().equals(actor()) && !approver) {
             throw new ApiException(HttpStatus.FORBIDDEN, "OWNER_OR_APPROVER_REQUIRED",
                     "Only the owner or an Approver of the project can change who sees this requirement.");
@@ -296,7 +296,7 @@ class RequirementService {
         Revision current = requirements.findRevision(id, row.currentRevisionNo()).orElseThrow();
         return new Detail(row.id(), row.key(), row.projectId(), workflow.state(id), row.version(),
                 row.currentRevisionNo(), current.content(), requirements.revisions(id), row.createdAt(),
-                row.updatedAt(), row.restricted(), row.createdBy().equals(me), projects.roleOf(row.projectId()).orElse(null));
+                row.updatedAt(), row.restricted(), row.createdBy().equals(me), projects.rolesOf(row.projectId()));
     }
 
     /** A requirement the caller may see (project visibility, GD-05). */

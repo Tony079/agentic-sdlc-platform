@@ -53,7 +53,11 @@ class OrganisationUserService {
                                OrganisationProfiles.Profile profile) {
     }
 
-    record MembershipRequest(UUID projectId, ProjectRole role) {
+    /** {@code roles} (GD-27); a single {@code role} is still accepted from older clients. */
+    record MembershipRequest(UUID projectId, ProjectRole role, List<ProjectRole> roles) {
+        List<ProjectRole> effectiveRoles() {
+            return roles != null ? roles : role == null ? List.of() : List.of(role);
+        }
     }
 
     /** Result of an action that creates a link: the link is always returned so the admin can copy it (GD-04). */
@@ -134,8 +138,8 @@ class OrganisationUserService {
             throw ApiException.validation("Choose an organisation role.");
         }
         List<MembershipRequest> wanted = memberships == null ? List.of() : memberships;
-        if (wanted.stream().anyMatch(m -> m.projectId() == null || m.role() == null)) {
-            throw ApiException.validation("Each project needs a project role.");
+        if (wanted.stream().anyMatch(m -> m.projectId() == null || !ProjectRole.valid(m.effectiveRoles()))) {
+            throw ApiException.validation("Each project needs one or more project roles (Viewer on its own).");
         }
         if (wanted.stream().map(MembershipRequest::projectId).distinct().count() != wanted.size()) {
             throw ApiException.validation("A project is listed twice.");
@@ -149,7 +153,7 @@ class OrganisationUserService {
                         """).param("tenant", admin.tenantId()).param("email", normalised).param("name", name)
                         .param("role", role.name()).query(UUID.class).single();
                 for (MembershipRequest m : wanted) {
-                    projects.addMember(m.projectId(), userId, m.role());
+                    projects.addMember(m.projectId(), userId, m.effectiveRoles());
                 }
                 Message created = issue(admin, userId, normalised, name, Kind.INVITE);
                 audit.record(AuditAction.USER_INVITED, "USER", userId, AuditResult.SUCCESS);

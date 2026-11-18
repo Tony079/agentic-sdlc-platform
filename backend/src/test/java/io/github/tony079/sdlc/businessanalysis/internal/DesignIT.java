@@ -58,7 +58,7 @@ class DesignIT extends ApiIntegrationTest {
     }
 
     /** A requirement whose BRD is approved and released. */
-    private AnalysisScenario approvedBrd() {
+    private AnalysisScenario approvedBrdWithoutTechnicalApprover() {
         Enrolled registrar = AnalysisScenario.registrar();
         AnalysisScenario s = AnalysisScenario.prepare(this, loggedIn("acme", "alice@acme.test"),
                 loggedIn("acme", "aaron@acme.test"), AnalysisScenario.staffSession(client(), registrar, "acme", 0),
@@ -107,58 +107,78 @@ class DesignIT extends ApiIntegrationTest {
                  ], "openQuestions": ["Which channels are allowed?"]}""".formatted(AnalysisScenario.CONTROLLER, scenarioKey));
     }
 
+    /** A new member of the scenario's project with the Technical Approver role; returns a signed-in client. */
+    private ApiClient technicalApprover(AnalysisScenario s) {
+        String email = io.github.tony079.sdlc.support.RequirementFixtures.newMember("acme", "tech");
+        java.util.UUID user = admin.queryForObject("SELECT id FROM app.app_user WHERE email = ?", java.util.UUID.class, email);
+        io.github.tony079.sdlc.support.RequirementFixtures.addMember(java.util.UUID.fromString(s.projectId), user,
+                "TECHNICAL_APPROVER");
+        return loggedIn("acme", email);
+    }
+
     @Test
-    void theApprovedBrdIsDesignedReviewedApprovedAndDownloaded() throws Exception {
-        AnalysisScenario s = approvedBrd();
+    void theApprovedBrdIsHandedToTheTechnicalApproverWhoDesignsReviewsAndApprovesIt() throws Exception {
+        AnalysisScenario s = approvedBrdWithoutTechnicalApprover();
         String design = "/api/v1/requirements/" + s.requirementId + "/design";
         ApiClient alice = s.alice;
         ApiClient aaron = loggedIn("acme", "aaron@acme.test");
 
-        Response before = alice.get(design);
-        assertThat(before.status()).isEqualTo(200);
+        // No Technical Approver yet: the requirement says so and the Organisation Admin was told.
+        JsonNode none = alice.get(design).body();
+        assertThat(none.path("review").path("technicalApprovers").asInt()).isZero();
+        assertThat(none.path("review").path("blockedReason").asString()).contains("no Technical Approver");
+        assertThat(aaron.get("/api/v1/notifications").body().valueStream().map(n -> n.path("kind").asString()))
+                .contains("TDD_NO_TECHNICAL_APPROVER");
+        // The author and the BRD Approver cannot start it.
+        assertThat(alice.post(design + "/start", Map.of()).errorCode()).isEqualTo("DESIGN_DECISION_NOT_ALLOWED");
+        assertThat(aaron.post(design + "/start", Map.of()).errorCode()).isEqualTo("DESIGN_DECISION_NOT_ALLOWED");
+
+        ApiClient tina = technicalApprover(s);
+        Response before = tina.get(design);
         assertThat(before.body().path("review").path("stage").asString()).isEqualTo("NOT_STARTED");
         assertThat(before.body().path("review").path("canStart").asBoolean()).isTrue();
+        assertThat(alice.get(design).body().path("review").path("canStart").asBoolean()).isFalse();
 
         designReply(brdKey(s, "SCENARIOS"));
-        Response started = alice.post(design + "/start", Map.of());
+        Response started = tina.post(design + "/start", Map.of());
         assertThat(started.status()).as(started.body().toString()).isEqualTo(200);
         assertThat(started.body().path("review").path("stage").asString()).isEqualTo("GENERATING");
-        assertThat(alice.post(design + "/start", Map.of()).errorCode()).isEqualTo("DESIGN_IN_PROGRESS");
+        assertThat(tina.post(design + "/start", Map.of()).errorCode()).isEqualTo("DESIGN_IN_PROGRESS");
         s.drive();
 
-        JsonNode view = alice.get(design).body();
-        assertThat(view.path("review").path("stage").asString()).as(view.toString()).isEqualTo("AUTHOR_REVIEW");
+        JsonNode view = tina.get(design).body();
+        assertThat(view.path("review").path("stage").asString()).as(view.toString()).isEqualTo("IN_REVIEW");
         JsonNode items = view.path("version").path("items");
         assertThat(items.size()).isEqualTo(3);
-        // Engine checks: the citation verified, the invented quote flagged, the invented BRD key dropped.
         assertThat(items.get(0).path("supportState").asString()).isEqualTo("VERIFIED");
         assertThat(items.get(0).path("brdRefs").size()).isEqualTo(1);
         assertThat(items.get(1).path("supportState").asString()).isEqualTo("FLAGGED");
         assertThat(items.get(2).path("supportState").asString()).isEqualTo("NOT_TRACED");
-        // Coverage: the scenario is covered, the acceptance criterion is not.
         JsonNode coverage = view.path("version").path("coverage");
         assertThat(coverage.size()).isEqualTo(2);
         assertThat(coverage.valueStream().filter(c -> c.path("covered").asBoolean()).count()).isEqualTo(1);
-        assertThat(view.path("version").path("openQuestions").get(0).asString()).isEqualTo("Which channels are allowed?");
-        assertThat(alice.get("/api/v1/notifications").body().valueStream().map(n -> n.path("kind").asString()))
+        assertThat(tina.get("/api/v1/notifications").body().valueStream().map(n -> n.path("kind").asString()))
                 .contains("TDD_READY_FOR_REVIEW");
         assertThat(admin.queryForObject("""
                 SELECT count(*) FROM app.model_call_record WHERE requirement_id = ?::uuid AND prompt_id LIKE 'arch.%'
                 """, Integer.class, s.requirementId)).isEqualTo(2);
 
-        // Review: flags first, then the author confirms, then a BRD Approver other than the author approves.
-        assertThat(alice.post(design + "/confirm", Map.of()).errorCode()).isEqualTo("FLAGS_NOT_ACCEPTED");
-        assertThat(aaron.post(design + "/approve", Map.of()).errorCode()).isEqualTo("AUTHOR_CONFIRMATION_REQUIRED");
+        // Only the Technical Approver decides; flags first; approving alone needs the explicit confirmation.
         String flagged = items.get(1).path("itemKey").asString();
-        assertThat(alice.post(design + "/flags/" + flagged + "/accept", Map.of()).status()).isEqualTo(200);
-        Response confirmed = alice.post(design + "/confirm", Map.of());
-        assertThat(confirmed.body().path("review").path("stage").asString()).isEqualTo("AWAITING_APPROVAL");
-        assertThat(alice.post(design + "/approve", Map.of()).errorCode()).isEqualTo("DESIGN_DECISION_NOT_ALLOWED");
+        assertThat(alice.post(design + "/flags/" + flagged + "/accept", Map.of()).errorCode())
+                .isEqualTo("DESIGN_DECISION_NOT_ALLOWED");
+        assertThat(tina.post(design + "/approve", Map.of("confirmApproveAlone", true)).errorCode())
+                .isEqualTo("FLAGS_NOT_ACCEPTED");
+        assertThat(tina.post(design + "/flags/" + flagged + "/accept", Map.of()).status()).isEqualTo(200);
+        assertThat(alice.post(design + "/approve", Map.of("confirmApproveAlone", true)).errorCode())
+                .isEqualTo("DESIGN_DECISION_NOT_ALLOWED");
+        assertThat(tina.post(design + "/approve", Map.of()).errorCode()).isEqualTo("CONFIRMATION_REQUIRED");
         assertThat(alice.download(design + "/export?format=pdf").status()).isEqualTo(409);
-        Response approved = aaron.post(design + "/approve",
-                Map.of("expectedContentHash", confirmed.body().path("version").path("contentHash").asString()));
+        Response approved = tina.post(design + "/approve", Map.of("confirmApproveAlone", true,
+                "expectedContentHash", view.path("version").path("contentHash").asString()));
         assertThat(approved.status()).as(approved.body().toString()).isEqualTo(200);
         assertThat(approved.body().path("review").path("stage").asString()).isEqualTo("APPROVED");
+        assertThat(approved.body().path("review").path("approvalNote").asString()).contains("single Technical Approver");
 
         ApiClient.Download pdf = aaron.download(design + "/export?format=pdf");
         assertThat(pdf.status()).isEqualTo(200);
@@ -166,23 +186,25 @@ class DesignIT extends ApiIntegrationTest {
         try (var doc = org.apache.pdfbox.Loader.loadPDF(pdf.body())) {
             String text = new org.apache.pdfbox.text.PDFTextStripper().getText(doc).replaceAll("\\s+", " ");
             assertThat(text).contains("TECHNICAL DESIGN DOCUMENT").contains("Validate the repayment channel")
-                    .contains("Coverage of the approved BRD").contains("NOT COVERED");
+                    .contains("Coverage of the approved BRD").contains("NOT COVERED")
+                    .contains("Approved by the Technical Approver");
         }
         assertThat(alice.download(design + "/export?format=docx").status()).isEqualTo(200);
 
-        // The database refuses what the API refuses: content of an approved design cannot change.
         assertThatThrownBy(() -> admin.update("UPDATE app.tdd_version SET summary = 'x' WHERE requirement_id = ?::uuid",
                 s.requirementId)).hasMessageContaining("immutable");
     }
 
     @Test
-    void changesRequestedProduceANewVersionAndAFailedDesignCanBeRetried() {
-        AnalysisScenario s = approvedBrd();
+    void theAuthorRequestsChangesAndAFailedDesignIsRetriedByTheTechnicalApprover() {
+        AnalysisScenario s = approvedBrdWithoutTechnicalApprover();
+        ApiClient tina = technicalApprover(s);
         String design = "/api/v1/requirements/" + s.requirementId + "/design";
         designReply(brdKey(s, "SCENARIOS"));
-        s.alice.post(design + "/start", Map.of());
+        tina.post(design + "/start", Map.of());
         s.drive();
         assertThat(s.alice.post(design + "/request-changes", Map.of("text", "short")).status()).isEqualTo(422);
+        // The author follows the design and may ask for changes.
         Response changed = s.alice.post(design + "/request-changes", Map.of("text", "Also cover refunds of repayments."));
         assertThat(changed.status()).as(changed.body().toString()).isEqualTo(200);
         s.drive();
@@ -191,10 +213,10 @@ class DesignIT extends ApiIntegrationTest {
         assertThat(view.path("version").path("changeRequest").asString()).isEqualTo("Also cover refunds of repayments.");
         assertThat(view.path("history").size()).isEqualTo(2);
 
-        // The model fails: the design is FAILED, then retried by the author.
+        // The model fails: the design is FAILED, then retried by the Technical Approver (not the author).
         fake.reset();
         fake.cannedReply("arch.files", "not json at all");
-        Response again = s.alice.post(design + "/request-changes", Map.of("text", "Describe the rollback plan as well."));
+        Response again = tina.post(design + "/request-changes", Map.of("text", "Describe the rollback plan as well."));
         assertThat(again.status()).isEqualTo(200);
         for (int i = 0; i < 4; i++) {
             s.drive();
@@ -204,11 +226,12 @@ class DesignIT extends ApiIntegrationTest {
                     """, s.requirementId);
         }
         s.drive();
-        assertThat(s.alice.get(design).body().path("review").path("stage").asString()).isEqualTo("FAILED");
+        assertThat(tina.get(design).body().path("review").path("stage").asString()).isEqualTo("FAILED");
+        assertThat(s.alice.post(design + "/retry", Map.of()).errorCode()).isEqualTo("DESIGN_DECISION_NOT_ALLOWED");
         designReply(brdKey(s, "SCENARIOS"));
-        Response retried = s.alice.post(design + "/retry", Map.of());
+        Response retried = tina.post(design + "/retry", Map.of());
         assertThat(retried.status()).as(retried.body().toString()).isEqualTo(200);
         s.drive();
-        assertThat(s.alice.get(design).body().path("review").path("stage").asString()).isEqualTo("AUTHOR_REVIEW");
+        assertThat(tina.get(design).body().path("review").path("stage").asString()).isEqualTo("IN_REVIEW");
     }
 }

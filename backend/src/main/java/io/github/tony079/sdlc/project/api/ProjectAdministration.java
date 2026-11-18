@@ -9,12 +9,12 @@ import java.util.UUID;
  */
 public interface ProjectAdministration {
 
-    /** Adds a user of the organisation to an active project with a role. */
-    void addMember(UUID projectId, UUID userId, ProjectRole role);
+    /** Adds a user of the organisation to an active project with one or more roles. */
+    void addMember(UUID projectId, UUID userId, List<ProjectRole> roles);
 
     /** The user's active memberships, for the Organisation Admin's user list. */
     List<Membership> membershipsOf(UUID userId);
 
-    record Membership(UUID memberId, UUID projectId, String projectName, ProjectRole role) {
+    record Membership(UUID memberId, UUID projectId, String projectName, List<ProjectRole> roles) {
     }
 }

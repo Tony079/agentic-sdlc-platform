@@ -80,3 +80,5 @@ databaseChangeLog:
   - include: { file: changes/0043-email-notifications.sql, relativeToChangelogFile: true }
   # GD-26 (2026-11-17): Technical design stage (Architect agent, review, approval).
   - include: { file: changes/0044-technical-design.sql, relativeToChangelogFile: true }
+  # GD-27 (2026-11-18): several roles per project member; Technical Approvers own the technical design.
+  - include: { file: changes/0045-technical-approver-roles.sql, relativeToChangelogFile: true }

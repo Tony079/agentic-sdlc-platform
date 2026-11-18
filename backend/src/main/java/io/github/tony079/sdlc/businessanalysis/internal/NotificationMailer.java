@@ -130,6 +130,13 @@ class NotificationMailer {
     }
 
     private static final Map<String, String[]> KINDS = Map.ofEntries(
+            Map.entry("TDD_HANDOVER", new String[] {"Technical design to start: %s", "A BRD is ready for technical design",
+                    "The BRD for %s was approved and handed to you as Technical Approver. Start the technical design "
+                            + "when you are ready.", "Start the design", null}),
+            Map.entry("TDD_NO_TECHNICAL_APPROVER", new String[] {"No Technical Approver for %s",
+                    "A project needs a Technical Approver", "The BRD for %s was approved, but its project has no "
+                            + "Technical Approver to start the technical design. Assign one on the project's Members tab.",
+                    "Open the requirement", null}),
             Map.entry("TDD_READY_FOR_REVIEW", new String[] {"Technical design ready for your review: %s",
                     "Your technical design is ready", "The Architect agent finished the technical design for %s. "
                             + "Review it, then confirm it or request changes.", "Review the design", null}),

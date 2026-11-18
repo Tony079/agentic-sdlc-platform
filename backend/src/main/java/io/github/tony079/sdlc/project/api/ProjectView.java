@@ -7,10 +7,10 @@ import java.util.UUID;
  * A project (product or entity) of the organisation (PRD section 4A; Garuda GD-02). Status PENDING until two Garuda
  * Admins activate it with a billing plan (GD-19), then ACTIVE; DECLINED or ARCHIVED are final.
  *
- * @param myRole the caller's role in the project, or null when they are not a member (an Organisation Admin sees
+ * @param myRoles the caller's roles in the project, empty when they are not a member (an Organisation Admin sees
  *               every project of the organisation without being a member, GD-06)
  */
-public record ProjectView(UUID id, String name, String description, String status, ProjectRole myRole,
+public record ProjectView(UUID id, String name, String description, String status, java.util.List<ProjectRole> myRoles,
                           int memberCount, OffsetDateTime createdAt, OffsetDateTime archivedAt,
                           OffsetDateTime activatedAt, String planName, UUID environmentManagerId,
                           String environmentManagerName) {

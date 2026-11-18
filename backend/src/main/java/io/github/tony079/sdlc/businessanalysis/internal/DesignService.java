@@ -34,9 +34,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * GD-26: the Technical design stage for the client. Started from an approved BRD by its author or a BRD Approver;
- * reviewed and confirmed by the author; approved by a BRD Approver other than the author. Until approved, only the
- * author and BRD Approvers see a design; other members see the approved one. The database enforces the same rules.
+ * GD-26/GD-27: the Technical design stage. After BRD approval it belongs to the project's Technical Approvers: they
+ * start it, decide flagged items and approve it (one may approve alone, after an explicit confirmation recorded on the
+ * approval). The requirement's author follows it and may request changes. Until approved, only the author, BRD
+ * Approvers and Technical Approvers see a design; other members see the approved one. The database enforces the same.
  */
 @Service
 @Profile("!migrate & !provision")
@@ -60,11 +61,15 @@ class DesignService {
                     OffsetDateTime createdAt, List<ItemV> items, List<CoverageV> coverage) {
     }
 
-    record ReviewV(String stage, boolean isAuthor, boolean isApprover, boolean canStart, boolean canRetry,
-                   boolean canAcceptFlags, boolean canConfirm, boolean canApprove, boolean canRequestChanges,
-                   List<String> unacceptedFlags, String confirmedBy, OffsetDateTime confirmedAt, String approvedBy,
-                   OffsetDateTime approvedAt, boolean brdOutdated, Integer currentBrdVersionNo, String blockedReason) {
+    record ReviewV(String stage, boolean isAuthor, boolean isTechnicalApprover, boolean canStart, boolean canRetry,
+                   boolean canAcceptFlags, boolean canApprove, boolean canRequestChanges, List<String> unacceptedFlags,
+                   String approvedBy, OffsetDateTime approvedAt, String approvalNote, boolean brdOutdated,
+                   Integer currentBrdVersionNo, int technicalApprovers, String blockedReason) {
     }
+
+    /** Recorded on every approval: the design was approved by one Technical Approver after an explicit confirmation. */
+    static final String SINGLE_APPROVAL_NOTE = "Approved by a single Technical Approver after explicit confirmation; "
+            + "no second reviewer.";
 
     record HistoryV(int versionNo, String status, String label, OffsetDateTime createdAt, String changeRequest,
                     String approvedBy, OffsetDateTime approvedAt, boolean downloadable) {
@@ -73,7 +78,10 @@ class DesignService {
     record DesignState(UUID requirementId, ReviewV review, VersionV version, List<HistoryV> history) {
     }
 
-    private record Access(UUID me, UUID projectId, boolean author, boolean approver) {
+    private record Access(UUID me, UUID projectId, boolean author, boolean approver, boolean technical) {
+        boolean insider() {
+            return author || approver || technical;
+        }
     }
 
     private final DesignRepository designs;
@@ -96,7 +104,8 @@ class DesignService {
     private Access access(UUID requirementId) {
         var visible = requirements.findVisible(requirementId).orElseThrow(ApiException::notFound);
         UUID me = TenantContext.currentActor().orElseThrow();
-        return new Access(me, visible.projectId(), me.equals(visible.ownerId()), reviews.isBrdApprover(visible.projectId()));
+        return new Access(me, visible.projectId(), me.equals(visible.ownerId()), reviews.isBrdApprover(visible.projectId()),
+                visible.technicalApprover());
     }
 
     // --- read ---------------------------------------------------------------------------------------------------
@@ -104,13 +113,12 @@ class DesignService {
     @Transactional
     public DesignState state(UUID requirementId) {
         Access a = access(requirementId);
-        boolean insider = a.author() || a.approver();
+        boolean insider = a.insider();
         var releasedBrd = reviews.latestWithStatus(requirementId, Set.of("RELEASED")).orElse(null);
         List<VersionRow> all = designs.versions(requirementId);
         VersionRow shown = insider ? all.stream().findFirst().orElse(null)
                 : all.stream().filter(v -> "APPROVED".equals(v.status())).findFirst().orElse(null);
         List<DecisionRow> decisions = shown == null ? List.of() : designs.decisions(shown.id());
-        DecisionRow confirmed = first(decisions, "AUTHOR_CONFIRMED");
         DecisionRow approved = first(decisions, "APPROVED");
         VersionV version = shown == null ? null : versionView(shown, decisions);
         List<String> unaccepted = version == null ? List.of() : version.items().stream()
@@ -122,28 +130,28 @@ class DesignService {
                 : switch (shown.status()) {
                     case "GENERATING" -> "GENERATING";
                     case "FAILED" -> "FAILED";
-                    case "IN_REVIEW" -> confirmed == null ? "AUTHOR_REVIEW" : "AWAITING_APPROVAL";
+                    case "IN_REVIEW" -> "IN_REVIEW";
                     case "APPROVED" -> "APPROVED";
                     default -> "NOT_STARTED";
                 };
         Integer brdNo = releasedBrd == null ? null : releasedBrd.versionNo();
         boolean outdated = shown != null && releasedBrd != null && !releasedBrd.id().equals(shown.brdVersionId());
+        int technicalApprovers = designs.technicalApprovers(a.projectId()).size();
         String blocked = null;
-        if (inReview && confirmed == null && a.author() && !unaccepted.isEmpty()) {
-            blocked = unaccepted.size() + " flagged design item(s) need your decision before you confirm.";
-        } else if (inReview && confirmed != null && a.approver() && a.author()) {
-            blocked = "A BRD Approver other than the author gives the final approval.";
+        if (releasedBrd != null && technicalApprovers == 0) {
+            blocked = "This project has no Technical Approver. Ask your Organisation Admin to assign one; the technical "
+                    + "design starts once they do.";
+        } else if (inReview && a.technical() && !unaccepted.isEmpty()) {
+            blocked = unaccepted.size() + " flagged design item(s) need your decision before you approve.";
         }
-        ReviewV review = new ReviewV(stage, a.author(), a.approver(),
-                insider && releasedBrd != null && !open,
-                insider && shown != null && "FAILED".equals(shown.status()) && shown.attempts() < AUTHOR_RETRIES,
-                inReview && a.author() && confirmed == null,
-                inReview && a.author() && confirmed == null && unaccepted.isEmpty(),
-                inReview && a.approver() && !a.author() && confirmed != null,
-                inReview && insider, unaccepted,
-                confirmed == null ? null : confirmed.decidedByName(), confirmed == null ? null : confirmed.decidedAt(),
+        ReviewV review = new ReviewV(stage, a.author(), a.technical(),
+                a.technical() && releasedBrd != null && !open,
+                a.technical() && shown != null && "FAILED".equals(shown.status()) && shown.attempts() < AUTHOR_RETRIES,
+                inReview && a.technical(),
+                inReview && a.technical() && unaccepted.isEmpty(),
+                inReview && (a.author() || a.technical()), unaccepted,
                 approved == null ? null : approved.decidedByName(), approved == null ? null : approved.decidedAt(),
-                outdated, brdNo, blocked);
+                approved == null ? null : approved.note(), outdated, brdNo, technicalApprovers, blocked);
         if (shown != null) {
             audit.record(AuditAction.TDD_VIEWED, "TDD_VERSION", shown.id(), AuditResult.SUCCESS);
         }
@@ -230,7 +238,7 @@ class DesignService {
     @Transactional
     public DesignState start(UUID requirementId) {
         Access a = access(requirementId);
-        requireInsider(a, "The requirement's author or a BRD Approver starts the technical design.");
+        requireTechnical(a, "A Technical Approver of the project starts the technical design.");
         var brd = reviews.latestWithStatus(requirementId, Set.of("RELEASED")).orElseThrow(() ->
                 ApiException.conflict("BRD_NOT_APPROVED", "The technical design starts from an approved BRD."));
         if (designs.open(requirementId, true).isPresent()) {
@@ -245,7 +253,7 @@ class DesignService {
     @Transactional
     public DesignState retry(UUID requirementId) {
         Access a = access(requirementId);
-        requireInsider(a, "The requirement's author or a BRD Approver retries the design.");
+        requireTechnical(a, "A Technical Approver of the project retries the design.");
         VersionRow v = designs.open(requirementId, true).filter(x -> "FAILED".equals(x.status()))
                 .orElseThrow(() -> ApiException.conflict("DESIGN_NOT_FAILED", "There is no failed design to retry."));
         if (v.attempts() >= AUTHOR_RETRIES) {
@@ -268,9 +276,7 @@ class DesignService {
     public DesignState acceptFlag(UUID requirementId, String itemKey) {
         Access a = access(requirementId);
         VersionRow v = inReview(requirementId);
-        if (!a.author()) {
-            throw forbidden("Only the requirement's author reviews its design.");
-        }
+        requireTechnical(a, "A Technical Approver decides flagged design items.");
         boolean flagged = designs.items(v.id()).stream()
                 .anyMatch(i -> i.itemKey().equals(itemKey) && "FLAGGED".equals(i.supportState()));
         if (!flagged) {
@@ -285,42 +291,20 @@ class DesignService {
     }
 
     @Transactional
-    public DesignState confirm(UUID requirementId) {
+    public DesignState approve(UUID requirementId, String expectedContentHash, boolean confirmedAlone) {
         Access a = access(requirementId);
         VersionRow v = inReview(requirementId);
-        if (!a.author()) {
-            throw forbidden("Only the requirement's author confirms its design.");
-        }
-        DesignState s = state(requirementId);
-        if (!s.review().unacceptedFlags().isEmpty()) {
-            throw ApiException.conflict("FLAGS_NOT_ACCEPTED",
-                    "Accept or request changes to every flagged design item before you confirm.");
-        }
-        if (first(designs.decisions(v.id()), "AUTHOR_CONFIRMED") == null) {
-            designs.insertDecision(TenantContext.requireTenant(), a.projectId(), requirementId, v.id(),
-                    "AUTHOR_CONFIRMED", null, null, a.me());
-            for (UUID approver : reviews.brdApprovers(a.projectId())) {
-                if (!approver.equals(a.me())) {
-                    reviews.notify(TenantContext.requireTenant(), approver, "TDD_AWAITING_APPROVAL", requirementId);
-                }
-            }
-            audit.record(AuditAction.TDD_DECIDED, "TDD_VERSION", v.id(), AuditResult.SUCCESS);
-        }
-        return state(requirementId);
-    }
-
-    @Transactional
-    public DesignState approve(UUID requirementId, String expectedContentHash) {
-        Access a = access(requirementId);
-        VersionRow v = inReview(requirementId);
-        if (a.author() || !a.approver()) {
-            throw forbidden("A BRD Approver of the project other than the author approves the design.");
-        }
+        requireTechnical(a, "A Technical Approver of the project approves the design.");
         if (expectedContentHash != null && !expectedContentHash.equals(v.contentHash())) {
             throw ApiException.conflict("VERSION_CHANGED", "The design changed since you opened it. Reload it.");
         }
-        if (first(designs.decisions(v.id()), "AUTHOR_CONFIRMED") == null) {
-            throw ApiException.conflict("AUTHOR_CONFIRMATION_REQUIRED", "The author has not confirmed this design yet.");
+        if (!state(requirementId).review().unacceptedFlags().isEmpty()) {
+            throw ApiException.conflict("FLAGS_NOT_ACCEPTED",
+                    "Accept or request changes to every flagged design item before you approve.");
+        }
+        if (!confirmedAlone) {
+            throw ApiException.conflict("CONFIRMATION_REQUIRED",
+                    "Confirm that you approve this design on your own, without a second reviewer.");
         }
         for (VersionRow old : designs.versions(requirementId)) {
             if ("APPROVED".equals(old.status())) {
@@ -328,7 +312,7 @@ class DesignService {
             }
         }
         designs.insertDecision(TenantContext.requireTenant(), a.projectId(), requirementId, v.id(), "APPROVED", null,
-                null, a.me());
+                SINGLE_APPROVAL_NOTE, a.me());
         designs.setStatus(v.id(), "APPROVED");
         reviews.notify(TenantContext.requireTenant(), designs.requirementOwner(requirementId), "TDD_APPROVED",
                 requirementId);
@@ -343,7 +327,9 @@ class DesignService {
             throw ApiException.validation(List.of(new FieldError("text", "LENGTH")));
         }
         Access a = access(requirementId);
-        requireInsider(a, "The author or a BRD Approver requests changes.");
+        if (!a.author() && !a.technical()) {
+            throw forbidden("The requirement's author or a Technical Approver requests changes.");
+        }
         VersionRow v = inReview(requirementId);
         designs.insertDecision(TenantContext.requireTenant(), a.projectId(), requirementId, v.id(), "CHANGES_REQUESTED",
                 null, text.strip(), a.me());
@@ -363,8 +349,8 @@ class DesignService {
                         "This design is not waiting for a review decision."));
     }
 
-    private static void requireInsider(Access a, String message) {
-        if (!a.author() && !a.approver()) {
+    private static void requireTechnical(Access a, String message) {
+        if (!a.technical()) {
             throw forbidden(message);
         }
     }
@@ -446,13 +432,13 @@ class DesignService {
         List<BrdDocument.Field> approval = new ArrayList<>();
         for (DecisionRow d : decisions) {
             String label = switch (d.kind()) {
-                case "AUTHOR_CONFIRMED" -> "Confirmed by the author";
-                case "APPROVED" -> "Approved by the BRD Approver";
+                case "APPROVED" -> "Approved by the Technical Approver";
                 case "FLAG_ACCEPTED" -> "Flagged item accepted as is";
                 default -> null;
             };
             if (label != null) {
-                approval.add(new BrdDocument.Field(label, d.decidedByName() + ", " + when.format(d.decidedAt())));
+                approval.add(new BrdDocument.Field(label, d.decidedByName() + ", " + when.format(d.decidedAt())
+                        + ("APPROVED".equals(d.kind()) && d.note() != null ? ". " + d.note() : "")));
             }
         }
         approval.add(new BrdDocument.Field("Content fingerprint (SHA-256)", v.contentHash()));

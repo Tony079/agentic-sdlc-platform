@@ -39,13 +39,13 @@ public final class RequirementFixtures {
                 "INSERT INTO app.project (tenant_id, name, created_by) VALUES (?, ?, ?) RETURNING id", UUID.class,
                 tenant, name, orgAdmin);
         admin.update("""
-                INSERT INTO app.project_member (tenant_id, project_id, user_id, role, added_by)
-                SELECT ?, ?, u.id, 'BRD_APPROVER', ? FROM app.app_user u
+                INSERT INTO app.project_member (tenant_id, project_id, user_id, roles, added_by)
+                SELECT ?, ?, u.id, ARRAY['BRD_APPROVER'], ? FROM app.app_user u
                 WHERE u.tenant_id = ? AND u.role = 'ORG_ADMIN' AND u.status = 'ACTIVE'
                 """, tenant, project, orgAdmin, tenant);
         admin.update("""
-                INSERT INTO app.project_member (tenant_id, project_id, user_id, role, added_by)
-                SELECT ?, ?, ?, 'REQUIREMENT_AUTHOR', ?
+                INSERT INTO app.project_member (tenant_id, project_id, user_id, roles, added_by)
+                SELECT ?, ?, ?, ARRAY['REQUIREMENT_AUTHOR'], ?
                 WHERE NOT EXISTS (SELECT 1 FROM app.project_member m WHERE m.project_id = ? AND m.user_id = ?
                                   AND m.removed_at IS NULL)
                 """, tenant, project, member, orgAdmin, project, member);
@@ -65,11 +65,11 @@ public final class RequirementFixtures {
         return email;
     }
 
-    /** Adds a user of the project's organisation to the project with a role (test setup as superuser). */
+    /** Adds a user of the project's organisation to the project with roles, comma-separated (test setup as superuser). */
     public static void addMember(UUID project, UUID user, String role) {
         TestDatabase.get().admin().update("""
-                INSERT INTO app.project_member (tenant_id, project_id, user_id, role, added_by)
-                SELECT p.tenant_id, p.id, ?, ?, p.created_by FROM app.project p WHERE p.id = ?
+                INSERT INTO app.project_member (tenant_id, project_id, user_id, roles, added_by)
+                SELECT p.tenant_id, p.id, ?, string_to_array(?, ','), p.created_by FROM app.project p WHERE p.id = ?
                 """, user, role, project);
     }
 

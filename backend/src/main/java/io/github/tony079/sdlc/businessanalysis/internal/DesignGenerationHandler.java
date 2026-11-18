@@ -257,8 +257,12 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
         }
         designs.complete(version.id(), outcome.summary(), outcome.openQuestionsJson(), outcome.contentHash(),
                 outcome.provider(), outcome.modelId());
-        reviews.notify(version.tenantId(), designs.requirementOwner(version.requirementId()), "TDD_READY_FOR_REVIEW",
-                version.requirementId());
+        // GD-27: the Technical Approvers review it; the author follows it.
+        Set<UUID> recipients = new LinkedHashSet<>(designs.technicalApprovers(version.projectId()));
+        recipients.add(designs.requirementOwner(version.requirementId()));
+        for (UUID user : recipients) {
+            reviews.notify(version.tenantId(), user, "TDD_READY_FOR_REVIEW", version.requirementId());
+        }
         audit.record(AuditAction.TDD_VERSION_CREATED, "TDD_VERSION", version.id(), AuditResult.SUCCESS);
     }
 }

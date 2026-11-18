@@ -57,14 +57,10 @@ class DesignController {
         return designs.acceptFlag(id, itemKey);
     }
 
-    @PostMapping(BASE + "/confirm")
-    DesignState confirm(@PathVariable UUID id) {
-        return designs.confirm(id);
-    }
-
     @PostMapping(BASE + "/approve")
-    DesignState approve(@PathVariable UUID id, @RequestBody(required = false) Map<String, String> body) {
-        return designs.approve(id, body == null ? null : body.get("expectedContentHash"));
+    DesignState approve(@PathVariable UUID id, @RequestBody(required = false) Map<String, Object> body) {
+        return designs.approve(id, body == null ? null : (String) body.get("expectedContentHash"),
+                body != null && Boolean.TRUE.equals(body.get("confirmApproveAlone")));
     }
 
     record ChangeText(@Size(max = 5000) String text) {

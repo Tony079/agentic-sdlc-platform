@@ -61,7 +61,7 @@ class RequirementVisibilityIT extends ApiIntegrationTest {
         Response seen = aaron.get("/api/v1/requirements/" + id);
         assertThat(seen.status()).isEqualTo(200);
         assertThat(seen.body().path("ownedByMe").asBoolean()).isFalse();
-        assertThat(seen.body().path("myRole").asString()).isEqualTo("BRD_APPROVER");
+        assertThat(seen.body().path("myRoles").get(0).asString()).isEqualTo("BRD_APPROVER");
         assertThat(aaron.get("/api/v1/requirements/" + id + "/timeline").status()).isEqualTo(200);
         assertThat(aaron.get("/api/v1/requirements").body().path("items").valueStream()
                 .map(n -> n.path("id").asString())).contains(id);
@@ -124,7 +124,7 @@ class RequirementVisibilityIT extends ApiIntegrationTest {
         ApiClient viewerClient = loggedIn("acme", emailOf(viewer));
         Response asViewer = viewerClient.get("/api/v1/requirements/" + id);
         assertThat(asViewer.status()).isEqualTo(200);
-        assertThat(asViewer.body().path("myRole").asString()).isEqualTo("VIEWER");
+        assertThat(asViewer.body().path("myRoles").get(0).asString()).isEqualTo("VIEWER");
         // A viewer can neither create requirements nor restrict them.
         assertThat(viewerClient.post("/api/v1/requirements", complete(projectId)).errorCode())
                 .isEqualTo("PROJECT_ROLE_REQUIRED");

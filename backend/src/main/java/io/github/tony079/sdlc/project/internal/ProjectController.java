@@ -73,12 +73,12 @@ class ProjectController {
     @PostMapping("/api/v1/projects/{id}/members")
     @ResponseStatus(HttpStatus.CREATED)
     ProjectRepository.Member addMember(@PathVariable UUID id, @Valid @RequestBody AddMemberBody body) {
-        return projects.addProjectMember(id, body.userId(), body.role());
+        return projects.addProjectMember(id, body.userId(), body.effectiveRoles());
     }
 
     @PutMapping("/api/v1/project-members/{memberId}")
     ProjectRepository.Member changeRole(@PathVariable UUID memberId, @Valid @RequestBody RoleBody body) {
-        return projects.changeRole(memberId, body.role());
+        return projects.changeRoles(memberId, body.effectiveRoles());
     }
 
     @PostMapping("/api/v1/project-members/{memberId}/remove")
@@ -90,10 +90,17 @@ class ProjectController {
     record ProjectBody(@Size(max = 200) String name, @Size(max = 2000) String description) {
     }
 
-    record AddMemberBody(UUID userId, ProjectRole role) {
+    /** {@code roles} (GD-27); a single {@code role} is still accepted from older clients. */
+    record AddMemberBody(UUID userId, ProjectRole role, List<ProjectRole> roles) {
+        List<ProjectRole> effectiveRoles() {
+            return roles != null ? roles : role == null ? List.of() : List.of(role);
+        }
     }
 
-    record RoleBody(ProjectRole role) {
+    record RoleBody(ProjectRole role, List<ProjectRole> roles) {
+        List<ProjectRole> effectiveRoles() {
+            return roles != null ? roles : role == null ? List.of() : List.of(role);
+        }
     }
 
     record ProjectList(List<ProjectView> items) {

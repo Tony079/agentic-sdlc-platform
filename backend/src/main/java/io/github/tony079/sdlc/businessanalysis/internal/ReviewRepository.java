@@ -266,7 +266,7 @@ class ReviewRepository {
     List<UUID> brdApprovers(UUID projectId) {
         return jdbc.sql("""
                 SELECT m.user_id FROM app.project_member m JOIN app.app_user u ON u.id = m.user_id
-                WHERE m.project_id = :p AND m.role = 'BRD_APPROVER' AND m.removed_at IS NULL AND u.status = 'ACTIVE'
+                WHERE m.project_id = :p AND 'BRD_APPROVER' = ANY (m.roles) AND m.removed_at IS NULL AND u.status = 'ACTIVE'
                 """).param("p", projectId).query(UUID.class).list();
     }
 

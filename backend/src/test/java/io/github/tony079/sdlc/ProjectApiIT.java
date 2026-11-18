@@ -164,4 +164,29 @@ class ProjectApiIT extends ApiIntegrationTest {
         aaron.post("/api/v1/project-members/" + member + "/remove", java.util.Map.of());
         assertThat(aaron.get("/api/v1/projects/" + project).body().path("environmentManagerId").isNull()).isTrue();
     }
+
+    @Test
+    void aMemberHoldsSeveralRolesButViewerOnlyAlone() {
+        ApiClient aaron = loggedIn("acme", "aaron@acme.test");
+        String project = aaron.post("/api/v1/projects", java.util.Map.of("name", "Roles " + java.util.UUID.randomUUID()))
+                .body().path("id").asString();
+        String alice = TestDatabase.get().admin().queryForObject(
+                "SELECT id::text FROM app.app_user WHERE email = 'alice@acme.test'", String.class);
+        assertThat(aaron.post("/api/v1/projects/" + project + "/members", java.util.Map.of("userId", alice,
+                "roles", java.util.List.of("VIEWER", "TECHNICAL_APPROVER"))).status()).isEqualTo(422);
+        ApiClient.Response added = aaron.post("/api/v1/projects/" + project + "/members", java.util.Map.of("userId", alice,
+                "roles", java.util.List.of("TECHNICAL_APPROVER", "REQUIREMENT_AUTHOR")));
+        assertThat(added.status()).as(added.body().toString()).isEqualTo(201);
+        assertThat(added.body().path("roles").toString()).isEqualTo("[\"REQUIREMENT_AUTHOR\",\"TECHNICAL_APPROVER\"]");
+        String member = added.body().path("id").asString();
+        ApiClient aliceClient = loggedIn("acme", "alice@acme.test");
+        assertThat(aliceClient.get("/api/v1/projects/" + project).body().path("myRoles").size()).isEqualTo(2);
+        ApiClient.Response changed = aaron.put("/api/v1/project-members/" + member,
+                java.util.Map.of("roles", java.util.List.of("BRD_APPROVER", "TECHNICAL_APPROVER")));
+        assertThat(changed.body().path("roles").toString()).isEqualTo("[\"BRD_APPROVER\",\"TECHNICAL_APPROVER\"]");
+        // The database refuses an invalid combination even outside the API.
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> TestDatabase.get().admin().update(
+                "UPDATE app.project_member SET roles = ARRAY['VIEWER', 'BRD_APPROVER'] WHERE id = ?::uuid", member))
+                .hasMessageContaining("project_member_roles_check");
+    }
 }

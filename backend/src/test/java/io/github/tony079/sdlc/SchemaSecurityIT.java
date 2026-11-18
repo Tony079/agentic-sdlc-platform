@@ -219,7 +219,12 @@ class SchemaSecurityIT {
                     "SELECT has_any_column_privilege('sdlc_worker', ?, 'INSERT') OR has_any_column_privilege('sdlc_worker', ?, 'UPDATE')",
                     Boolean.class, name, name)).as("worker writes " + table).isFalse();
         }
-        for (String table : List.of("app_user", "spring_session", "project")) {
+        // GD-27: the worker hands an approved BRD to the Technical Approvers; it reads roles and status only, never
+        // email addresses, names or password hashes.
+        assertThat(columns("sdlc_worker", "app_user", "SELECT")).containsExactly("id", "role", "status", "tenant_id");
+        assertThat(columns("sdlc_worker", "project_member", "SELECT"))
+                .containsExactly("project_id", "removed_at", "roles", "tenant_id", "user_id");
+        for (String table : List.of("spring_session", "project")) {
             assertThat(admin.queryForObject("SELECT has_any_column_privilege('sdlc_worker', ?, 'SELECT')", Boolean.class,
                     "app." + table)).as("worker reads " + table).isFalse();
         }

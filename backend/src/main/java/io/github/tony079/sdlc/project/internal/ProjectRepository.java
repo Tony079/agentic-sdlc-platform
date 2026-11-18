@@ -22,7 +22,7 @@ class ProjectRepository {
 
     /** One membership, with the member's name, email and account status (shown to Organisation Admins only). */
     record Member(UUID id, UUID projectId, String projectName, UUID userId, String displayName, String email,
-                  String userStatus, ProjectRole role, OffsetDateTime addedAt) {
+                  String userStatus, List<ProjectRole> roles, OffsetDateTime addedAt) {
     }
 
     private static final String SELECT = """
@@ -30,8 +30,8 @@ class ProjectRepository {
                    (SELECT b.name FROM app.billing_plan b WHERE b.id = p.plan_id) AS plan_name,
                    p.environment_manager_id,
                    (SELECT u.display_name FROM app.app_user u WHERE u.id = p.environment_manager_id) AS environment_manager_name,
-                   (SELECT m.role FROM app.project_member m WHERE m.project_id = p.id AND m.user_id = :me
-                      AND m.removed_at IS NULL) AS my_role,
+                   (SELECT m.roles FROM app.project_member m WHERE m.project_id = p.id AND m.user_id = :me
+                      AND m.removed_at IS NULL) AS my_roles,
                    (SELECT count(*) FROM app.project_member m WHERE m.project_id = p.id AND m.removed_at IS NULL) AS members
             FROM app.project p
             """;
@@ -83,11 +83,11 @@ class ProjectRepository {
         return jdbc.sql("SELECT status FROM app.project WHERE id = :id").param("id", id).query(String.class).optional();
     }
 
-    Optional<ProjectRole> roleOf(UUID projectId, UUID userId) {
+    List<ProjectRole> rolesOf(UUID projectId, UUID userId) {
         return jdbc.sql("""
-                SELECT role FROM app.project_member WHERE project_id = :project AND user_id = :user AND removed_at IS NULL
+                SELECT roles FROM app.project_member WHERE project_id = :project AND user_id = :user AND removed_at IS NULL
                 """).param("project", projectId).param("user", userId)
-                .query((rs, n) -> ProjectRole.valueOf(rs.getString(1))).optional();
+                .query((rs, n) -> ProjectRole.fromSql(rs.getArray(1))).optional().orElse(List.of());
     }
 
     List<Member> members(UUID projectId) {
@@ -106,18 +106,18 @@ class ProjectRepository {
                 .param("id", memberId).query(ProjectRepository::member).optional();
     }
 
-    UUID addMember(UUID tenantId, UUID projectId, UUID userId, ProjectRole role, UUID addedBy) {
+    UUID addMember(UUID tenantId, UUID projectId, UUID userId, List<ProjectRole> roles, UUID addedBy) {
         return jdbc.sql("""
-                INSERT INTO app.project_member (tenant_id, project_id, user_id, role, added_by)
-                VALUES (:tenant, :project, :user, :role, :addedBy) RETURNING id
+                INSERT INTO app.project_member (tenant_id, project_id, user_id, roles, added_by)
+                VALUES (:tenant, :project, :user, :roles::text[], :addedBy) RETURNING id
                 """)
                 .param("tenant", tenantId).param("project", projectId).param("user", userId)
-                .param("role", role.name()).param("addedBy", addedBy).query(UUID.class).single();
+                .param("roles", ProjectRole.toSql(roles)).param("addedBy", addedBy).query(UUID.class).single();
     }
 
-    boolean changeRole(UUID memberId, ProjectRole role) {
-        return jdbc.sql("UPDATE app.project_member SET role = :role WHERE id = :id AND removed_at IS NULL")
-                .param("id", memberId).param("role", role.name()).update() == 1;
+    boolean changeRoles(UUID memberId, List<ProjectRole> roles) {
+        return jdbc.sql("UPDATE app.project_member SET roles = :roles::text[] WHERE id = :id AND removed_at IS NULL")
+                .param("id", memberId).param("roles", ProjectRole.toSql(roles)).update() == 1;
     }
 
     boolean remove(UUID memberId, UUID removedBy) {
@@ -133,14 +133,13 @@ class ProjectRepository {
     }
 
     private static final String MEMBER_SELECT = """
-            SELECT m.id, m.project_id, p.name, m.user_id, u.display_name, u.email, u.status, m.role, m.added_at
+            SELECT m.id, m.project_id, p.name, m.user_id, u.display_name, u.email, u.status, m.roles, m.added_at
             FROM app.project_member m JOIN app.app_user u ON u.id = m.user_id JOIN app.project p ON p.id = m.project_id
             """;
 
     private static ProjectView view(ResultSet rs, int n) throws SQLException {
-        String role = rs.getString("my_role");
         return new ProjectView(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("description"),
-                rs.getString("status"), role == null ? null : ProjectRole.valueOf(role), rs.getInt("members"),
+                rs.getString("status"), ProjectRole.fromSql(rs.getArray("my_roles")), rs.getInt("members"),
                 rs.getObject("created_at", OffsetDateTime.class), rs.getObject("archived_at", OffsetDateTime.class),
                 rs.getObject("activated_at", OffsetDateTime.class), rs.getString("plan_name"),
                 rs.getObject("environment_manager_id", UUID.class), rs.getString("environment_manager_name"));
@@ -149,6 +148,6 @@ class ProjectRepository {
     private static Member member(ResultSet rs, int n) throws SQLException {
         return new Member(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getString(3),
                 rs.getObject(4, UUID.class), rs.getString(5), rs.getString(6), rs.getString(7),
-                ProjectRole.valueOf(rs.getString(8)), rs.getObject(9, OffsetDateTime.class));
+                ProjectRole.fromSql(rs.getArray(8)), rs.getObject(9, OffsetDateTime.class));
     }
 }

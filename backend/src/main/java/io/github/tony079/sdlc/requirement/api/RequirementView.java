@@ -35,11 +35,11 @@ public final class RequirementView {
     /**
      * @param restricted GD-05: visible only to the owner and the project's Approvers
      * @param ownedByMe  the caller created it (only the owner edits, submits and cancels it)
-     * @param myRole     the caller's role in the requirement's project
+     * @param myRoles    the caller's roles in the requirement's project
      */
     public record Detail(UUID id, String key, UUID projectId, WorkflowState state, long version,
                          int currentRevisionNo, Content content, List<RevisionSummary> revisions,
                          OffsetDateTime createdAt, OffsetDateTime updatedAt, boolean restricted, boolean ownedByMe,
-                         io.github.tony079.sdlc.project.api.ProjectRole myRole) {
+                         List<io.github.tony079.sdlc.project.api.ProjectRole> myRoles) {
     }
 }

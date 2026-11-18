@@ -26,13 +26,18 @@ public interface RequirementDirectory {
     }
 
     /**
-     * @param myRole the caller's role in the project (null for staff, who are not project members)
+     * @param myRoles the caller's roles in the project (empty for staff, who are not project members)
      */
     record VisibleRequirement(UUID id, UUID projectId, UUID ownerId, boolean ownedByMe,
-                              io.github.tony079.sdlc.project.api.ProjectRole myRole) {
+                              java.util.List<io.github.tony079.sdlc.project.api.ProjectRole> myRoles) {
 
         public boolean canApprove() {
-            return myRole != null && myRole.canApprove();
+            return io.github.tony079.sdlc.project.api.ProjectRole.canApprove(myRoles);
+        }
+
+        /** GD-27: owns the Technical design stage in the project. */
+        public boolean technicalApprover() {
+            return myRoles.contains(io.github.tony079.sdlc.project.api.ProjectRole.TECHNICAL_APPROVER);
         }
     }
 }

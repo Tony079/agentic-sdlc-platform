@@ -155,6 +155,25 @@ class DesignRepository {
                 .query(UUID.class).single();
     }
 
+    /** Active Technical Approvers of the project (GD-27). */
+    List<UUID> technicalApprovers(UUID projectId) {
+        return jdbc.sql("""
+                SELECT m.user_id FROM app.project_member m JOIN app.app_user u ON u.id = m.user_id
+                WHERE m.project_id = :p AND m.removed_at IS NULL AND 'TECHNICAL_APPROVER' = ANY (m.roles)
+                  AND u.status = 'ACTIVE'
+                """).param("p", projectId).query(UUID.class).list();
+    }
+
+    List<UUID> organisationAdmins() {
+        return jdbc.sql("SELECT id FROM app.app_user WHERE role = 'ORG_ADMIN' AND status = 'ACTIVE'").query(UUID.class)
+                .list();
+    }
+
+    UUID projectOf(UUID requirementId) {
+        return jdbc.sql("SELECT project_id FROM app.requirement WHERE id = :r").param("r", requirementId)
+                .query(UUID.class).single();
+    }
+
     UUID requirementOwner(UUID requirementId) {
         return jdbc.sql("SELECT created_by FROM app.requirement WHERE id = :r").param("r", requirementId)
                 .query(UUID.class).single();

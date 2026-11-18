@@ -27,7 +27,7 @@ class JdbcRequirementDirectory implements RequirementDirectory {
     public Optional<VisibleRequirement> findVisible(UUID requirementId) {
         UUID actor = TenantContext.currentActor().orElse(null);
         return requirements.findVisible(requirementId).map(r -> new VisibleRequirement(r.id(), r.projectId(),
-                r.createdBy(), r.createdBy().equals(actor), projects.roleOf(r.projectId()).orElse(null)));
+                r.createdBy(), r.createdBy().equals(actor), projects.rolesOf(r.projectId())));
     }
 
     @Override
