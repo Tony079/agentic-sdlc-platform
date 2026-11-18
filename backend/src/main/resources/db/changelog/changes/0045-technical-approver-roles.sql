@@ -12,7 +12,11 @@ CREATE FUNCTION app.distinct_elements(p text[]) RETURNS boolean
 REVOKE ALL ON FUNCTION app.distinct_elements(text[]) FROM PUBLIC;
 
 ALTER TABLE app.project_member ADD COLUMN roles text[];
+-- Row-level security is forced even for the table owner; the migration runs without a tenant, so the copy of existing
+-- memberships lifts it for this one statement (same transaction, restored immediately).
+ALTER TABLE app.project_member NO FORCE ROW LEVEL SECURITY;
 UPDATE app.project_member SET roles = ARRAY[role];
+ALTER TABLE app.project_member FORCE ROW LEVEL SECURITY;
 ALTER TABLE app.project_member ALTER COLUMN roles SET NOT NULL;
 ALTER TABLE app.project_member ADD CONSTRAINT project_member_roles_check CHECK (
   cardinality(roles) BETWEEN 1 AND 4
@@ -156,3 +160,14 @@ $fn$;
 -- are none). It may read memberships and each user's role and status, never names or email addresses.
 GRANT SELECT (tenant_id, project_id, user_id, roles, removed_at) ON app.project_member TO sdlc_worker;
 GRANT SELECT (id, tenant_id, role, status) ON app.app_user TO sdlc_worker;
+
+--changeset sdlc:0045-notification-email-backfill splitStatements:false
+-- 0043 meant to mark notifications created before email existed as SKIPPED, but under forced row-level security its
+-- UPDATE changed no rows on existing databases. Corrected here: notifications created before 0043 ran, and not yet
+-- emailed, are never emailed late.
+ALTER TABLE app.notification NO FORCE ROW LEVEL SECURITY;
+UPDATE app.notification SET email_status = 'SKIPPED'
+WHERE email_status = 'PENDING'
+  AND created_at < coalesce((SELECT dateexecuted FROM migration_meta.databasechangelog
+                             WHERE id = '0043-notification-email' AND author = 'sdlc'), '-infinity'::timestamp);
+ALTER TABLE app.notification FORCE ROW LEVEL SECURITY;
