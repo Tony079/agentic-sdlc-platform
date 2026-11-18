@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { ProjectList, RequirementPage, RequirementState } from '../api/types';
 import { Icon } from '../ui/Icon';
-import { EmptyState, ErrorText, Loading, PageHeader, StatePill, relativeTime, stateLabel } from '../ui/components';
+import { EmptyState, ErrorText, Loading, PageHeader, StatePill, canRequest, relativeTime, stateLabel } from '../ui/components';
 
 const FILTER_STATES: RequirementState[] = [
   'DRAFT', 'SUBMITTED', 'REPO_VALIDATING', 'MANUAL_INTAKE', 'AWAITING_DOCUMENTS', 'ANALYSING', 'INTERNAL_REVIEW',
@@ -28,7 +28,7 @@ export function RequirementsPage() {
     queryFn: () => api.get<RequirementPage>(`/api/v1/requirements${query ? `?${query}` : ''}`),
   });
   const projectName = (id: string) => projects.data?.items.find((p) => p.id === id)?.name ?? '';
-  const canCreate = !!projects.data?.items.some((p) => p.status !== 'PENDING' && (p.myRole === 'REQUIREMENT_AUTHOR' || p.myRole === 'BRD_APPROVER'));
+  const canCreate = !!projects.data?.items.some((p) => p.status !== 'PENDING' && canRequest(p.myRoles));
   const items = requirements.data?.items ?? [];
 
   return (
@@ -108,7 +108,7 @@ export function RequirementsPage() {
                       </Link>
                     </td>
                     <td>
-                      <StatePill state={r.state} />
+                      <StatePill state={r.state} designStatus={r.designStatus ?? null} />
                     </td>
                     <td>{projectName(r.projectId)}</td>
                     <td className="small" title={new Date(r.updatedAt).toLocaleString()}>

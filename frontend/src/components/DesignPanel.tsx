@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import { Badge, Callout, formatDateTime, type Tone } from '../ui/components';
+import { Badge, Callout, Modal, formatDateTime, type Tone } from '../ui/components';
 
 // GD-26: the Technical design stage of a requirement.
 
@@ -44,25 +44,24 @@ interface DesignVersion {
   coverage: Coverage[];
 }
 
-type Stage = 'BRD_NOT_APPROVED' | 'NOT_STARTED' | 'GENERATING' | 'FAILED' | 'AUTHOR_REVIEW' | 'AWAITING_APPROVAL' | 'APPROVED';
+type Stage = 'BRD_NOT_APPROVED' | 'NOT_STARTED' | 'GENERATING' | 'FAILED' | 'IN_REVIEW' | 'APPROVED';
 
 interface DesignReview {
   stage: Stage;
   isAuthor: boolean;
-  isApprover: boolean;
+  isTechnicalApprover: boolean;
   canStart: boolean;
   canRetry: boolean;
   canAcceptFlags: boolean;
-  canConfirm: boolean;
   canApprove: boolean;
   canRequestChanges: boolean;
   unacceptedFlags: string[];
-  confirmedBy: string | null;
-  confirmedAt: string | null;
   approvedBy: string | null;
   approvedAt: string | null;
+  approvalNote: string | null;
   brdOutdated: boolean;
   currentBrdVersionNo: number | null;
+  technicalApprovers: number;
   blockedReason: string | null;
 }
 
@@ -86,11 +85,10 @@ interface DesignState {
 
 const STAGE: Record<Stage, { label: string; tone: Tone }> = {
   BRD_NOT_APPROVED: { label: 'Waiting for the BRD', tone: 'neutral' },
-  NOT_STARTED: { label: 'Not started', tone: 'neutral' },
+  NOT_STARTED: { label: 'Waiting for technical design', tone: 'warning' },
   GENERATING: { label: 'Being written', tone: 'info' },
   FAILED: { label: 'Failed', tone: 'danger' },
-  AUTHOR_REVIEW: { label: 'Author review', tone: 'warning' },
-  AWAITING_APPROVAL: { label: 'Waiting for BRD Approver', tone: 'info' },
+  IN_REVIEW: { label: 'In review', tone: 'warning' },
   APPROVED: { label: 'Approved', tone: 'success' },
 };
 
@@ -133,8 +131,9 @@ function failureText(code: string | null): string {
 }
 
 /**
- * Technical design (GD-26): started from the approved BRD, written by the Architect agent, reviewed and confirmed by
- * the author, approved by a BRD Approver who is not the author. Shows coverage of the BRD so gaps are visible.
+ * Technical design (GD-26, GD-27): after BRD approval it is handed to the project's Technical Approvers, who start it,
+ * review it and approve it (one may approve alone, after confirming so). The author follows it and may request
+ * changes. Shows coverage of the BRD so gaps are visible.
  */
 export function DesignPanel({ requirementId }: { requirementId: string }) {
   const queryClient = useQueryClient();
@@ -146,6 +145,8 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
   const [changesOpen, setChangesOpen] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [aloneConfirmed, setAloneConfirmed] = useState(false);
   const [text, setText] = useState('');
 
   async function act(path: string, body: unknown, done: string) {
@@ -193,11 +194,15 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
         </div>
       </div>
 
-      {review.stage === 'NOT_STARTED' && (
+      {review.blockedReason && review.technicalApprovers === 0 && (
+        <Callout tone="warning" title="No Technical Approver">{review.blockedReason}</Callout>
+      )}
+      {review.stage === 'NOT_STARTED' && review.technicalApprovers > 0 && (
         <p>
-          The BRD is approved. The Architect agent can now write the technical design: components, API and data changes,
-          security, rollout and a test plan, checked against the code and the approved BRD.
-          {!review.canStart && ' The requirement’s author or a BRD Approver starts it.'}
+          The BRD is approved and handed to the project&apos;s Technical Approvers. The Architect agent writes the
+          technical design: components, API and data changes, security, rollout and a test plan, checked against the code
+          and the approved BRD.
+          {!review.canStart && ' A Technical Approver starts it; you can follow its progress here.'}
         </p>
       )}
       {review.stage === 'GENERATING' && (
@@ -316,30 +321,23 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
           )}
 
           <div className="stack" style={{ marginTop: '1rem' }}>
-            {review.confirmedBy && (
+            {review.approvedBy && (
               <p className="small">
-                Confirmed by {review.confirmedBy} · {formatDateTime(review.confirmedAt)}
-                {review.approvedBy ? ` · approved by ${review.approvedBy} · ${formatDateTime(review.approvedAt)}` : ''}
+                Approved by {review.approvedBy} · {formatDateTime(review.approvedAt)}
+                {review.approvalNote && ` · ${review.approvalNote}`}
               </p>
             )}
-            {review.blockedReason && <Callout tone="info">{review.blockedReason}</Callout>}
-            {review.stage === 'AUTHOR_REVIEW' && !review.isAuthor && (
-              <p className="small">The requirement&apos;s author reviews this design first; you approve it afterwards.</p>
+            {review.blockedReason && review.technicalApprovers > 0 && <Callout tone="info">{review.blockedReason}</Callout>}
+            {review.stage === 'IN_REVIEW' && !review.isTechnicalApprover && (
+              <p className="small">
+                A Technical Approver reviews and approves this design.
+                {review.isAuthor && ' You can request changes if it does not match what you need.'}
+              </p>
             )}
             <div className="row">
-              {review.canConfirm && (
-                <button type="button" className="btn-primary" disabled={busy}
-                  onClick={() => void act('confirm', {}, 'Design confirmed. The project\'s BRD Approvers have been asked to approve it.')}>
-                  Confirm design
-                </button>
-              )}
               {review.canApprove && (
                 <button type="button" className="btn-primary" disabled={busy}
-                  onClick={() => {
-                    if (window.confirm('Approve this technical design as final?')) {
-                      void act('approve', { expectedContentHash: version.contentHash }, 'Design approved.');
-                    }
-                  }}>
+                  onClick={() => { setAloneConfirmed(false); setApproving(true); }}>
                   Approve design
                 </button>
               )}
@@ -397,6 +395,38 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
         </details>
       )}
 
+      {approving && version && (
+        <Modal
+          title="Approve the technical design"
+          description={`Version ${version.versionNo}, based on approved BRD version ${version.brdVersionNo}.`}
+          onClose={() => setApproving(false)}
+          footer={
+            <>
+              <button type="button" className="btn-secondary" onClick={() => setApproving(false)}>Cancel</button>
+              <button type="button" className="btn-primary" disabled={!aloneConfirmed || busy}
+                onClick={() => {
+                  setApproving(false);
+                  void act('approve', { expectedContentHash: version.contentHash, confirmApproveAlone: true },
+                    'Design approved.');
+                }}>
+                Approve design
+              </button>
+            </>
+          }
+        >
+          <p>
+            You are approving this design as the final technical design of the requirement. No second reviewer checks it,
+            and the approval is recorded in the audit trail with this confirmation.
+          </p>
+          {uncovered.length > 0 && (
+            <Callout tone="warning">{uncovered.length} BRD statement(s) are not addressed by the design.</Callout>
+          )}
+          <label className="check">
+            <input type="checkbox" checked={aloneConfirmed} onChange={(e) => setAloneConfirmed(e.target.checked)} />
+            <span>I have reviewed this design and approve it on my own, without a second reviewer.</span>
+          </label>
+        </Modal>
+      )}
       {message && (
         <p className={message.tone === 'danger' ? 'error' : 'notice'} role="status">{message.text}</p>
       )}

@@ -13,8 +13,9 @@ const KINDS: Record<string, string> = {
   BRD_APPROVED: 'A BRD was approved and published to the project.',
   BRD_PUBLISH_BLOCKED: 'An approved BRD could not be published yet: an automatic check did not pass.',
   BRD_NOT_FEASIBLE: 'The BA agent found a requirement not feasible; it was closed and not charged.',
-  TDD_READY_FOR_REVIEW: 'A technical design is ready for your review.',
-  TDD_AWAITING_APPROVAL: 'A technical design was confirmed by its author and waits for your approval.',
+  TDD_HANDOVER: 'An approved BRD was handed to you for technical design.',
+  TDD_NO_TECHNICAL_APPROVER: 'A BRD was approved, but its project has no Technical Approver. Assign one to start the design.',
+  TDD_READY_FOR_REVIEW: 'A technical design is ready for review.',
   TDD_APPROVED: 'A technical design was approved.',
   TDD_FAILED: 'A technical design could not be written. You can try again from the requirement.',
 };

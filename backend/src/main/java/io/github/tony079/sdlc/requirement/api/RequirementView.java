@@ -18,8 +18,9 @@ public final class RequirementView {
                           String constraints, String integrations) {
     }
 
+    /** @param designStatus GD-27: status of the latest technical design version, or null when none was started */
     public record Summary(UUID id, String key, String title, WorkflowState state, UUID projectId,
-                          int currentRevisionNo, OffsetDateTime updatedAt) {
+                          int currentRevisionNo, OffsetDateTime updatedAt, String designStatus) {
     }
 
     public record SummaryPage(List<Summary> items, String nextCursor) {

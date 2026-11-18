@@ -125,7 +125,7 @@ export function Layout() {
     enabled: !!me,
   });
   const unread = Array.isArray(notifications.data) ? notifications.data.filter((n) => !n.readAt).length : 0;
-  const approver = !!projects.data?.items.some((p) => p.myRole === 'BRD_APPROVER');
+  const approver = !!projects.data?.items.some((p) => p.myRoles?.includes('BRD_APPROVER'));
 
   async function handleLogout() {
     try {

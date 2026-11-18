@@ -4,18 +4,24 @@ Decision GD-26 (owner, 2026-11-17): an approved BRD moves the requirement to the
 An **Architect agent** reads the approved BRD and the analysed code and writes a technical design document, which
 the project reviews and approves in the same way as the BRD. Estimation follows in a later stage.
 
-## 1. Lifecycle
+## 1. Lifecycle (updated by GD-27, 2026-11-18)
 
 ```
-BRD approved ──(author or BRD Approver: "Start technical design")──► GENERATING
-GENERATING ──(agent output verified)──► IN_REVIEW ──(author confirms)──► AWAITING_APPROVAL
-AWAITING_APPROVAL ──(BRD Approver, not the author, approves)──► APPROVED
-IN_REVIEW / AWAITING_APPROVAL ──(author or approver requests changes)──► new version GENERATING (old: SUPERSEDED)
-GENERATING ──(agent failed after retries)──► FAILED ──(author retries)──► GENERATING
+BRD approved ──► handed to the project's Technical Approvers (notification + email; Organisation Admins if none)
+             ──(Technical Approver: "Start technical design")──► GENERATING
+GENERATING ──(agent output verified)──► IN_REVIEW
+IN_REVIEW ──(Technical Approver decides flagged items, confirms approving alone, approves)──► APPROVED
+IN_REVIEW ──(author or Technical Approver requests changes)──► new version GENERATING (old: SUPERSEDED)
+GENERATING ──(agent failed after retries)──► FAILED ──(Technical Approver retries, 3 attempts)──► GENERATING
 ```
 
-- **Started explicitly, not automatically.** Each run costs model tokens, so the author or a BRD Approver starts it
-  from the approved BRD. Only one design run can be in progress per requirement.
+- **Owned by Technical Approvers (GD-27).** A project role; a member can hold it together with other roles. Only a
+  Technical Approver starts, retries, decides flagged items and approves. One may approve alone: the approval needs an
+  explicit confirmation, recorded on the approval ("approved by a single Technical Approver after explicit
+  confirmation; no second reviewer") and printed in the exported design. The author follows the design and may
+  request changes.
+- **Started explicitly, not automatically.** Each run costs model tokens, so a Technical Approver starts it from the
+  approved BRD. Only one design run can be in progress per requirement.
 - The requirement's workflow (the BRD lifecycle, T01–T29) is unchanged: the requirement stays at "BRD approved", and
   the design has its own lifecycle (`tdd_version.status`). The requirement page shows the design stage as the
   requirement's current stage.
@@ -67,14 +73,14 @@ Proposal shape:
 - **Content fingerprint:** each version has a SHA-256 over its canonical content; the approval binds to it.
 - Versions are **immutable** once produced (database trigger); decisions are **append-only**.
 
-## 5. Review and approval
+## 5. Review and approval (GD-27)
 
-Same roles and rules as the BRD (GD-24), without Garuda staff:
-
-- The **Requirement Author** reviews, accepts flagged items as they are, and **confirms**, or requests changes.
-- A **BRD Approver** of the project who is **not the author** gives the **final approval**.
-- Either can **request changes** with a note (10–5000 characters); the agent produces a new version with the note.
-- Notifications (in-app and email, GD-25): design ready for review, waiting for approval, approved, failed.
+- A **Technical Approver** reviews the design, accepts flagged items as they are, and **approves** it, after confirming
+  in a dialog that they approve it alone. The database refuses an approval without that recorded confirmation.
+- The **Requirement Author** or a Technical Approver can **request changes** with a note (10–5000 characters); the
+  agent produces a new version with the note.
+- Notifications (in-app and email, GD-25): BRD handed over for design, no Technical Approver (to Organisation Admins),
+  design ready for review (Technical Approvers and the author), approved, failed.
 - The approved design downloads as **PDF and Word**, with the BRD coverage table and the approval record.
 
 ## 6. Data model (migration 0044)
@@ -93,6 +99,6 @@ The API cannot enqueue jobs: "start" and "request changes" publish `TddRequested
 | # | Point | Default until decided |
 |---|---|---|
 | T-1 | Charging for the design | Included; no separate quote. Model cost is tracked per call as for the BRD |
-| T-2 | Who approves the design | The project's BRD Approvers. A separate "Technical Approver" role can be added later |
+| T-2 | Who approves the design | **Decided (GD-27):** the project's Technical Approvers; one may approve alone after explicit confirmation |
 | T-3 | Included change requests for the design | Not limited (no charge) |
 | T-4 | Design documents uploaded by the client | Not used yet; the design reads the BRD's documents only through the BRD |

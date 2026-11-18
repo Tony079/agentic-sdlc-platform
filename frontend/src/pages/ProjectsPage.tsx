@@ -6,7 +6,7 @@ import type { Project, ProjectList } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { Icon } from '../ui/Icon';
 import { useToast } from '../ui/Toast';
-import { Badge, EmptyState, ErrorText, Loading, Modal, PageHeader, RoleBadge, formatDate } from '../ui/components';
+import { Badge, EmptyState, ErrorText, Loading, Modal, PageHeader, RoleBadges, formatDate } from '../ui/components';
 
 function createErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -153,7 +153,7 @@ export function ProjectsPage() {
                 ) : project.status === 'DECLINED' ? (
                   <Badge tone="danger">Declined</Badge>
                 ) : (
-                  <RoleBadge role={project.myRole} />
+                  <RoleBadges roles={project.myRoles} />
                 )}
               </div>
               <div>

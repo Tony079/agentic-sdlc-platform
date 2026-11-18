@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, ApiError, ifMatch } from '../api/client';
 import type { FieldError, ProjectList, RequirementDetail } from '../api/types';
 import { RequirementForm, type RequirementFormValues } from '../components/RequirementForm';
-import { Loading, PageHeader } from '../ui/components';
+import { Loading, PageHeader, canRequest } from '../ui/components';
 
 const EMPTY: RequirementFormValues = {
   projectId: '',
@@ -76,7 +76,7 @@ export function RequirementFormPage() {
   // GD-02: new requirements only in active projects where the user is a Requester or Approver (checked again by the
   // server). Projects without a role are absent for members; legacy responses without roles keep every project.
   const requestable = (projects.data?.items ?? []).filter(
-    (p) => (p.status === undefined || p.status === 'ACTIVE') && (p.myRole === undefined || p.myRole === 'REQUIREMENT_AUTHOR' || p.myRole === 'BRD_APPROVER'),
+    (p) => (p.status === undefined || p.status === 'ACTIVE') && (p.myRoles === undefined || canRequest(p.myRoles)),
   );
 
   async function onSave(values: RequirementFormValues, submitAfterSave: boolean) {

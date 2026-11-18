@@ -177,8 +177,29 @@ export function stateLabel(state: string): string {
   return STATE_LABELS[state] ?? state.charAt(0) + state.slice(1).toLowerCase().replaceAll('_', ' ');
 }
 
-/** Workflow state of a requirement, coloured by meaning (waiting, in progress, done, failed). */
-export function StatePill({ state }: { state: string }) {
+/** GD-27: once the BRD is approved the requirement shows its technical design status instead. */
+const DESIGN_STATUS: Record<string, { label: string; cls: string }> = {
+  NONE: { label: 'Waiting for technical design', cls: 'internal_review' },
+  GENERATING: { label: 'Design being written', cls: 'analysing' },
+  IN_REVIEW: { label: 'Design in review', cls: 'internal_review' },
+  APPROVED: { label: 'Design approved', cls: 'shared_with_client' },
+  FAILED: { label: 'Design failed', cls: 'failed' },
+  SUPERSEDED: { label: 'Design in review', cls: 'internal_review' },
+};
+
+/**
+ * Workflow state of a requirement, coloured by meaning (waiting, in progress, done, failed). After BRD approval it
+ * shows the technical design status when {@code designStatus} is given (null = not started yet).
+ */
+export function StatePill({ state, designStatus }: { state: string; designStatus?: string | null }) {
+  if (state === 'SHARED_WITH_CLIENT' && designStatus !== undefined) {
+    const d = DESIGN_STATUS[designStatus ?? 'NONE'] ?? { label: 'Waiting for technical design', cls: 'internal_review' };
+    return (
+      <span className={`state state-${d.cls}`} title={`BRD approved · ${d.label}`}>
+        {d.label}
+      </span>
+    );
+  }
   return (
     <span className={`state state-${state.toLowerCase()}`} title={state}>
       {stateLabel(state)}
@@ -191,15 +212,34 @@ export const ROLE_LABELS: Record<string, string> = {
   MEMBER: 'Member',
   REQUIREMENT_AUTHOR: 'Requirement Author',
   BRD_APPROVER: 'BRD Approver',
+  TECHNICAL_APPROVER: 'Technical Approver',
   VIEWER: 'Viewer',
 };
+
+/** GD-27: whether the roles allow creating requirements. */
+export function canRequest(roles: readonly string[] | null | undefined): boolean {
+  return !!roles?.some((r) => r === 'REQUIREMENT_AUTHOR' || r === 'BRD_APPROVER');
+}
 
 export function RoleBadge({ role }: { role: string | null | undefined }) {
   if (!role) {
     return <Badge tone="neutral">No access</Badge>;
   }
-  const tone: Tone = role === 'ORG_ADMIN' || role === 'BRD_APPROVER' ? 'primary' : role === 'REQUIREMENT_AUTHOR' ? 'info' : 'neutral';
+  const tone: Tone = role === 'ORG_ADMIN' || role === 'BRD_APPROVER' ? 'primary'
+    : role === 'TECHNICAL_APPROVER' ? 'violet' : role === 'REQUIREMENT_AUTHOR' ? 'info' : 'neutral';
   return <Badge tone={tone}>{ROLE_LABELS[role] ?? role}</Badge>;
+}
+
+/** GD-27: a member's roles in one project, one badge each ("No access" when none). */
+export function RoleBadges({ roles }: { roles: readonly string[] | null | undefined }) {
+  if (!roles || roles.length === 0) {
+    return <RoleBadge role={null} />;
+  }
+  return (
+    <span className="row" style={{ gap: '0.3rem', flexWrap: 'wrap' }}>
+      {roles.map((r) => <RoleBadge key={r} role={r} />)}
+    </span>
+  );
 }
 
 /* ---------- avatar ---------- */

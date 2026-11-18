@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DesignPanel } from '../components/DesignPanel';
 import { mockFetch, renderWithProviders } from './render';
 
 const review = (over: Record<string, unknown> = {}) => ({
-  stage: 'NOT_STARTED', isAuthor: true, isApprover: false, canStart: true, canRetry: false, canAcceptFlags: false,
-  canConfirm: false, canApprove: false, canRequestChanges: false, unacceptedFlags: [], confirmedBy: null,
-  confirmedAt: null, approvedBy: null, approvedAt: null, brdOutdated: false, currentBrdVersionNo: 1, blockedReason: null,
+  stage: 'NOT_STARTED', isAuthor: false, isTechnicalApprover: true, canStart: true, canRetry: false, canAcceptFlags: false,
+  canApprove: false, canRequestChanges: false, unacceptedFlags: [], approvedBy: null, approvedAt: null,
+  approvalNote: null, brdOutdated: false, currentBrdVersionNo: 1, technicalApprovers: 1, blockedReason: null,
   ...over,
 });
 
@@ -31,7 +31,7 @@ const version = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('DesignPanel', () => {
-  it('lets the author start the technical design from an approved BRD', async () => {
+  it('lets the Technical Approver start the technical design from an approved BRD', async () => {
     document.cookie = 'XSRF-TOKEN=d1; path=/';
     const calls = mockFetch((url, init) => {
       if (init.method === 'POST') {
@@ -41,7 +41,7 @@ describe('DesignPanel', () => {
       return { status: 200, body: [] };
     });
     renderWithProviders(<DesignPanel requirementId="r1" />);
-    expect(await screen.findByText('Not started')).toBeInTheDocument();
+    expect(await screen.findByText('Waiting for technical design')).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole('button', { name: 'Start technical design' }));
     expect(calls.some((c) => c.url === '/api/v1/requirements/r1/design/start')).toBe(true);
     expect(await screen.findByText(/The Architect agent is writing the design/)).toBeInTheDocument();
@@ -50,10 +50,10 @@ describe('DesignPanel', () => {
   it('shows coverage gaps, flagged items and the review actions', async () => {
     document.cookie = 'XSRF-TOKEN=d1; path=/';
     const calls = mockFetch((url, init) => {
-      if (init.method === 'POST') return { status: 200, body: { requirementId: 'r1', review: review({ stage: 'AUTHOR_REVIEW', canStart: false }), version: version(), history: [] } };
+      if (init.method === 'POST') return { status: 200, body: { requirementId: 'r1', review: review({ stage: 'IN_REVIEW', canStart: false }), version: version(), history: [] } };
       if (url.endsWith('/design')) {
         return { status: 200, body: { requirementId: 'r1', version: version(), history: [],
-          review: review({ stage: 'AUTHOR_REVIEW', canStart: false, canAcceptFlags: true, canRequestChanges: true, unacceptedFlags: ['data-1'] }) } };
+          review: review({ stage: 'IN_REVIEW', canStart: false, canAcceptFlags: true, canRequestChanges: true, unacceptedFlags: ['data-1'] }) } };
       }
       return { status: 200, body: [] };
     });
@@ -61,7 +61,7 @@ describe('DesignPanel', () => {
     expect(await screen.findByText('BRD coverage: 1 of 2 statements addressed')).toBeInTheDocument();
     expect(screen.getByText('The API returns the channel.')).toBeInTheDocument();
     expect(screen.getByText('Which channels are allowed?')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Confirm design' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve design' })).not.toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole('button', { name: 'Accept as is' }));
     expect(calls.some((c) => c.url === '/api/v1/requirements/r1/design/flags/data-1/accept')).toBe(true);
   });
@@ -69,10 +69,34 @@ describe('DesignPanel', () => {
   it('offers downloads once the design is approved', async () => {
     mockFetch((url) => (url.endsWith('/design')
       ? { status: 200, body: { requirementId: 'r1', version: version({ status: 'APPROVED' }), history: [],
-          review: review({ stage: 'APPROVED', canStart: false, confirmedBy: 'Alice', approvedBy: 'Aaron' }) } }
+          review: review({ stage: 'APPROVED', canStart: false, approvedBy: 'Tina', approvalNote: 'Approved by a single Technical Approver after explicit confirmation; no second reviewer.' }) } }
       : { status: 200, body: [] }));
     renderWithProviders(<DesignPanel requirementId="r1" />);
     expect(await screen.findByRole('link', { name: 'Download PDF' })).toHaveAttribute('href', expect.stringContaining('/design/export?format=pdf'));
     expect(screen.getByRole('link', { name: 'Download Word' })).toBeInTheDocument();
+  });
+  it('asks the Technical Approver to confirm approving alone before approving', async () => {
+    document.cookie = 'XSRF-TOKEN=d1; path=/';
+    const calls = mockFetch((url, init) => {
+      if (init.method === 'POST') {
+        return { status: 200, body: { requirementId: 'r1', version: version({ status: 'APPROVED' }), history: [], review: review({ stage: 'APPROVED', canStart: false }) } };
+      }
+      if (url.endsWith('/design')) {
+        return { status: 200, body: { requirementId: 'r1', version: version(), history: [],
+          review: review({ stage: 'IN_REVIEW', canStart: false, canAcceptFlags: true, canApprove: true, canRequestChanges: true }) } };
+      }
+      return { status: 200, body: [] };
+    });
+    renderWithProviders(<DesignPanel requirementId="r1" />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Approve design' }));
+    const dialog = await screen.findByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: 'Approve design' });
+    expect(confirm).toBeDisabled();
+    expect(within(dialog).getByText(/1 BRD statement\(s\) are not addressed/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('checkbox'));
+    await user.click(confirm);
+    const post = calls.find((c) => c.url.endsWith('/design/approve'));
+    expect(JSON.parse(String(post?.init.body))).toEqual({ expectedContentHash: 'c'.repeat(64), confirmApproveAlone: true });
   });
 });

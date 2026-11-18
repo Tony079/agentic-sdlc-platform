@@ -25,7 +25,7 @@ import {
   Loading,
   Modal,
   PageHeader,
-  RoleBadge,
+  RoleBadges,
   StatePill,
   formatDateTime,
   relativeTime,
@@ -116,6 +116,16 @@ export function RequirementDetailPage() {
     refetchInterval: ACTIVE_STATES.has(requirement.data?.state ?? '') ? 4000 : false,
   });
 
+  // GD-27: after BRD approval the header shows the technical design status (shared with the design panel's query).
+  const design = useQuery({
+    queryKey: ['design', id],
+    queryFn: () => api.get<{ review: { stage: string } }>(`/api/v1/requirements/${id}/design`),
+    enabled: requirement.data?.state === 'SHARED_WITH_CLIENT',
+  });
+  const designStage = design.data?.review.stage;
+  const designStatus = designStage === undefined || designStage === 'NOT_STARTED' || designStage === 'BRD_NOT_APPROVED'
+    ? null : designStage;
+
   if (requirement.isPending) {
     return <Loading />;
   }
@@ -189,7 +199,7 @@ export function RequirementDetailPage() {
   }
 
   const owner = detail.ownedByMe !== false;
-  const canRestrict = owner || detail.myRole === 'BRD_APPROVER';
+  const canRestrict = owner || !!detail.myRoles?.includes('BRD_APPROVER');
   return (
     <>
       <BackLink to="/requirements">All requirements</BackLink>
@@ -199,7 +209,7 @@ export function RequirementDetailPage() {
         description={
           <span className="row">
             <span className="sr-only">State:</span>
-            <StatePill state={detail.state} />
+            <StatePill state={detail.state} designStatus={design.isSuccess ? designStatus : undefined} />
             <span className="small">Revision {detail.currentRevisionNo}</span>
             {detail.restricted && (
               <Badge tone="warning">
@@ -299,7 +309,7 @@ export function RequirementDetailPage() {
               <dt>Updated</dt>
               <dd>{relativeTime(detail.updatedAt)}</dd>
               <dt>Your role</dt>
-              <dd>{owner ? 'Owner' : <RoleBadge role={detail.myRole} />}</dd>
+              <dd>{owner ? 'Owner' : <RoleBadges roles={detail.myRoles} />}</dd>
               <dt>Visibility</dt>
               <dd>{detail.restricted ? 'Owner and project Approvers' : 'All project members'}</dd>
             </dl>

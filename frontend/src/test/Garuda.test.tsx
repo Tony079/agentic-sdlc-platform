@@ -44,7 +44,7 @@ describe('Organisation users', () => {
         };
       }
       if (url.startsWith('/api/v1/projects')) {
-        return { status: 200, body: { items: [{ id: 'p1', name: 'Alpha', status: 'ACTIVE', myRole: null, memberCount: 0, createdAt: '2026-11-02T10:00:00Z' }] } };
+        return { status: 200, body: { items: [{ id: 'p1', name: 'Alpha', status: 'ACTIVE', myRoles: [], memberCount: 0, createdAt: '2026-11-02T10:00:00Z' }] } };
       }
       return { status: 404 };
     });
@@ -59,7 +59,9 @@ describe('Organisation users', () => {
     await user.type(screen.getByLabelText('Work email'), 'mia@acme.test');
     await user.click(screen.getByRole('button', { name: /Add project/ }));
     await user.selectOptions(screen.getByLabelText('Project 1'), 'p1');
-    await user.selectOptions(screen.getByLabelText('Role in project 1'), 'BRD_APPROVER');
+    await user.click(screen.getByRole('checkbox', { name: 'BRD Approver' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Technical Approver' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Requirement Author' }));
     await user.click(screen.getByRole('button', { name: /Send invitation/ }));
 
     expect(await screen.findByRole('heading', { name: 'Invitation sent' })).toBeInTheDocument();
@@ -70,7 +72,7 @@ describe('Organisation users', () => {
       email: 'mia@acme.test',
       displayName: 'Mia Member',
       role: 'MEMBER',
-      memberships: [{ projectId: 'p1', role: 'BRD_APPROVER' }],
+      memberships: [{ projectId: 'p1', roles: ['BRD_APPROVER', 'TECHNICAL_APPROVER'] }],
     });
   });
 });

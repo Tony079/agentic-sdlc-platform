@@ -23,7 +23,7 @@ import {
   formatDateTime,
   relativeTime,
 } from '../ui/components';
-import { PROJECT_ROLES } from './ProjectDetailPage';
+import { RolePicker } from '../components/RolePicker';
 
 const ERRORS: Record<string, string> = {
   USER_EXISTS: 'Someone with this email is already in your organisation.',
@@ -79,7 +79,7 @@ function LinkResultModal({ result, title, onClose }: { result: LinkResult; title
 
 interface MembershipRow {
   projectId: string;
-  role: ProjectRole;
+  roles: ProjectRole[];
 }
 
 function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (r: LinkResult) => void }) {
@@ -167,7 +167,7 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
               type="button"
               className="btn-ghost btn-sm"
               disabled={rows.length >= available.length}
-              onClick={() => setRows((r) => [...r, { projectId: '', role: 'REQUIREMENT_AUTHOR' }])}
+              onClick={() => setRows((r) => [...r, { projectId: '', roles: ['REQUIREMENT_AUTHOR'] }])}
             >
               <Icon name="plus" size={15} />
               Add project
@@ -175,7 +175,8 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
           </span>
           {rows.length === 0 && <span className="hint">No projects yet. You can also add people to projects later.</span>}
           {rows.map((row, i) => (
-            <div key={i} className="row" style={{ flexWrap: 'nowrap' }}>
+            <div key={i} className="stack" style={{ gap: '0.35rem', padding: '0.5rem 0', borderBottom: '1px solid var(--border)' }}>
+            <div className="row" style={{ flexWrap: 'nowrap' }}>
               <select
                 aria-label={`Project ${i + 1}`}
                 value={row.projectId}
@@ -190,20 +191,6 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
                     </option>
                   ))}
               </select>
-              <select
-                aria-label={`Role in project ${i + 1}`}
-                value={row.role}
-                style={{ maxWidth: 170 }}
-                onChange={(e) =>
-                  setRows((all) => all.map((r, j) => (j === i ? { ...r, role: e.target.value as ProjectRole } : r)))
-                }
-              >
-                {PROJECT_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {ROLE_LABELS[r]}
-                  </option>
-                ))}
-              </select>
               <button
                 type="button"
                 className="btn-ghost btn-icon"
@@ -212,6 +199,9 @@ function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (
               >
                 <Icon name="x" size={16} />
               </button>
+            </div>
+            <RolePicker compact name={`roles-${i}`} value={row.roles}
+              onChange={(roles) => setRows((all) => all.map((r, j) => (j === i ? { ...r, roles } : r)))} />
             </div>
           ))}
         </div>
@@ -419,7 +409,7 @@ export function UsersPage() {
                           <div className="row" style={{ gap: '0.3rem' }}>
                             {u.memberships.slice(0, 3).map((m) => (
                               <Badge key={m.memberId} tone="neutral" dot={false}>
-                                {m.projectName} · {ROLE_LABELS[m.role]}
+                                {m.projectName} · {m.roles.map((r) => ROLE_LABELS[r] ?? r).join(', ')}
                               </Badge>
                             ))}
                             {u.memberships.length > 3 && <span className="small">+{u.memberships.length - 3}</span>}

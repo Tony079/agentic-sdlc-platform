@@ -9,7 +9,7 @@ export interface Me {
 }
 
 export type OrgRole = 'ORG_ADMIN' | 'MEMBER';
-export type ProjectRole = 'REQUIREMENT_AUTHOR' | 'BRD_APPROVER' | 'VIEWER';
+export type ProjectRole = 'REQUIREMENT_AUTHOR' | 'BRD_APPROVER' | 'TECHNICAL_APPROVER' | 'VIEWER';
 
 export interface Project {
   id: string;
@@ -20,8 +20,8 @@ export interface Project {
   planName?: string | null;
   environmentManagerId?: string | null;
   environmentManagerName?: string | null;
-  /** The caller's project role, or null when not a member (an Organisation Admin sees every project). */
-  myRole?: ProjectRole | null;
+  /** GD-27: the caller's project roles; empty when not a member (an Organisation Admin sees every project). */
+  myRoles?: ProjectRole[];
   memberCount?: number;
   createdAt: string;
   archivedAt?: string | null;
@@ -35,7 +35,7 @@ export interface ProjectMember {
   displayName: string;
   email: string;
   userStatus: 'INVITED' | 'ACTIVE' | 'DISABLED';
-  role: ProjectRole;
+  roles: ProjectRole[];
   addedAt: string;
 }
 
@@ -83,7 +83,7 @@ export interface Membership {
   memberId: string;
   projectId: string;
   projectName: string;
-  role: ProjectRole;
+  roles: ProjectRole[];
 }
 
 export interface OrgUser {
@@ -280,7 +280,7 @@ export interface RequirementDetail {
   /** Restricted requirements are visible to their owner and the project's Approvers only (GD-05). */
   restricted?: boolean;
   ownedByMe?: boolean;
-  myRole?: ProjectRole | null;
+  myRoles?: ProjectRole[];
 }
 
 export interface RequirementRevision {
@@ -299,6 +299,8 @@ export interface RequirementSummary {
   projectId: string;
   currentRevisionNo: number;
   updatedAt: string;
+  /** GD-27: status of the latest technical design version, or null when none was started. */
+  designStatus?: 'GENERATING' | 'IN_REVIEW' | 'APPROVED' | 'FAILED' | 'SUPERSEDED' | null;
 }
 
 export interface RequirementPage {

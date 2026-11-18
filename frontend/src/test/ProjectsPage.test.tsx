@@ -21,7 +21,7 @@ describe('ProjectsPage', () => {
         status: 200,
         body: {
           items: [
-            { id: 'p1', name: 'Alpha', status: 'ACTIVE', myRole: 'REQUIREMENT_AUTHOR', memberCount: 3, createdAt: '2026-11-02T10:00:00Z' },
+            { id: 'p1', name: 'Alpha', status: 'ACTIVE', myRoles: ['REQUIREMENT_AUTHOR', 'TECHNICAL_APPROVER'], memberCount: 3, createdAt: '2026-11-02T10:00:00Z' },
           ],
         },
       };
@@ -41,7 +41,7 @@ describe('ProjectsPage', () => {
       if (url === '/api/v1/me') return { status: 200, body: admin };
       if (url === '/api/v1/projects' && init.method === 'POST') {
         const body = JSON.parse(init.body as string);
-        const project = { id: 'p2', name: body.name, description: body.description, status: 'ACTIVE', myRole: null, memberCount: 0, createdAt: '2026-11-02T10:00:00Z' };
+        const project = { id: 'p2', name: body.name, description: body.description, status: 'ACTIVE', myRoles: [], memberCount: 0, createdAt: '2026-11-02T10:00:00Z' };
         items.push(project);
         return { status: 201, body: project };
       }

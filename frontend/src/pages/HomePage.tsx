@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import type { Clarification, ProjectList, RequirementPage } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { Icon } from '../ui/Icon';
-import { Card, EmptyState, Loading, PageHeader, RoleBadge, Stat, StatePill, relativeTime } from '../ui/components';
+import { Card, EmptyState, Loading, PageHeader, RoleBadges, Stat, StatePill, canRequest as rolesCanRequest, relativeTime } from '../ui/components';
 
 const WAITING_ON_CLIENT = new Set(['AWAITING_CLARIFICATION', 'AWAITING_DOCUMENTS', 'AWAITING_DOCUMENT_DECISION', 'DRAFT']);
 const DONE = new Set(['SHARED_WITH_CLIENT', 'REJECTED', 'CANCELLED']);
@@ -34,7 +34,7 @@ export function HomePage() {
   const waiting = myItems.filter((r) => WAITING_ON_CLIENT.has(r.state)).length;
   const shared = (visible.data?.items ?? []).filter((r) => r.state === 'SHARED_WITH_CLIENT').length;
   const projectName = (id: string) => projects.data?.items.find((p) => p.id === id)?.name ?? '';
-  const canRequest = !!projects.data?.items.some((p) => p.status !== 'PENDING' && (p.myRole === 'REQUIREMENT_AUTHOR' || p.myRole === 'BRD_APPROVER'));
+  const canRequest = !!projects.data?.items.some((p) => p.status !== 'PENDING' && rolesCanRequest(p.myRoles));
 
   return (
     <>
@@ -87,7 +87,7 @@ export function HomePage() {
                       {projectName(r.projectId)} · updated {relativeTime(r.updatedAt)}
                     </span>
                   </div>
-                  <StatePill state={r.state} />
+                  <StatePill state={r.state} designStatus={r.designStatus ?? null} />
                 </li>
               ))}
             </ul>
@@ -120,7 +120,7 @@ export function HomePage() {
                       {p.name}
                     </Link>
                   </div>
-                  <RoleBadge role={p.myRole} />
+                  <RoleBadges roles={p.myRoles} />
                 </li>
               ))}
             </ul>

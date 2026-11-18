@@ -203,7 +203,9 @@ class RequirementRepository {
      */
     List<Summary> listVisible(UUID owner, WorkflowState state, UUID projectId, Cursor after, int limit) {
         StringBuilder sql = new StringBuilder("""
-                SELECT r.id, r.key, rev.title, wi.projected_state, r.project_id, r.current_revision_no, r.updated_at
+                SELECT r.id, r.key, rev.title, wi.projected_state, r.project_id, r.current_revision_no, r.updated_at,
+                       (SELECT t.status FROM app.tdd_version t WHERE t.requirement_id = r.id
+                        ORDER BY t.version_no DESC LIMIT 1) AS design_status
                 FROM app.requirement r
                 JOIN app.requirement_revision rev ON rev.requirement_id = r.id AND rev.revision_no = r.current_revision_no
                 JOIN app.workflow_instance wi ON wi.requirement_id = r.id
@@ -232,7 +234,7 @@ class RequirementRepository {
         return spec.query((rs, n) -> new Summary(rs.getObject("id", UUID.class), rs.getString("key"),
                         rs.getString("title"), WorkflowState.valueOf(rs.getString("projected_state")),
                         rs.getObject("project_id", UUID.class), rs.getInt("current_revision_no"),
-                        rs.getObject("updated_at", OffsetDateTime.class)))
+                        rs.getObject("updated_at", OffsetDateTime.class), rs.getString("design_status")))
                 .list();
     }
 
