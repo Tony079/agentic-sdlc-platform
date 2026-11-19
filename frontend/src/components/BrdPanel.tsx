@@ -275,7 +275,9 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
                       setMessage({ tone: 'info', text: 'Your change request was submitted. A BRD Approver assesses it; nothing changes until it is accepted.' });
                       await queryClient.invalidateQueries();
                     })
-                    .catch(() => setMessage({ tone: 'danger', text: 'The change request could not be sent.' }))
+                    .catch((e) => setMessage({ tone: 'danger', text: e instanceof ApiError && e.code === 'CHANGE_REQUEST_OPEN'
+                      ? 'You already have a change request open for this requirement. Garuda assesses it first, then a BRD Approver of the project accepts or declines it.'
+                      : e instanceof ApiError ? e.message : 'The change request could not be sent.' }))
                     .finally(() => setBusy(false));
                 }} className="stack">
                   <label>

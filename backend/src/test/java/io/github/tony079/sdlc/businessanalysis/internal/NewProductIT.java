@@ -195,6 +195,14 @@ class NewProductIT extends ApiIntegrationTest {
                 SELECT i.detail FROM app.tdd_item i JOIN app.tdd_version v ON v.id = i.tdd_version_id
                 WHERE v.requirement_id = ?::uuid AND i.title = 'Section coverage test'
                 """, String.class, id)).isEqualTo("Test that every extracted section is shown (BRD acceptance criteria 1).");
+        Response change = alice.post("/api/v1/requirements/" + id + "/client-changes",
+                Map.of("text", "Please rewrite the BRD and list each acceptance criterion separately."));
+        assertThat(change.status()).isEqualTo(200);
+        Response again = alice.post("/api/v1/requirements/" + id + "/client-changes",
+                Map.of("text", "Please rewrite the BRD and list each acceptance criterion separately."));
+        // Only one change request can be open; the reason is returned for the page to show.
+        assertThat(again.status()).isEqualTo(409);
+        assertThat(again.body().path("error").path("code").asString()).isEqualTo("CHANGE_REQUEST_OPEN");
         var designCall = fake.calls().stream().filter(c -> "arch.design".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
         assertThat(designCall.data().stream().filter(d -> d.label().startsWith("repository summary")).findFirst()
                 .orElseThrow().content()).contains("design this as a new product");
