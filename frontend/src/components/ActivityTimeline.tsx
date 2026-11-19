@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { Icon, type IconName } from '../ui/Icon';
@@ -105,6 +106,13 @@ export function ActivityTimeline({ requirementId, stage, live, title, expanded =
   /** Shown open without polling (for example after a failure). */
   expanded?: boolean;
 }) {
+  // After a minute with no line at all, say so: the job is queued but no worker has picked it up.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!live) return undefined;
+    const timer = window.setTimeout(() => setSlow(true), 60_000);
+    return () => window.clearTimeout(timer);
+  }, [live]);
   const activity = useQuery({
     queryKey: ['activity', requirementId],
     queryFn: () => api.get<ActivityEntry[]>(`/api/v1/requirements/${requirementId}/activity`),
@@ -115,9 +123,17 @@ export function ActivityTimeline({ requirementId, stage, live, title, expanded =
   const latest = all[all.length - 1];
   if (!latest) {
     return live ? (
-      <p className="row small" style={{ gap: '0.5rem' }}>
-        <span className="spinner" aria-hidden="true" /> Waiting for the agent to start…
-      </p>
+      <div className="small">
+        <p className="row" style={{ gap: '0.5rem' }}>
+          <span className="spinner" aria-hidden="true" /> Waiting for the agent to start…
+        </p>
+        {slow && (
+          <p>
+            Nothing has started after a minute. The background worker may be busy or stopped; an administrator can
+            check that the worker service is running.
+          </p>
+        )}
+      </div>
     ) : null;
   }
   const earlier = all.slice(0, -1);

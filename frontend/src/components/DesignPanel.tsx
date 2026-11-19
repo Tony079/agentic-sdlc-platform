@@ -222,8 +222,8 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
       {review.stage === 'GENERATING' && (
         <>
           <p>
-            The Architect agent is writing the design from the approved BRD and the code. This usually takes one or two
-            minutes; you are notified when it is ready.
+            The Architect agent is writing the design from the approved BRD (and the code, when the project has any).
+            This usually takes one or two minutes; you are notified when it is ready.
           </p>
           <ActivityTimeline requirementId={requirementId} stage="DESIGN" live title="What the Architect agent is doing" />
         </>

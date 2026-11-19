@@ -58,6 +58,9 @@ class DesignConsumers implements EventConsumer {
             String attempt = String.valueOf(event.payload().get("attempt"));
             jobs.enqueue(new JobRequest(DesignGenerationHandler.JOB_TYPE, "tdd:" + versionId + ":" + attempt,
                     "REQUIREMENT", event.aggregateId(), null, Map.of("tddVersionId", versionId.toString()), 100));
+            // GD-29: the timeline shows the request was received even before a worker picks the job up.
+            activity.step(event.aggregateId(), ActivityLog.Stage.DESIGN, versionId,
+                    "Queued for the Architect agent; it starts as soon as a worker is free.");
             return;
         }
         Object jobType = event.payload().get("jobType");
