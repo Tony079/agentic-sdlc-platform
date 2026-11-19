@@ -43,11 +43,23 @@ public class ModelException extends RuntimeException {
 
     private final Code code;
     private final UUID requestId;
+    private final String detail;
 
     public ModelException(Code code, UUID requestId, Throwable cause) {
+        this(code, requestId, cause, null);
+    }
+
+    /** @param detail structural reason (field paths and rule messages, never model text), or null */
+    public ModelException(Code code, UUID requestId, Throwable cause, String detail) {
         super(code.name(), cause);
         this.code = code;
         this.requestId = requestId;
+        this.detail = detail;
+    }
+
+    /** Why the output was rejected, for INVALID_OUTPUT; field paths and rule messages only. May be null. */
+    public String detail() {
+        return detail;
     }
 
     public Code code() {

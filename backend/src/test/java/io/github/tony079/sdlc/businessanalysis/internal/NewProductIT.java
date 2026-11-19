@@ -101,6 +101,9 @@ class NewProductIT extends ApiIntegrationTest {
         String id = created.body().path("id").asString();
         assertThat(alice.upload("/api/v1/requirements/" + id + "/documents", "brief.txt", "text/plain",
                 Samples.text("The portfolio site lists experience, projects and skills.")).status()).isEqualTo(201);
+        // The first BRD answer breaks a rule (no feasibility reasons); the gateway asks for a repair, which passes.
+        fake.enqueue(new FakeModelProvider.Reply("""
+                {"feasibility": {"verdict": "FEASIBLE", "reasons": []}, "items": [], "unsupported": [], "clarifications": []}"""));
         Response latest = alice.get("/api/v1/requirements/" + id);
         Response submitted = alice.post("/api/v1/requirements/" + id + "/submit", null,
                 RequirementFixtures.ifMatch(latest), true);
@@ -121,6 +124,19 @@ class NewProductIT extends ApiIntegrationTest {
                 WHERE requirement_id = ?::uuid ORDER BY created_at DESC LIMIT 1
                 """, Boolean.class, id)).isTrue();
 
+        // GD-29: the timeline shows each step, the repaired answer with the rule it broke, and the result.
+        var lines = alice.get("/api/v1/requirements/" + id + "/activity").body();
+        java.util.List<String> messages = lines.valueStream().map(l -> l.path("kind").asString() + " " + l.path("message").asString()).toList();
+        assertThat(messages).anyMatch(m -> m.startsWith("STEP Started the analysis") && m.contains("new product"));
+        assertThat(messages).anyMatch(m -> m.startsWith("STEP Writing the BRD"));
+        assertThat(messages).anyMatch(m -> m.startsWith("WARN The model's first answer broke a rule") && m.contains("feasibility.reasons"));
+        assertThat(messages).anyMatch(m -> m.startsWith("DONE BRD ready for review: 3 statements, verdict feasible"));
+        assertThat(messages.stream().noneMatch(m -> m.contains("Candidates want a portfolio"))).as("no model text").isTrue();
+        long last = lines.get(lines.size() - 1).path("id").asLong();
+        assertThat(alice.get("/api/v1/requirements/" + id + "/activity?after=" + last).body().size()).isZero();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> admin.update(
+                "DELETE FROM app.analysis_activity WHERE requirement_id = ?::uuid", id)).hasMessageContaining("append-only");
+
         // BRD review and approval as usual; with no code there is nothing to scan, so it is released.
         String brd = "/api/v1/requirements/" + id + "/brd";
         Response confirmed = alice.post(brd + "/confirm", Map.of());
@@ -138,6 +154,9 @@ class NewProductIT extends ApiIntegrationTest {
         assertThat(tina.post(design + "/start", Map.of()).status()).isEqualTo(200);
         drive(tenant);
         assertThat(tina.get(design).body().path("review").path("stage").asString()).isEqualTo("IN_REVIEW");
+        assertThat(alice.get("/api/v1/requirements/" + id + "/activity").body().valueStream()
+                .map(l -> l.path("stage").asString() + " " + l.path("message").asString()))
+                .anyMatch(m -> m.startsWith("DESIGN Design version 1 ready for review"));
         var designCall = fake.calls().stream().filter(c -> "arch.design".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
         assertThat(designCall.data().stream().filter(d -> d.label().startsWith("repository summary")).findFirst()
                 .orElseThrow().content()).contains("design this as a new product");

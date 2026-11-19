@@ -90,9 +90,11 @@ class DesignService {
     private final OutboxPublisher outbox;
     private final AuditWriter audit;
     private final JsonMapper json;
+    private final ActivityLog activity;
 
     DesignService(DesignRepository designs, ReviewRepository reviews, RequirementDirectory requirements,
-                  OutboxPublisher outbox, AuditWriter audit, JsonMapper json) {
+                  OutboxPublisher outbox, AuditWriter audit, JsonMapper json, ActivityLog activity) {
+        this.activity = activity;
         this.designs = designs;
         this.reviews = reviews;
         this.requirements = requirements;
@@ -109,6 +111,13 @@ class DesignService {
     }
 
     // --- read ---------------------------------------------------------------------------------------------------
+
+    /** GD-29: the agents' activity timeline for anyone who can see the requirement; lines after {@code after}. */
+    @Transactional(readOnly = true)
+    public List<ActivityLog.Entry> activity(UUID requirementId, long after) {
+        requirements.findVisible(requirementId).orElseThrow(ApiException::notFound);
+        return activity.list(requirementId, Math.max(0, after));
+    }
 
     @Transactional
     public DesignState state(UUID requirementId) {

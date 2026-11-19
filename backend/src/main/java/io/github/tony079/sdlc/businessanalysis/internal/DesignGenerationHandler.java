@@ -74,11 +74,14 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
     private final AuditWriter audit;
     private final JsonMapper json;
     private final TransactionTemplate readOnly;
+    private final ActivityLog activity;
+    private final BaAnalysisHandler.Describer describer = new BaAnalysisHandler.Describer();
 
-    DesignGenerationHandler(ModelGateway gateway, DesignRepository designs, ReviewRepository reviews,
+    DesignGenerationHandler(ActivityLog activity, ModelGateway gateway, DesignRepository designs, ReviewRepository reviews,
                             AnalysisRepository analysis, ClarificationRepository clarifications,
                             RequirementInputs requirements, RepositoryInputs repositories, AuditWriter audit,
                             JsonMapper json, PlatformTransactionManager transactionManager) {
+        this.activity = activity;
         this.gateway = gateway;
         this.designs = designs;
         this.reviews = reviews;
@@ -104,6 +107,14 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
         if (inputs == null) {
             return null; // no longer generating (superseded or already done): nothing to do
         }
+        UUID requirementId = inputs.version().requirementId();
+        ActivityLog.Stage stage = ActivityLog.Stage.DESIGN;
+        boolean noCode = inputs.inventory().files().size() < 3;
+        activity.step(requirementId, stage, versionId, "Started the technical design" + (job.attemptNo() > 1
+                ? " (attempt " + job.attemptNo() + ")" : "") + ": reading the approved BRD ("
+                + ActivityLog.count(inputs.brd().items().size(), "statement") + ")"
+                + (noCode ? "; the repository has little or no code, so this is designed as a new product."
+                        : " and the code (" + ActivityLog.count(inputs.inventory().files().size(), "file") + ")."));
         try {
             List<DataBlock> context = new ArrayList<>();
             context.add(ContextAssembler.requirement(inputs.requirement()));
@@ -118,10 +129,16 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
             }
             List<DataBlock> filesData = new ArrayList<>(context);
             filesData.addAll(ContextAssembler.inventory(inputs.inventory()));
+            activity.step(requirementId, stage, versionId, "Deciding which code the design must build on.");
             ModelResponse<DesignContracts.Files> files = gateway.generate(new ModelRequest<>(BaPrompts.ARCH_FILES,
                     filesData, DesignContracts.Files.class, inputs.version().requirementId(), 2048, null));
+            describer.repaired(activity, requirementId, stage, versionId, files);
 
             Set<String> relevant = relevantPaths(files.output().relevantPaths(), inputs.inventory());
+            if (!relevant.isEmpty()) {
+                activity.done(requirementId, stage, versionId, "Picked " + ActivityLog.count(relevant.size(), "file")
+                        + " to read: " + ActivityLog.names(relevant, 4) + ".");
+            }
             Map<String, String> code = repositories.readFiles(inputs.inputSet().sources(), relevant);
             List<DataBlock> designData = new ArrayList<>(context);
             designData.add(checklist(inputs.brd()));
@@ -129,19 +146,29 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
             designData.add(new DataBlock("approach note (model output, untrusted)", files.output().approach()));
             designData.addAll(ContextAssembler.fileExcerpts(code, relevant));
             designData.addAll(ContextAssembler.inventory(inputs.inventory()));
+            activity.step(requirementId, stage, versionId, "Writing the design: architecture, components, APIs, data "
+                    + "model, security, rollout and test plan. This usually takes 30 to 90 seconds.");
             ModelResponse<DesignContracts.Proposal> design = gateway.generate(new ModelRequest<>(BaPrompts.ARCH_DESIGN,
                     designData, DesignContracts.Proposal.class, inputs.version().requirementId(), 16384, null));
+            describer.repaired(activity, requirementId, stage, versionId, design);
 
             Set<String> brdKeys = new LinkedHashSet<>();
             inputs.brd().items().forEach(i -> brdKeys.add(i.itemKey()));
             List<ItemRow> items = verify(design.output(), code, brdKeys);
             String questions = json.writeValueAsString(design.output().openQuestions().stream().map(String::strip).toList());
             String summary = design.output().summary().strip();
+            long verified = items.stream().filter(i -> "VERIFIED".equals(i.supportState())).count();
+            long flagged = items.stream().filter(i -> "FLAGGED".equals(i.supportState())).count();
+            activity.done(requirementId, stage, versionId, "The model returned " + ActivityLog.count(items.size(), "design item")
+                    + ". Checked the code references: " + verified + " based on verified code, " + flagged + " flagged, "
+                    + (items.size() - verified - flagged) + " not traced to code.");
             return new Outcome(versionId, summary, questions, items, contentHash(summary, items, questions),
                     design.provider(), design.modelId());
         } catch (ModelException e) {
+            activity.add(requirementId, stage, versionId, ActivityLog.Kind.FAIL, BaAnalysisHandler.describe(e));
             throw BaAnalysisHandler.failure(e);
         } catch (IOException e) {
+            activity.fail(requirementId, stage, versionId, "The code could not be read; retrying automatically.");
             throw JobFailure.retryable("SNAPSHOT_READ_FAILED", e);
         }
     }
@@ -295,5 +322,7 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
             reviews.notify(version.tenantId(), user, "TDD_READY_FOR_REVIEW", version.requirementId());
         }
         audit.record(AuditAction.TDD_VERSION_CREATED, "TDD_VERSION", version.id(), AuditResult.SUCCESS);
+        activity.done(version.requirementId(), ActivityLog.Stage.DESIGN, version.id(), "Design version "
+                + version.versionNo() + " ready for review: " + ActivityLog.count(outcome.items().size(), "item") + ".");
     }
 }

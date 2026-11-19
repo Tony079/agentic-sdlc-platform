@@ -5,6 +5,7 @@ import type { BrdHistoryEntry, ClientBrd, ClientReview, RequirementState } from 
 import { money } from '../ui/money';
 import { Badge, Callout, formatDateTime, type Tone } from '../ui/components';
 import { BrdItems } from './BrdItems';
+import { ActivityTimeline } from './ActivityTimeline';
 
 const WAITING: Partial<Record<RequirementState, string>> = {
   ANALYSING: 'The BA agent is analysing the code and documents. The BRD will appear here for your review.',
@@ -175,7 +176,12 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
       </div>
       {brd.isPending && <p>Loading…</p>}
       {!brd.isPending && !version?.items && (
-        <p>{WAITING[requirementState] ?? 'No BRD yet. It appears here once the analysis has run.'}</p>
+        <>
+          <p>{WAITING[requirementState] ?? 'No BRD yet. It appears here once the analysis has run.'}</p>
+          <ActivityTimeline requirementId={requirementId} stage="BRD" title="What the BA agent is doing"
+            live={requirementState === 'ANALYSING' || requirementState === 'BRD_DRAFTED'}
+            expanded={requirementState === 'FAILED' || requirementState === 'AWAITING_CLARIFICATION'} />
+        </>
       )}
       {version?.items && (
         <>
@@ -298,6 +304,11 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
             </div>
           )}
         </>
+      )}
+      {version?.items && (
+        <div style={{ marginTop: '1.25rem' }}>
+          <ActivityTimeline requirementId={requirementId} stage="BRD" live={false} title="How this BRD was produced" />
+        </div>
       )}
       {version?.items && <BrdHistory requirementId={requirementId} requirementState={requirementState} />}
       {message && (

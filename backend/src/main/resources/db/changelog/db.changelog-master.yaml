@@ -86,3 +86,5 @@ databaseChangeLog:
   - include: { file: changes/0046-arch-design-v2.sql, relativeToChangelogFile: true }
   # GD-28 (2026-11-19): New product requirements are analysed without code.
   - include: { file: changes/0047-new-product-analysis.sql, relativeToChangelogFile: true }
+  # GD-29 (2026-11-19): live activity timeline of the agents.
+  - include: { file: changes/0048-analysis-activity.sql, relativeToChangelogFile: true }

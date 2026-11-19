@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { Badge, Callout, Modal, formatDateTime, type Tone } from '../ui/components';
+import { ActivityTimeline } from './ActivityTimeline';
 
 // GD-26: the Technical design stage of a requirement.
 
@@ -206,11 +207,13 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
         </p>
       )}
       {review.stage === 'GENERATING' && (
-        <p className="row" style={{ gap: '0.6rem' }}>
-          <span className="spinner" aria-hidden="true" />
-          The Architect agent is writing the design from the approved BRD and the code. This usually takes one or two
-          minutes; you are notified when it is ready.
-        </p>
+        <>
+          <p>
+            The Architect agent is writing the design from the approved BRD and the code. This usually takes one or two
+            minutes; you are notified when it is ready.
+          </p>
+          <ActivityTimeline requirementId={requirementId} stage="DESIGN" live title="What the Architect agent is doing" />
+        </>
       )}
       {review.stage === 'FAILED' && version && (
         <Callout tone="danger" title="The design could not be written">
@@ -219,6 +222,9 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
             ? `You can try again (${version.attempts} of 3 attempts used).`
             : 'All three attempts are used. Contact Garuda support.'}
         </Callout>
+      )}
+      {review.stage === 'FAILED' && (
+        <ActivityTimeline requirementId={requirementId} stage="DESIGN" live={false} expanded title="What happened" />
       )}
       {review.brdOutdated && version && (
         <Callout tone="warning" title="Based on an older BRD">
@@ -363,6 +369,11 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
         </>
       )}
 
+      {showContent && (
+        <div style={{ marginTop: '1.25rem' }}>
+          <ActivityTimeline requirementId={requirementId} stage="DESIGN" live={false} title="How this design was produced" />
+        </div>
+      )}
       {data.history.length > 1 && (
         <details style={{ marginTop: '1.25rem' }}>
           <summary><strong>Version history</strong> <span className="small">({data.history.length} versions)</span></summary>

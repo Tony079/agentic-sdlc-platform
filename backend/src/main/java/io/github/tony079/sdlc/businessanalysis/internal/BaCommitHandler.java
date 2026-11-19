@@ -75,11 +75,14 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
     private final TransactionTemplate readOnly;
     private final io.github.tony079.sdlc.billing.api.BrdQuotes quotes;
 
-    BaCommitHandler(AnalysisRepository repository, ClarificationRepository clarifications, ReviewRepository reviews,
+    private final ActivityLog activity;
+
+    BaCommitHandler(ActivityLog activity, AnalysisRepository repository, ClarificationRepository clarifications, ReviewRepository reviews,
                     RepositoryInputs repositories, DocumentProcessing documents,
                     InputSets inputSets, AnalysisStarter starter, WorkflowEngine workflow, AuditWriter audit,
                     Validator validator, JsonMapper json, PlatformTransactionManager transactionManager,
                     io.github.tony079.sdlc.billing.api.BrdQuotes quotes) {
+        this.activity = activity;
         this.quotes = quotes;
         this.repository = repository;
         this.clarifications = clarifications;
@@ -183,7 +186,10 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         InputSetRow set = repository.inputSet(pending.inputSetId()).orElseThrow();
         String current = inputSets.evaluate(requirementId, set.correctionsJson()).map(InputSets.Draft::inputHash)
                 .orElse("NOT_READY");
+        UUID run = pending.stageExecutionId();
         if (!current.equals(pending.inputHash())) {
+            activity.warn(requirementId, ActivityLog.Stage.BRD, run, "The inputs changed while the model was working "
+                    + "(a document or the code). This result is discarded; the analysis restarts with the new inputs.");
             reject(pending, "REJECTED_STALE", "INPUTS_CHANGED");
             boolean guardHolds = !"NOT_READY".equals(current);
             workflow.markAnalysisStale(requirementId, pending.stageExecutionId(), !guardHolds);
@@ -193,6 +199,9 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
             return;
         }
         if (outcome.items() == null) {
+            activity.fail(requirementId, ActivityLog.Stage.BRD, run, "The model's answer failed Garuda's checks ("
+                    + (outcome.invalidCode() == null ? "PROPOSAL_INVALID" : outcome.invalidCode())
+                    + "). You can retry the analysis.");
             reject(pending, "REJECTED_INVALID", outcome.invalidCode() == null ? "PROPOSAL_INVALID" : outcome.invalidCode());
             workflow.failAnalysis(requirementId);
             return;
@@ -212,6 +221,18 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
                     c.recommendedOption());
             blocking |= c.blocking();
         }
+        long verified = outcome.items().stream().filter(i -> "VERIFIED".equals(i.supportState())).count();
+        long flagged = outcome.items().stream().filter(i -> "FLAGGED".equals(i.supportState())).count();
+        int rejectedCitations = outcome.items().stream().mapToInt(VerifiedItem::rejectedCitations).sum();
+        activity.done(requirementId, ActivityLog.Stage.BRD, run, "Checked the references: "
+                + ActivityLog.count((int) verified, "statement") + " backed by verified evidence, " + flagged
+                + " flagged for your decision" + (rejectedCitations == 0 ? "" : ", "
+                + ActivityLog.count(rejectedCitations, "citation") + " that did not match the source removed") + ".");
+        if (asked.size() < outcome.clarifications().size()) {
+            activity.step(requirementId, ActivityLog.Stage.BRD, run, "Skipped "
+                    + ActivityLog.count(outcome.clarifications().size() - asked.size(), "question")
+                    + " you had already answered.");
+        }
         if (!asked.isEmpty()) {
             // One notification per analysis, however many questions it raised.
             reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "CLARIFICATION_ASSIGNED",
@@ -219,6 +240,9 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
             audit.record(AuditAction.CLARIFICATION_OPENED, "REQUIREMENT", requirementId, AuditResult.SUCCESS);
         }
         if (blocking) {
+            activity.warn(requirementId, ActivityLog.Stage.BRD, run, "Raised " + ActivityLog.count(asked.size(), "question")
+                    + " for you that the BRD cannot be completed without. The analysis continues once you answer them "
+                    + "on the Clarifications page.");
             repository.decidePending(pending.id(), "PAUSED", "BLOCKING_CLARIFICATION");
             workflow.awaitClarification(requirementId, pending.stageExecutionId());
             return;
@@ -244,10 +268,20 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
             workflow.closeNotFeasible(requirementId);
             quotes.waive(requirementId, "NOT_FEASIBLE");
             reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "BRD_NOT_FEASIBLE", requirementId);
+            activity.fail(requirementId, ActivityLog.Stage.BRD, run, "The BA agent found the requirement not feasible. "
+                    + "The requirement is closed and its BRD charge is waived; the reasons are in the BRD.");
             audit.record(AuditAction.BRD_VERSION_CREATED, "BRD_VERSION", version, AuditResult.DENIED);
             return;
         }
         // GD-24: the BRD goes straight to its author for review.
+        activity.done(requirementId, ActivityLog.Stage.BRD, run, "BRD ready for review: "
+                + ActivityLog.count(outcome.items().size(), "statement")
+                + (outcome.feasibility() == null ? "" : ", verdict " + switch (outcome.feasibility().verdict()) {
+                    case FEASIBLE -> "feasible";
+                    case FEASIBLE_WITH_RISKS -> "feasible with risks";
+                    case NOT_FEASIBLE -> "not feasible";
+                })
+                + (asked.isEmpty() ? "" : ", " + ActivityLog.count(asked.size(), "optional question")) + ".");
         reviews.notify(job.tenantId(), reviews.requirementOwner(requirementId), "BRD_READY_FOR_REVIEW", requirementId);
     }
 

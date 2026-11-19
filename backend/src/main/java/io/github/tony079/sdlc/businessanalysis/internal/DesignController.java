@@ -37,6 +37,11 @@ class DesignController {
         this.designs = designs;
     }
 
+    @GetMapping("/api/v1/requirements/{id}/activity")
+    List<ActivityLog.Entry> activity(@PathVariable UUID id, @RequestParam(defaultValue = "0") long after) {
+        return designs.activity(id, after);
+    }
+
     @GetMapping(BASE)
     DesignState state(@PathVariable UUID id) {
         return designs.state(id);

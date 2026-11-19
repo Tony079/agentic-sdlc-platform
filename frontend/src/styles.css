@@ -1901,3 +1901,62 @@ button.link:hover {
     align-items: flex-start;
   }
 }
+
+/* GD-29 agent activity timeline */
+.activity-box {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.activity-box > summary {
+  cursor: pointer;
+}
+
+.activity {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.activity li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: start;
+  padding: 0.3rem 0;
+  font-size: 0.92rem;
+}
+
+.activity-icon {
+  display: inline-flex;
+  justify-content: center;
+  padding-top: 0.15rem;
+  color: var(--text-3);
+}
+
+.activity-done .activity-icon {
+  color: var(--success);
+}
+
+.activity-warn .activity-icon,
+.activity-warn .activity-text {
+  color: var(--warning);
+}
+
+.activity-fail .activity-icon,
+.activity-fail .activity-text {
+  color: var(--danger);
+}
+
+.activity-time {
+  color: var(--text-3);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-earlier {
+  margin-top: 0.5rem;
+}

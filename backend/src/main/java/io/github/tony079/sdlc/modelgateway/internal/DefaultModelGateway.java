@@ -158,6 +158,7 @@ class DefaultModelGateway implements ModelGateway {
         int maxTokens = Math.min(request.maxOutputTokens(), model.maxOutputTokens());
         int transientLeft = maxTransientRetries;
         boolean repaired = false;
+        String rejection = null;
         List<ModelProvider.ToolSpec> specs = request.tools().stream()
                 .map(t -> new ModelProvider.ToolSpec(t.name(), t.description())).toList();
         List<ModelProvider.ToolExchange> exchanges = new ArrayList<>();
@@ -209,23 +210,26 @@ class DefaultModelGateway implements ModelGateway {
             if (result.text() == null || result.text().isBlank()) {
                 if (!repaired) {
                     repaired = true;
+                    rejection = "empty answer";
                     continue;
                 }
                 attempts.finish("EMPTY_OUTPUT");
                 throw new ModelException(Code.EMPTY_OUTPUT, requestId, null);
             }
-            Optional<T> output = parse(result.text(), request.outputType());
+            String[] reason = new String[1];
+            Optional<T> output = parse(result.text(), request.outputType(), reason);
             if (output.isEmpty()) {
                 if (!repaired) {
                     repaired = true;
+                    rejection = reason[0];
                     continue;
                 }
                 attempts.finish("INVALID_OUTPUT");
-                throw new ModelException(Code.INVALID_OUTPUT, requestId, null);
+                throw new ModelException(Code.INVALID_OUTPUT, requestId, null, reason[0]);
             }
             ModelUsage usage = attempts.finish("SUCCEEDED");
             return new ModelResponse<>(output.get(), requestId, correlationId, provider.name(), modelId,
-                    request.prompt().id(), request.prompt().version(), usage);
+                    request.prompt().id(), request.prompt().version(), usage, repaired ? rejection : null);
         }
     }
 
@@ -286,16 +290,24 @@ class DefaultModelGateway implements ModelGateway {
      * rejected is logged structurally only (field paths and rule messages, never values or model text).
      */
     <T> Optional<T> parse(String text, Class<T> type) {
+        return parse(text, type, new String[1]);
+    }
+
+    /** As {@link #parse(String, Class)}; {@code reason[0]} receives the structural rejection reason. */
+    <T> Optional<T> parse(String text, Class<T> type, String[] reason) {
         try {
             T value = strictJson.readValue(text, type);
             if (value == null) {
                 log.warn("model.output rejected: empty JSON value");
+                reason[0] = "empty JSON value";
                 return Optional.empty();
             }
             Set<ConstraintViolation<T>> violations = validator.validate(value);
             if (!violations.isEmpty()) {
-                log.warn("model.output rejected: {}", violations.stream().limit(5)
-                        .map(v -> v.getPropertyPath() + " " + v.getMessage()).sorted().toList());
+                List<String> rules = violations.stream().limit(5)
+                        .map(v -> v.getPropertyPath() + " " + v.getMessage()).sorted().toList();
+                log.warn("model.output rejected: {}", rules);
+                reason[0] = String.join("; ", rules);
                 return Optional.empty();
             }
             return Optional.of(value);
@@ -310,6 +322,8 @@ class DefaultModelGateway implements ModelGateway {
                     && v.matches("[A-Za-z_ -]*") ? " value '" + v + "'" : "";
             log.warn("model.output rejected: {} at '{}'{} (output {} characters)", e.getClass().getSimpleName(), path,
                     label, text.length());
+            reason[0] = (e instanceof tools.jackson.core.exc.StreamReadException ? "not valid JSON"
+                    : "wrong shape") + (path.isEmpty() ? "" : " at " + path) + label;
             return Optional.empty();
         }
     }

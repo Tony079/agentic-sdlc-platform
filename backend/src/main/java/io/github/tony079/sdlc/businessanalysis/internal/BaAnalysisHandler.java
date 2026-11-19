@@ -68,10 +68,12 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
     private final AuditWriter audit;
     private final JsonMapper json;
     private final TransactionTemplate readOnly;
+    private final ActivityLog activity;
 
-    BaAnalysisHandler(ModelGateway gateway, AnalysisRepository repository, RequirementInputs requirements,
+    BaAnalysisHandler(ActivityLog activity, ModelGateway gateway, AnalysisRepository repository, RequirementInputs requirements,
                       RepositoryInputs repositories, DocumentProcessing documents, WorkflowEngine workflow, JobQueue jobs,
                       AuditWriter audit, JsonMapper json, PlatformTransactionManager transactionManager) {
+        this.activity = activity;
         this.gateway = gateway;
         this.repository = repository;
         this.requirements = requirements;
@@ -100,22 +102,37 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
         if (inputs == null) {
             throw JobFailure.fatal("INPUT_SET_NOT_FOUND", null);
         }
+        UUID requirementId = job.aggregateId();
+        UUID run = job.stageExecutionId();
+        // GD-28: a new product has no code, so Phase A (choosing files) is skipped.
+        boolean newProduct = "NEW_PRODUCT".equals(inputs.content().kind());
+        long documentCount = inputs.chunks().stream().map(DocumentChunk::versionId).distinct().count();
+        String attempt = job.attemptNo() > 1 ? " (attempt " + job.attemptNo() + ")" : "";
+        activity.step(requirementId, ActivityLog.Stage.BRD, run, "Started the analysis" + attempt + ": reading the "
+                + "requirement and " + ActivityLog.count((int) documentCount, "document")
+                + (newProduct ? "; this is a new product, so there is no code to read."
+                        : " and the code (" + ActivityLog.count(inputs.inventory().files().size(), "file") + ")."));
         try {
-            // GD-28: a new product has no code, so Phase A (choosing files) is skipped.
-            boolean newProduct = "NEW_PRODUCT".equals(inputs.content().kind());
             PhaseA phaseAOutput;
             if (newProduct) {
                 phaseAOutput = new PhaseA("New product: " + inputs.content().title(), List.of(), List.of());
             } else {
+                activity.step(requirementId, ActivityLog.Stage.BRD, run, "Choosing which code files matter for this requirement.");
                 List<DataBlock> phaseAData = new ArrayList<>();
                 phaseAData.add(ContextAssembler.requirement(inputs.content()));
                 phaseAData.addAll(ContextAssembler.inventory(inputs.inventory()));
                 phaseAData.addAll(ContextAssembler.documents(inputs.chunks()));
-                phaseAOutput = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_A, phaseAData,
-                        PhaseA.class, job.aggregateId(), 2048, null)).output();
+                ModelResponse<PhaseA> phaseA = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_A, phaseAData,
+                        PhaseA.class, job.aggregateId(), 2048, null));
+                repaired(requirementId, ActivityLog.Stage.BRD, run, phaseA);
+                phaseAOutput = phaseA.output();
             }
 
             Set<String> relevant = newProduct ? Set.of() : ContextAssembler.relevantPaths(phaseAOutput, inputs.inventory());
+            if (!newProduct) {
+                activity.done(requirementId, ActivityLog.Stage.BRD, run, "Picked " + ActivityLog.count(relevant.size(), "file")
+                        + " to read: " + ActivityLog.names(relevant, 4) + ".");
+            }
             Map<String, String> files = newProduct ? Map.of() : repositories.readFiles(inputs.inputSet().sources(), relevant);
             List<DataBlock> phaseBData = new ArrayList<>();
             phaseBData.add(ContextAssembler.requirement(inputs.content()));
@@ -146,15 +163,54 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
                             json.writeValueAsString(notes)));
                 }
             }
+            activity.step(requirementId, ActivityLog.Stage.BRD, run, "Writing the BRD: context, impact, scenarios, risks, "
+                    + "acceptance criteria and a feasibility verdict. This usually takes 30 to 90 seconds.");
             ModelResponse<Proposal> phaseB = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_B, phaseBData,
                     Proposal.class, job.aggregateId(), 16384, null));
+            repaired(requirementId, ActivityLog.Stage.BRD, run, phaseB);
+            activity.done(requirementId, ActivityLog.Stage.BRD, run, "The model returned "
+                    + ActivityLog.count(phaseB.output().items().size(), "statement") + " and "
+                    + ActivityLog.count(phaseB.output().clarifications().size(), "question")
+                    + ". Checking every code and document reference next.");
             return new Outcome(json.writeValueAsString(phaseB.output()), phaseAOutput.understanding(),
                     phaseB.provider(), phaseB.modelId());
         } catch (ModelException e) {
+            activity.add(requirementId, ActivityLog.Stage.BRD, run, ActivityLog.Kind.FAIL, describe(e));
             throw failure(e);
         } catch (IOException e) {
+            activity.fail(requirementId, ActivityLog.Stage.BRD, run, "The code could not be read; retrying automatically.");
             throw JobFailure.retryable("SNAPSHOT_READ_FAILED", e);
         }
+    }
+
+    void repaired(UUID requirementId, ActivityLog.Stage stage, UUID run, ModelResponse<?> response) {
+        new Describer().repaired(activity, requirementId, stage, run, response);
+    }
+
+    /** GD-29: a first answer that was rejected and repaired is shown with the rule it broke (never the model text). */
+    static final class Describer {
+        void repaired(ActivityLog activity, UUID requirementId, ActivityLog.Stage stage, UUID run,
+                      ModelResponse<?> response) {
+            if (response.repairedBecause() != null) {
+                activity.warn(requirementId, stage, run, "The model's first answer broke a rule ("
+                        + response.repairedBecause() + "). Garuda asked it to correct the answer, and the corrected "
+                        + "answer passed.");
+            }
+        }
+    }
+
+    /** What went wrong with a model call, for the timeline. Retryable failures are retried by the job queue. */
+    static String describe(ModelException e) {
+        return switch (e.code()) {
+            case INVALID_OUTPUT -> "The model's answer broke a rule twice"
+                    + (e.detail() == null ? "" : " (" + e.detail() + ")") + ". Garuda will try again automatically.";
+            case EMPTY_OUTPUT -> "The model returned an empty answer twice. Garuda will try again automatically.";
+            case BUDGET_EXCEEDED -> "The AI spending limit was reached, so the analysis stopped.";
+            case CONFIGURATION_ERROR -> "The AI model is not configured. The analysis waits until it is.";
+            case RATE_LIMITED -> "The AI provider asked Garuda to slow down. Waiting a couple of minutes, then retrying.";
+            case TIMEOUT, PROVIDER_UNAVAILABLE -> "The AI model did not respond in time. Retrying in a couple of minutes.";
+            case PROVIDER_ERROR -> "The AI provider returned an error. Garuda will try again automatically.";
+        };
     }
 
     /** TDD 12.8 and 13.5: cost cap is fatal (COST_CAP); transient errors defer; no provider configured waits. */

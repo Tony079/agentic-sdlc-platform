@@ -29,9 +29,11 @@ class DesignConsumers implements EventConsumer {
     private final ReviewRepository reviews;
     private final AuditWriter audit;
     private final JdbcClient jdbc;
+    private final ActivityLog activity;
 
     DesignConsumers(JobQueue jobs, DesignRepository designs, ReviewRepository reviews, AuditWriter audit,
-                    JdbcClient jdbc) {
+                    JdbcClient jdbc, ActivityLog activity) {
+        this.activity = activity;
         this.jobs = jobs;
         this.designs = designs;
         this.reviews = reviews;
@@ -58,7 +60,16 @@ class DesignConsumers implements EventConsumer {
                     "REQUIREMENT", event.aggregateId(), null, Map.of("tddVersionId", versionId.toString()), 100));
             return;
         }
-        if (!DesignGenerationHandler.JOB_TYPE.equals(event.payload().get("jobType"))) {
+        Object jobType = event.payload().get("jobType");
+        if (("BA_ANALYSIS".equals(jobType) || "BA_COMMIT_RESULT".equals(jobType))
+                && "REQUIREMENT".equals(event.aggregateType())) {
+            // GD-29: the workflow marks the analysis FAILED (T19); the timeline says so.
+            activity.fail(event.aggregateId(), ActivityLog.Stage.BRD,
+                    event.payload().get("stageExecutionId") == null ? null : event.uuid("stageExecutionId"),
+                    "The analysis stopped after its automatic retries. The author can retry it from this page.");
+            return;
+        }
+        if (!DesignGenerationHandler.JOB_TYPE.equals(jobType)) {
             return;
         }
         String code = jdbc.sql("SELECT last_error_code FROM app.job WHERE id = :id").param("id", event.uuid("jobId"))
@@ -66,6 +77,8 @@ class DesignConsumers implements EventConsumer {
                 .orElse("DESIGN_FAILED");
         designs.open(event.aggregateId(), true).filter(v -> "GENERATING".equals(v.status())).ifPresent(v -> {
             designs.fail(v.id(), code);
+            activity.fail(v.requirementId(), ActivityLog.Stage.DESIGN, v.id(), "The design stopped after its automatic "
+                    + "retries. A Technical Approver can try again from this page.");
             reviews.notify(v.tenantId(), v.requestedBy(), "TDD_FAILED", v.requirementId());
             audit.record(AuditAction.TDD_FAILED, "TDD_VERSION", v.id(), AuditResult.FAILED);
         });
