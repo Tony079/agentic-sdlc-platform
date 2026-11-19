@@ -101,18 +101,30 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
             throw JobFailure.fatal("INPUT_SET_NOT_FOUND", null);
         }
         try {
-            List<DataBlock> phaseAData = new ArrayList<>();
-            phaseAData.add(ContextAssembler.requirement(inputs.content()));
-            phaseAData.addAll(ContextAssembler.inventory(inputs.inventory()));
-            phaseAData.addAll(ContextAssembler.documents(inputs.chunks()));
-            ModelResponse<PhaseA> phaseA = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_A, phaseAData,
-                    PhaseA.class, job.aggregateId(), 2048, null));
+            // GD-28: a new product has no code, so Phase A (choosing files) is skipped.
+            boolean newProduct = "NEW_PRODUCT".equals(inputs.content().kind());
+            PhaseA phaseAOutput;
+            if (newProduct) {
+                phaseAOutput = new PhaseA("New product: " + inputs.content().title(), List.of(), List.of());
+            } else {
+                List<DataBlock> phaseAData = new ArrayList<>();
+                phaseAData.add(ContextAssembler.requirement(inputs.content()));
+                phaseAData.addAll(ContextAssembler.inventory(inputs.inventory()));
+                phaseAData.addAll(ContextAssembler.documents(inputs.chunks()));
+                phaseAOutput = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_A, phaseAData,
+                        PhaseA.class, job.aggregateId(), 2048, null)).output();
+            }
 
-            Set<String> relevant = ContextAssembler.relevantPaths(phaseA.output(), inputs.inventory());
-            Map<String, String> files = repositories.readFiles(inputs.inputSet().sources(), relevant);
+            Set<String> relevant = newProduct ? Set.of() : ContextAssembler.relevantPaths(phaseAOutput, inputs.inventory());
+            Map<String, String> files = newProduct ? Map.of() : repositories.readFiles(inputs.inputSet().sources(), relevant);
             List<DataBlock> phaseBData = new ArrayList<>();
             phaseBData.add(ContextAssembler.requirement(inputs.content()));
-            phaseBData.add(ContextAssembler.phaseASummary(phaseA.output()));
+            phaseBData.add(new DataBlock("product type (computed by the platform)", newProduct
+                    ? "NEW_PRODUCT: there is no existing code; the requirement describes a product to be built."
+                    : "EXISTING_PRODUCT: the requirement changes the code shown in the repository excerpts."));
+            if (!newProduct) {
+                phaseBData.add(ContextAssembler.phaseASummary(phaseAOutput));
+            }
             phaseBData.addAll(ContextAssembler.fileExcerpts(files, relevant));
             phaseBData.addAll(ContextAssembler.inventory(inputs.inventory()));
             phaseBData.addAll(ContextAssembler.documents(inputs.chunks()));
@@ -136,7 +148,7 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
             }
             ModelResponse<Proposal> phaseB = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_B, phaseBData,
                     Proposal.class, job.aggregateId(), 16384, null));
-            return new Outcome(json.writeValueAsString(phaseB.output()), phaseA.output().understanding(),
+            return new Outcome(json.writeValueAsString(phaseB.output()), phaseAOutput.understanding(),
                     phaseB.provider(), phaseB.modelId());
         } catch (ModelException e) {
             throw failure(e);

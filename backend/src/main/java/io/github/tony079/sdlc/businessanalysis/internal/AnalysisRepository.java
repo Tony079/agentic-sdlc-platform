@@ -36,7 +36,7 @@ class AnalysisRepository {
                     best = r;
                 }
             }
-            return best == null ? sourceRefs.get(0) : best;
+            return best != null || sourceRefs.isEmpty() ? best : sourceRefs.get(0);
         }
     }
 
@@ -64,9 +64,10 @@ class AnalysisRepository {
                 RETURNING id
                 """).param("tenant", tenantId).param("requirement", draft.requirementId())
                 .param("revisionNo", draft.revision().revisionNo()).param("revisionHash", draft.revision().contentHash())
-                .param("repository", draft.repositories().get(0).repositoryId())
-                .param("sha", draft.repositories().get(0).commitSha())
-                .param("snapshot", draft.repositories().get(0).snapshotId()).param("documents", documentsJson)
+                .param("repository", draft.repositories().isEmpty() ? null : draft.repositories().get(0).repositoryId())
+                .param("sha", draft.repositories().isEmpty() ? null : draft.repositories().get(0).commitSha())
+                .param("snapshot", draft.repositories().isEmpty() ? null : draft.repositories().get(0).snapshotId())
+                .param("documents", documentsJson)
                 .param("sources", sourcesJson(draft.repositories()))
                 .param("corrections", draft.correctionsJson()).param("hash", draft.inputHash())
                 .query(UUID.class).single();
@@ -83,7 +84,7 @@ class AnalysisRepository {
                     String sha = rs.getString(5);
                     UUID snapshot = rs.getObject(6, UUID.class);
                     List<SourceRef> refs = parseSources(rs.getString(10));
-                    if (refs.isEmpty()) {
+                    if (refs.isEmpty() && repo != null) { // legacy linked repository; GD-28 new products have none
                         refs = List.of(new SourceRef(repo, null, null, sha, snapshot, ""));
                     }
                     return new InputSetRow(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getInt(3),

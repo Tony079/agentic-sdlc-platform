@@ -57,6 +57,9 @@ class RepoValidateHandler implements JobHandler<RepoValidateHandler.Outcome> {
     public Outcome execute(ClaimedJob job) throws JobFailure {
         UUID requirementId = RepoJobs.uuid(job, "requirementId");
         List<ValidationRow> round = tx.execute(status -> repositories.latestRound(requirementId));
+        if (Boolean.TRUE.equals(tx.execute(status -> repositories.isNewProduct(requirementId)))) {
+            return new Outcome(List.of()); // GD-28: nothing to pin; T06 follows and the analysis reads documents only
+        }
         if (round == null || round.isEmpty()) {
             throw JobFailure.dependencyUnavailable("REPOSITORY_NOT_REGISTERED", RepoJobs.NOT_READY_DELAY);
         }

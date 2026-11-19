@@ -157,7 +157,7 @@ const STATE_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
   SUBMITTED: 'Submitted',
   MANUAL_INTAKE: 'Manual intake',
-  REPO_VALIDATING: 'Preparing code',
+  REPO_VALIDATING: 'Preparing',
   AWAITING_DOCUMENTS: 'Awaiting documents',
   AWAITING_DOCUMENT_DECISION: 'Document decision',
   ANALYSING: 'Analysing',

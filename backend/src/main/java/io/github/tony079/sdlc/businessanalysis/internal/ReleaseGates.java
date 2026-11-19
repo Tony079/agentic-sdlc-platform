@@ -118,7 +118,12 @@ class ReleaseGates {
                 SELECT (src ->> 'snapshotId')::uuid FROM app.analysis_input_set s, jsonb_array_elements(s.sources) src
                 WHERE s.id = :i
                 """).param("i", version.inputSetId()).query(UUID.class).list();
-        return all.isEmpty() ? List.of(snapshotOf(version)) : all;
+        if (!all.isEmpty()) {
+            return all;
+        }
+        UUID legacy = jdbc.sql("SELECT snapshot_id FROM app.analysis_input_set WHERE id = :i")
+                .param("i", version.inputSetId()).query(UUID.class).optional().orElse(null);
+        return legacy == null ? List.of() : List.of(legacy); // GD-28: a new product has no code to scan
     }
 
     String commitOf(VersionRow version) {

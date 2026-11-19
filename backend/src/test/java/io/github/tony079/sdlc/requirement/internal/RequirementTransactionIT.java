@@ -32,6 +32,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * concurrent transactions (V-M2-1, V-M2-5): rolled-back creates consume no key; a concurrent same-key create waits
  * for the first and replays its result, or creates if the first rolled back.
  */
+// These tests cover the manual-intake route for New product requirements (GD-28 keeps it as a setting).
+@org.springframework.test.context.TestPropertySource(properties = "sdlc.requirements.new-product-route=MANUAL_INTAKE")
 class RequirementTransactionIT extends ApiIntegrationTest {
 
     @Autowired

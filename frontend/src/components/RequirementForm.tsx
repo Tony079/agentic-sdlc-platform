@@ -191,8 +191,10 @@ export function RequirementForm({ initial, projects, projectLocked, kindLocked =
         {kindLocked && <p className="hint">The requirement type cannot be changed after submission.</p>}
         {values.kind === 'NEW_PRODUCT' && (
           <p className="notice" role="note">
-            Automated greenfield analysis and scaffolding are not supported yet. New-product requests are kept for manual
-            intake.
+            A new product has no existing code, so no environment is needed. The BA agent writes the BRD from this
+            requirement and the documents you upload (describe the product well and attach any briefs, mock-ups or
+            examples). After BRD approval, the Technical Approver&apos;s design proposes the technology stack, structure and
+            deployment from scratch.
           </p>
         )}
       </fieldset>

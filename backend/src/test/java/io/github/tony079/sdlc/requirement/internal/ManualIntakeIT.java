@@ -29,6 +29,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * C-06/C-07 (owner decision 2026-11-08): a Business Reviewer resumes (T04) or closes (T05) a manual-intake requirement;
  * O-25 closure is recorded once, immutably, after the follow-up work ends. AC-EXT-28, AC-EXT-42.
  */
+// These tests cover the manual-intake route for New product requirements (GD-28 keeps it as a setting).
+@org.springframework.test.context.TestPropertySource(properties = "sdlc.requirements.new-product-route=MANUAL_INTAKE")
 class ManualIntakeIT extends ApiIntegrationTest {
 
     private final TestDatabase db = TestDatabase.get();

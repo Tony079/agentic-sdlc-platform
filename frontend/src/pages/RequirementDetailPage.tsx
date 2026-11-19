@@ -63,7 +63,7 @@ function ContentView({ content }: { content: RequirementContent }) {
 const STATE_NOTES: Partial<Record<RequirementState, string>> = {
   SUBMITTED: 'Submitted. The platform is routing the requirement; this page updates automatically.',
   REPO_VALIDATING:
-    'Waiting for repository validation. Repository connection and analysis are not available yet, so the requirement stays here for now.',
+    'Preparing the inputs: Garuda pins the code of each repository to analyse (a new product has none). The analysis starts on its own.',
   MANUAL_INTAKE:
     'New-product request kept for manual intake by the platform team. No automated analysis is scheduled.',
 };

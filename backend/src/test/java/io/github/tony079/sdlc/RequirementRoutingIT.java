@@ -23,6 +23,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * the worker (sdlc_worker) routes the requirement (TDD T02/T03). Also covers the interim edit policy after
  * submission (decision Q-M3-5) and cancellation follow-up in the worker.
  */
+// These tests cover the manual-intake route for New product requirements (GD-28 keeps it as a setting).
+@org.springframework.test.context.TestPropertySource(properties = "sdlc.requirements.new-product-route=MANUAL_INTAKE")
 class RequirementRoutingIT extends ApiIntegrationTest {
 
     private final JdbcTemplate admin = TestDatabase.get().admin();

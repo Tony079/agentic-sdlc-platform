@@ -25,6 +25,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * GD-19: projects start PENDING and are activated (or declined) by two Garuda Admins with an approved billing plan;
  * billing plans are approved by a second Garuda Admin; the monthly report prorates the project fee.
  */
+// These tests cover the manual-intake route for New product requirements (GD-28 keeps it as a setting).
+@org.springframework.test.context.TestPropertySource(properties = "sdlc.requirements.new-product-route=MANUAL_INTAKE")
 class BillingIT extends ApiIntegrationTest {
 
     private final JdbcTemplate admin = TestDatabase.get().admin();

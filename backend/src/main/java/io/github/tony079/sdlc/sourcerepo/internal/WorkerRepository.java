@@ -116,6 +116,15 @@ class WorkerRepository {
                 """).param("code", code).param("id", requirementId).update();
     }
 
+    /** GD-28: the requirement's current revision is a New product (no code to analyse). */
+    boolean isNewProduct(UUID requirementId) {
+        return jdbc.sql("""
+                SELECT rv.kind = 'NEW_PRODUCT' FROM app.requirement r
+                JOIN app.requirement_revision rv ON rv.requirement_id = r.id AND rv.revision_no = r.current_revision_no
+                WHERE r.id = :r
+                """).param("r", requirementId).query(Boolean.class).optional().orElse(false);
+    }
+
     Optional<String> lastErrorCode(UUID jobId) {
         return jdbc.sql("SELECT last_error_code FROM app.job WHERE id = :id").param("id", jobId).query(String.class)
                 .optional();

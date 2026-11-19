@@ -43,6 +43,8 @@ import tools.jackson.databind.json.JsonMapper;
  * the coordinator validates the output, and chunks with positions are stored and searchable. Covers no-OCR outcomes,
  * the MANUAL_INTAKE and O-15 gates, untrusted-output validation, and bounded retries ending in EXTRACTION_FAILED_FINAL.
  */
+// These tests cover the manual-intake route for New product requirements (GD-28 keeps it as a setting).
+@org.springframework.test.context.TestPropertySource(properties = "sdlc.requirements.new-product-route=MANUAL_INTAKE")
 class ExtractionIT extends ApiIntegrationTest {
 
     @TempDir

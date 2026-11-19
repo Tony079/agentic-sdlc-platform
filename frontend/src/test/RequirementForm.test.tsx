@@ -72,7 +72,7 @@ describe('RequirementForm', () => {
     expect(screen.getByText('Analyses acme/loans @ release/qc.')).toBeInTheDocument();
     await user.click(screen.getByLabelText('New product'));
     expect(screen.queryByLabelText('Environment to analyse')).not.toBeInTheDocument();
-    expect(screen.getByRole('note')).toHaveTextContent('Automated greenfield analysis and scaffolding are not supported yet');
+    expect(screen.getByRole('note')).toHaveTextContent('A new product has no existing code, so no environment is needed');
   });
 
   it('saves the chosen environment with the draft', async () => {

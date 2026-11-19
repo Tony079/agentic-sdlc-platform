@@ -88,7 +88,9 @@ class InputSets {
     Optional<Draft> evaluate(UUID requirementId, String correctionsJson) {
         Optional<RevisionInput> revision = requirements.currentRevision(requirementId);
         List<PinnedRepository> sources = repositories.sources(requirementId);
-        if (revision.isEmpty() || sources.isEmpty()
+        // GD-28: a new product has no code; any other requirement needs every source indexed.
+        boolean newProduct = revision.isPresent() && "NEW_PRODUCT".equals(revision.get().content().kind());
+        if (revision.isEmpty() || (sources.isEmpty() && !newProduct)
                 || sources.stream().anyMatch(r -> !"INDEXED".equals(r.snapshotStatus()))) {
             return Optional.empty();
         }

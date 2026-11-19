@@ -64,10 +64,15 @@ class RequirementService {
 
     private final BrdQuotes quotes;
     private final EnvironmentSources environments;
+    /** GD-28: New product requirements are analysed by the agents (default) or kept for manual intake. */
+    private final boolean newProductManualIntake;
 
     RequirementService(RequirementRepository requirements, RequirementKeyGenerator keys, IdempotencyStore idempotency,
                        WorkflowEngine workflow, AuditWriter audit, SecurityEventRecorder securityEvents,
-                       ProjectAccess projects, BrdQuotes quotes, EnvironmentSources environments) {
+                       ProjectAccess projects, BrdQuotes quotes, EnvironmentSources environments,
+                       @org.springframework.beans.factory.annotation.Value("${sdlc.requirements.new-product-route:ANALYSIS}")
+                       String newProductRoute) {
+        this.newProductManualIntake = "MANUAL_INTAKE".equalsIgnoreCase(newProductRoute);
         this.projects = projects;
         this.quotes = quotes;
         this.environments = environments;
@@ -251,8 +256,10 @@ class RequirementService {
             throw ApiException.versionChanged();
         }
         // RequirementSubmitted is written to the outbox in this transaction; routing follows in the worker.
-        Route route = RequirementFields.EXISTING_REPOSITORY.equals(current.content().kind()) ? Route.REPOSITORY
-                : Route.MANUAL_INTAKE;
+        // GD-28: a new product takes the same path with no repositories (its preparation step completes at once),
+        // unless this installation keeps new products for manual intake.
+        Route route = RequirementFields.EXISTING_REPOSITORY.equals(current.content().kind()) || !newProductManualIntake
+                ? Route.REPOSITORY : Route.MANUAL_INTAKE;
         int sourceCount = 0;
         if (environment != null) {
             requirements.setTargetEnvironment(id, environment);
@@ -266,7 +273,8 @@ class RequirementService {
                 c.acceptanceCriteria(), c.constraints(), c.integrations()}) {
             chars += text == null ? 0 : text.length();
         }
-        quotes.open(id, row.projectId(), new BrdQuotes.Basis(0, route == Route.REPOSITORY ? Math.max(1, sourceCount) : 0, chars));
+        boolean existing = RequirementFields.EXISTING_REPOSITORY.equals(current.content().kind());
+        quotes.open(id, row.projectId(), new BrdQuotes.Basis(0, existing ? Math.max(1, sourceCount) : 0, chars));
         audit.record(AuditAction.REQUIREMENT_SUBMITTED, "REQUIREMENT", id, AuditResult.SUCCESS);
         return detail(id, actor());
     }

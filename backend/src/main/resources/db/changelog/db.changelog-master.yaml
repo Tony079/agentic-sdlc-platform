@@ -84,3 +84,5 @@ databaseChangeLog:
   - include: { file: changes/0045-technical-approver-roles.sql, relativeToChangelogFile: true }
   # 2026-11-19: Architect design prompt v2.
   - include: { file: changes/0046-arch-design-v2.sql, relativeToChangelogFile: true }
+  # GD-28 (2026-11-19): New product requirements are analysed without code.
+  - include: { file: changes/0047-new-product-analysis.sql, relativeToChangelogFile: true }

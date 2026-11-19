@@ -17,6 +17,8 @@ import io.github.tony079.sdlc.support.ApiIntegrationTest;
 import org.junit.jupiter.api.Test;
 
 /** Requirement creation and management through the HTTP API (PRD FR-REQ-01/03/04/06; decisions Q1, Q2, Q4). */
+// These tests cover the manual-intake route for New product requirements (GD-28 keeps it as a setting).
+@org.springframework.test.context.TestPropertySource(properties = "sdlc.requirements.new-product-route=MANUAL_INTAKE")
 class RequirementApiIT extends ApiIntegrationTest {
 
     @Test
