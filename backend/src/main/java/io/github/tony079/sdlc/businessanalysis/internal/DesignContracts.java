@@ -25,16 +25,32 @@ final class DesignContracts {
     /** Call 1: the files the design must read. */
     record Files(@NotBlank @Size(max = 2000) String approach,
                  @NotNull @Size(max = 20) List<@NotBlank @Size(max = 1024) String> relevantPaths) {
+        Files {
+            approach = Lenient.clip(approach, 2000);
+            relevantPaths = Lenient.first(relevantPaths, 20);
+        }
     }
 
     /** Call 2: the design proposal. */
     record Proposal(@NotBlank @Size(max = 3000) String summary, @NotNull @Size(max = 60) List<@Valid Item> items,
                     @NotNull @Size(max = 10) List<@NotBlank @Size(max = 1000) String> openQuestions) {
+        Proposal {
+            summary = Lenient.clip(summary, 3000);
+            items = Lenient.first(items, 60);
+            openQuestions = Lenient.clipAll(openQuestions, 10, 1000);
+        }
     }
 
     record Item(@NotNull Section section, @NotNull Kind kind, @NotBlank @Size(max = 200) String title,
                 @NotBlank @Size(max = 3000) String detail, @Size(max = 200) String component,
                 @NotNull @Size(max = 30) List<@NotBlank @Size(max = 100) String> brdRefs,
                 @NotNull @Size(max = 5) List<@Valid Evidence> evidence) {
+        Item {
+            title = Lenient.clip(title, 200);
+            detail = Lenient.clip(detail, 3000);
+            component = Lenient.clip(component, 200);
+            brdRefs = Lenient.clipAll(brdRefs, 30, 100);
+            evidence = Lenient.first(evidence, 5);
+        }
     }
 }

@@ -112,6 +112,23 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
                 + "requirement and " + ActivityLog.count((int) documentCount, "document")
                 + (newProduct ? "; this is a new product, so there is no code to read."
                         : " and the code (" + ActivityLog.count(inputs.inventory().files().size(), "file") + ")."));
+        // Uploaded documents that could not be used (unreadable, image-only, rejected) are named, so a reader knows
+        // the BRD was written without them.
+        List<String> unused = new ArrayList<>();
+        for (JsonNode doc : json.readTree(inputs.inputSet().documentsJson())) {
+            if (!doc.path("included").asBoolean(false)) {
+                unused.add(doc.path("fileName").asString("a document") + " (" + documentState(doc.path("state").asString(""))
+                        + ")");
+            } else if (inputs.chunks().stream().noneMatch(c -> c.versionId().equals(doc.path("versionId").asString()))) {
+                unused.add(doc.path("fileName").asString("a document") + " (no readable text)");
+            }
+        }
+        if (!unused.isEmpty()) {
+            activity.warn(requirementId, ActivityLog.Stage.BRD, run, "Could not use " + ActivityLog.count(unused.size(),
+                    "uploaded document") + ": " + ActivityLog.names(unused, 5) + ". The BRD is written without "
+                    + (unused.size() == 1 ? "it" : "them") + "; upload a text-based version to include "
+                    + (unused.size() == 1 ? "it" : "them") + ".");
+        }
         try {
             PhaseA phaseAOutput;
             if (newProduct) {
@@ -211,6 +228,18 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
             case RATE_LIMITED -> "The AI provider asked Garuda to slow down. Waiting a couple of minutes, then retrying.";
             case TIMEOUT, PROVIDER_UNAVAILABLE -> "The AI model did not respond in time. Retrying in a couple of minutes.";
             case PROVIDER_ERROR -> "The AI provider returned an error. Garuda will try again automatically.";
+        };
+    }
+
+    /** Plain words for a document state the analysis could not use. */
+    static String documentState(String state) {
+        return switch (state) {
+            case "UNSUPPORTED_CONTENT" -> "no text could be extracted, for example a scanned image";
+            case "EXTRACTION_FAILED_FINAL" -> "text extraction failed";
+            case "REJECTED_MALWARE" -> "rejected by the malware scan";
+            case "REJECTED_INVALID" -> "not a supported or valid file";
+            case "UPLOAD_FAILED" -> "the upload did not complete";
+            default -> state.isEmpty() ? "not processed" : state.toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
         };
     }
 

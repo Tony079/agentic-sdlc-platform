@@ -28,6 +28,9 @@ final class BaContracts {
     enum Verdict { FEASIBLE, FEASIBLE_WITH_RISKS, NOT_FEASIBLE }
 
     record Feasibility(@NotNull Verdict verdict, @NotNull @Size(min = 1, max = 10) List<@NotBlank @Size(max = 1000) String> reasons) {
+        Feasibility {
+            reasons = Lenient.clipAll(reasons, 10, 1000);
+        }
     }
 
     enum EvidenceType { REPOSITORY, DOCUMENT }
@@ -36,10 +39,19 @@ final class BaContracts {
     record PhaseA(@NotBlank @Size(max = 2000) String understanding,
                   @NotNull @Size(max = 20) List<@Valid Component> components,
                   @NotNull @Size(max = 15) List<@NotBlank @Size(max = 1024) String> relevantPaths) {
+        PhaseA {
+            understanding = Lenient.clip(understanding, 2000);
+            components = Lenient.first(components, 20);
+            relevantPaths = Lenient.first(relevantPaths, 15);
+        }
     }
 
     record Component(@NotBlank @Size(max = 200) String name,
                      @NotNull @Size(max = 50) List<@NotBlank @Size(max = 1024) String> paths) {
+        Component {
+            name = Lenient.clip(name, 200);
+            paths = Lenient.first(paths, 50);
+        }
     }
 
     /** Phase B: the BRD proposal. */
@@ -47,6 +59,11 @@ final class BaContracts {
     record Proposal(@Valid Feasibility feasibility, @NotNull @Size(max = 60) List<@Valid Item> items,
                     @NotNull @Size(max = 30) List<@Valid Unsupported> unsupported,
                     @NotNull @Size(max = 10) List<@Valid ClarificationProposal> clarifications) {
+        Proposal {
+            items = Lenient.first(items, 60);
+            unsupported = Lenient.first(unsupported, 30);
+            clarifications = Lenient.first(clarifications, 10);
+        }
     }
 
     enum Assignee { CLIENT, BUSINESS_REVIEWER }
@@ -56,11 +73,23 @@ final class BaContracts {
                                  @NotNull @Size(max = 10) List<@NotBlank @Size(max = 1000) String> interpretations,
                                  @Size(max = 2000) String recommendedOption, @NotNull Boolean blocking,
                                  @NotNull Assignee assignedTo) {
+        ClarificationProposal {
+            question = Lenient.clip(question, 2000);
+            whyItMatters = Lenient.clip(whyItMatters, 2000);
+            interpretations = Lenient.clipAll(interpretations, 10, 1000);
+            recommendedOption = Lenient.clip(recommendedOption, 2000);
+        }
     }
 
     record Item(@NotNull Kind kind, @NotNull Section section, @NotBlank @Size(max = 2000) String statement,
                 @NotNull @Size(max = 5) List<@Valid Evidence> evidence, @Size(max = 500) String risk,
                 @Size(max = 200) String component) {
+        Item {
+            statement = Lenient.clip(statement, 2000);
+            evidence = Lenient.first(evidence, 5);
+            risk = Lenient.clip(risk, 500);
+            component = Lenient.clip(component, 200);
+        }
     }
 
     record Evidence(@NotNull EvidenceType type, @Size(max = 1024) String path, @Min(1) @Max(1_000_000) Integer startLine,
@@ -72,6 +101,8 @@ final class BaContracts {
          * a repair call). The start of an exact quote is still exact, so the citation check is unchanged.
          */
         Evidence {
+            documentVersionId = Lenient.uuidOrNull(documentVersionId);
+            path = Lenient.clip(path, 1024);
             if (quote != null && quote.length() > QUOTE_MAX) {
                 int end = QUOTE_MAX;
                 if (Character.isHighSurrogate(quote.charAt(end - 1))) {
@@ -85,5 +116,8 @@ final class BaContracts {
     static final int QUOTE_MAX = 300;
 
     record Unsupported(@NotBlank @Size(max = 1000) String requirement) {
+        Unsupported {
+            requirement = Lenient.clip(requirement, 1000);
+        }
     }
 }
