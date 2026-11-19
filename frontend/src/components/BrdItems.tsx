@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { BrdEvidence, BrdItem } from '../api/types';
+import { FoldToggle } from '../ui/Fold';
 
 // GD-24 template order; FACTS is kept for BRDs produced before it.
 const SECTION_TITLES: Record<string, string> = {
@@ -36,14 +38,32 @@ function evidenceText(e: BrdEvidence): string {
  */
 export function BrdItems({ items, renderActions }: { items: BrdItem[]; renderActions?: (item: BrdItem) => React.ReactNode }) {
   const sections = Object.keys(SECTION_TITLES).filter((s) => items.some((i) => i.section === s));
+  const [folded, setFolded] = useState<Set<string>>(new Set());
   if (items.length === 0) {
     return <p>This BRD version has no statements.</p>;
   }
+  const allFolded = sections.every((s) => folded.has(s));
+  const toggle = (section: string) => setFolded((f) => {
+    const next = new Set(f);
+    if (next.has(section)) next.delete(section);
+    else next.add(section);
+    return next;
+  });
   return (
     <>
-      {sections.map((section) => (
+      <div className="fold-all">
+        <button type="button" className="btn-ghost btn-sm" onClick={() => setFolded(allFolded ? new Set() : new Set(sections))}>
+          {allFolded ? 'Expand all sections' : 'Collapse all sections'}
+        </button>
+      </div>
+      {sections.map((section) => {
+        const count = items.filter((i) => i.section === section).length;
+        return (
         <section key={section} aria-label={SECTION_TITLES[section]}>
-          <h3>{SECTION_TITLES[section]}</h3>
+          <FoldToggle level={3} open={!folded.has(section)} onToggle={() => toggle(section)}>
+            {SECTION_TITLES[section]} <span className="small">({count})</span>
+          </FoldToggle>
+          {!folded.has(section) && (
           <ul className="brd-items">
             {items
               .filter((i) => i.section === section)
@@ -70,8 +90,10 @@ export function BrdItems({ items, renderActions }: { items: BrdItem[]; renderAct
                 </li>
               ))}
           </ul>
+          )}
         </section>
-      ))}
+        );
+      })}
     </>
   );
 }

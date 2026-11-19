@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import type { IssuedLinkRequest, RepositoryLinkStatus, RequirementState } from '../api/types';
+import { FoldSection } from '../ui/Fold';
 
 /** States in which the owner may ask an approver for a repository link (server decides; this hides the control). */
 const LINKABLE: RequirementState[] = ['DRAFT', 'SUBMITTED', 'MANUAL_INTAKE', 'REPO_VALIDATING'];
@@ -56,8 +57,7 @@ export function RepositoryLinkPanel({ requirementId, requirementState }: { requi
   const data = status.data;
   const registered = data?.link?.status === 'REGISTERED';
   return (
-    <section aria-label="Repository">
-      <h2>Repository</h2>
+    <FoldSection label="Repository" title="Repository" foldKey={`fold:${requirementId}:repository`}>
       {data?.link ? (
         <p>
           Authorised repository: <code>{data.link.repositoryUrl}</code> ·{' '}
@@ -106,6 +106,6 @@ export function RepositoryLinkPanel({ requirementId, requirementState }: { requi
           )}
         </div>
       )}
-    </section>
+    </FoldSection>
   );
 }

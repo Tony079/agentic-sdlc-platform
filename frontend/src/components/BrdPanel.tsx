@@ -6,6 +6,7 @@ import { money } from '../ui/money';
 import { Badge, Callout, formatDateTime, type Tone } from '../ui/components';
 import { BrdItems } from './BrdItems';
 import { ActivityTimeline } from './ActivityTimeline';
+import { FoldSection } from '../ui/Fold';
 
 const WAITING: Partial<Record<RequirementState, string>> = {
   ANALYSING: 'The BA agent is analysing the code and documents. The BRD will appear here for your review.',
@@ -157,10 +158,13 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
   const review = data?.review;
   const version = data?.version;
   return (
-    <section aria-label="Business requirements document">
-      <div className="spread">
-        <h2>Business requirements document</h2>
-        <div className="row">
+    <FoldSection
+      label="Business requirements document"
+      title="Business requirements document"
+      foldKey={`fold:${requirementId}:brd`}
+      summary={version?.items ? `Version ${version.versionNo} · ${version.items.length} statements` : undefined}
+      actions={
+        <>
           {review?.stage === 'APPROVED' && (
             <>
               <a className="btn btn-secondary btn-sm" href={exportUrl(requirementId, 'pdf')} download>
@@ -172,8 +176,9 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
             </>
           )}
           {review && <Badge tone={STAGE[review.stage].tone}>{STAGE[review.stage].label}</Badge>}
-        </div>
-      </div>
+        </>
+      }
+    >
       {brd.isPending && <p>Loading…</p>}
       {!brd.isPending && !version?.items && (
         <>
@@ -316,6 +321,6 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
           {message.text}
         </p>
       )}
-    </section>
+    </FoldSection>
   );
 }

@@ -2,6 +2,7 @@ import { useState, type ChangeEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, uploadFile } from '../api/client';
 import type { DocumentItem, DocumentList, DocumentState, RequirementState } from '../api/types';
+import { FoldSection } from '../ui/Fold';
 
 /** User-facing labels for the PRD 6C states (exact wording is a UI choice, PRD J10). */
 const STATE_LABELS: Record<DocumentState, string> = {
@@ -113,8 +114,8 @@ export function DocumentsPanel({ requirementId, requirementState }: { requiremen
   }
 
   return (
-    <section aria-labelledby="documents-heading">
-      <h2 id="documents-heading">Attachments</h2>
+    <FoldSection label="Attachments" title="Attachments" foldKey={`fold:${requirementId}:documents`}
+      summary={documents.data ? `${(documents.data.items ?? []).length} attachment(s)` : undefined}>
       <p className="hint">
         PDF, DOCX, TXT or Markdown; up to 10 files, 20 MB each. Files are scanned for malware before anyone can open them.
       </p>
@@ -150,6 +151,6 @@ export function DocumentsPanel({ requirementId, requirementState }: { requiremen
         ))}
       </ul>
       {documents.data && (documents.data.items ?? []).length === 0 && <p>No attachments yet.</p>}
-    </section>
+    </FoldSection>
   );
 }

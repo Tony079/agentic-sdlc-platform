@@ -92,6 +92,10 @@ function errorMessage(error: unknown): string {
 }
 
 /** States in which the worker moves the requirement on without user action. */
+/** The requirement text starts open while it is being written or prepared; afterwards the BRD is the focus. */
+const EARLY_STATES = new Set(['DRAFT', 'SUBMITTED', 'MANUAL_INTAKE', 'REPO_VALIDATING', 'AWAITING_DOCUMENTS',
+  'AWAITING_DOCUMENT_DECISION']);
+
 const ACTIVE_STATES = new Set(['SUBMITTED', 'REPO_VALIDATING', 'AWAITING_DOCUMENTS', 'ANALYSING', 'BRD_DRAFTED',
   'REVISION_REQUESTED', 'CLIENT_CHANGES_REQUESTED', 'INTERNAL_APPROVED']);
 
@@ -277,7 +281,7 @@ export function RequirementDetailPage() {
       {detail.state === 'FAILED' && <AnalysisRetryPanel requirementId={detail.id} />}
       <div className="grid grid-main-side">
         <div>
-          <Card title="Requirement">
+          <Card title="Requirement" foldKey={`fold:${detail.id}:requirement`} defaultOpen={EARLY_STATES.has(detail.state)}>
             <ContentView content={detail.content} />
           </Card>
           <div className="card">
@@ -302,7 +306,7 @@ export function RequirementDetailPage() {
         <div>
           <BrdQuotePanel requirementId={detail.id} />
           {detail.content.kind === 'EXISTING_REPOSITORY' && <SourcesPanel requirementId={detail.id} projectId={detail.projectId} />}
-          <Card title="Details">
+          <Card title="Details" foldKey={`fold:${detail.id}:details`}>
             <dl className="details" style={{ gridTemplateColumns: '110px minmax(0, 1fr)' }}>
               <dt>Created</dt>
               <dd>{formatDateTime(detail.createdAt)}</dd>
@@ -320,7 +324,7 @@ export function RequirementDetailPage() {
               </button>
             )}
           </Card>
-          <Card title="Revisions" flush>
+          <Card title="Revisions" flush foldKey={`fold:${detail.id}:revisions`} defaultOpen={false}>
             <ul className="list">
               {detail.revisions.map((r) => (
                 <li key={r.revisionNo}>
@@ -335,7 +339,7 @@ export function RequirementDetailPage() {
               ))}
             </ul>
           </Card>
-          <Card title="History" flush>
+          <Card title="History" flush foldKey={`fold:${detail.id}:history`} defaultOpen={false}>
             <ol className="list">
               {timeline.data?.map((t) => (
                 <li key={t.seq}>

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon, type IconName } from './Icon';
+import { FoldToggle, useFold } from './Fold';
 
 /* ---------- page structure ---------- */
 
@@ -34,6 +35,8 @@ export function Card({
   footer,
   flush,
   className,
+  foldKey,
+  defaultOpen = true,
 }: {
   title?: ReactNode;
   actions?: ReactNode;
@@ -41,18 +44,25 @@ export function Card({
   footer?: ReactNode;
   flush?: boolean;
   className?: string;
+  /** Makes the card foldable from its header (like a group box); the choice is remembered under this key. */
+  foldKey?: string;
+  defaultOpen?: boolean;
 }) {
-  const classes = ['card', title || flush ? 'card-flush' : '', className ?? ''].filter(Boolean).join(' ');
+  const foldable = !!title && !!foldKey;
+  const [open, toggle] = useFold(foldKey, defaultOpen);
+  const shown = !foldable || open;
+  const classes = ['card', title || flush ? 'card-flush' : '', foldable && !open ? 'card-folded' : '', className ?? '']
+    .filter(Boolean).join(' ');
   return (
     <section className={classes}>
       {title && (
         <div className="card-header">
-          <h2>{title}</h2>
+          {foldable ? <FoldToggle open={open} onToggle={toggle}>{title}</FoldToggle> : <h2>{title}</h2>}
           {actions && <div className="row">{actions}</div>}
         </div>
       )}
-      {title && !flush ? <div className="card-body">{children}</div> : children}
-      {footer && <div className="card-footer">{footer}</div>}
+      {shown && (title && !flush ? <div className="card-body">{children}</div> : children)}
+      {shown && footer && <div className="card-footer">{footer}</div>}
     </section>
   );
 }

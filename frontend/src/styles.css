@@ -1975,3 +1975,63 @@ button.link:hover {
   padding: 0.1rem 0;
   font-size: 0.88rem;
 }
+
+/* Foldable sections (group boxes) */
+.fold-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  height: auto;
+  font: inherit;
+}
+
+.fold-toggle:hover h2,
+.fold-toggle:hover h3 {
+  color: var(--primary);
+}
+
+.fold-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.fold-toggle h2,
+.fold-toggle h3 {
+  margin: 0;
+}
+
+.fold-toggle svg {
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+.fold-header {
+  margin-bottom: 0.5rem;
+}
+
+.fold:not(.open) .fold-header {
+  margin-bottom: 0;
+}
+
+.fold-summary {
+  margin-top: 0.35rem;
+}
+
+.card-folded .card-header {
+  border-bottom: 0;
+}
+
+.fold-all {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0.25rem 0 0.5rem;
+}

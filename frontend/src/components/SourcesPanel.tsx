@@ -76,6 +76,7 @@ export function SourcesPanel({ requirementId, projectId }: { requirementId: stri
   return (
     <Card
       title="Code analysed"
+      foldKey={`fold:${requirementId}:sources`}
       actions={s.environmentName ? (
         <span className="row">
           <span className="small">Environment</span>

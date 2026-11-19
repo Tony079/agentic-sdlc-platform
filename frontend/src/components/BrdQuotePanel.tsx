@@ -61,6 +61,8 @@ export function BrdQuotePanel({ requirementId }: { requirementId: string }) {
   return (
     <Card
       title="BRD quote"
+      foldKey={`fold:${requirementId}:quote`}
+      defaultOpen={q.status !== 'ACCEPTED'}
       actions={
         q.status === 'ACCEPTED' ? (
           <Badge tone="success">Accepted</Badge>

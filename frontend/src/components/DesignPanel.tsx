@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { Badge, Callout, Modal, formatDateTime, type Tone } from '../ui/components';
 import { ActivityTimeline } from './ActivityTimeline';
+import { FoldSection, FoldToggle } from '../ui/Fold';
 
 // GD-26: the Technical design stage of a requirement.
 
@@ -148,6 +149,7 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
   const [changesOpen, setChangesOpen] = useState(false);
   const [approving, setApproving] = useState(false);
   const [aloneConfirmed, setAloneConfirmed] = useState(false);
+  const [folded, setFolded] = useState<Set<string>>(new Set());
   const [text, setText] = useState('');
 
   async function act(path: string, body: unknown, done: string) {
@@ -179,12 +181,22 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
   const stage = STAGE[review.stage];
   const uncovered = version?.coverage.filter((c) => !c.covered) ?? [];
   const showContent = version && version.status !== 'GENERATING' && version.status !== 'FAILED';
+  const designSections = version ? Object.keys(SECTIONS).filter((s) => version.items.some((i) => i.section === s)) : [];
+  const toggleSection = (section: string) => setFolded((f) => {
+    const next = new Set(f);
+    if (next.has(section)) next.delete(section);
+    else next.add(section);
+    return next;
+  });
 
   return (
-    <section aria-label="Technical design">
-      <div className="spread">
-        <h2>Technical design</h2>
-        <div className="row">
+    <FoldSection
+      label="Technical design"
+      title="Technical design"
+      foldKey={`fold:${requirementId}:design`}
+      summary={showContent && version ? `Version ${version.versionNo} · ${version.items.length} items` : undefined}
+      actions={
+        <>
           {review.stage === 'APPROVED' && (
             <>
               <a className="btn btn-secondary btn-sm" href={exportUrl(requirementId, 'pdf')} download>Download PDF</a>
@@ -192,8 +204,9 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
             </>
           )}
           <Badge tone={stage.tone}>{stage.label}</Badge>
-        </div>
-      </div>
+        </>
+      }
+    >
 
       {review.blockedReason && review.technicalApprovers === 0 && (
         <Callout tone="warning" title="No Technical Approver">{review.blockedReason}</Callout>
@@ -281,9 +294,18 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
             </Callout>
           )}
 
-          {Object.keys(SECTIONS).filter((s) => version.items.some((i) => i.section === s)).map((section) => (
+          <div className="fold-all">
+            <button type="button" className="btn-ghost btn-sm" onClick={() => setFolded(
+              designSections.every((x) => folded.has(x)) ? new Set() : new Set(designSections))}>
+              {designSections.every((x) => folded.has(x)) ? 'Expand all sections' : 'Collapse all sections'}
+            </button>
+          </div>
+          {designSections.map((section) => (
             <section key={section} aria-label={SECTIONS[section]}>
-              <h3>{SECTIONS[section]}</h3>
+              <FoldToggle level={3} open={!folded.has(section)} onToggle={() => toggleSection(section)}>
+                {SECTIONS[section]} <span className="small">({version.items.filter((i) => i.section === section).length})</span>
+              </FoldToggle>
+              {!folded.has(section) && (
               <ul className="brd-items">
                 {version.items.filter((i) => i.section === section).map((item) => (
                   <li key={item.itemKey} className={`support-${item.supportState.toLowerCase()}`}>
@@ -314,6 +336,7 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
                   </li>
                 ))}
               </ul>
+              )}
             </section>
           ))}
 
@@ -441,6 +464,6 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
       {message && (
         <p className={message.tone === 'danger' ? 'error' : 'notice'} role="status">{message.text}</p>
       )}
-    </section>
+    </FoldSection>
   );
 }
