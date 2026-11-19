@@ -18,6 +18,11 @@ final class Lenient {
     private Lenient() {
     }
 
+    /** A 1-based position within its limit, or null. */
+    static Integer positiveOrNull(Integer value, int max) {
+        return value == null || value < 1 || value > max ? null : value;
+    }
+
     static String clip(String text, int max) {
         if (text == null || text.length() <= max) {
             return text;

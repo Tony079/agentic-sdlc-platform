@@ -102,6 +102,10 @@ final class BaContracts {
          */
         Evidence {
             documentVersionId = Lenient.uuidOrNull(documentVersionId);
+            // Out-of-range positions are dropped (that citation then fails verification) instead of failing the answer.
+            startLine = Lenient.positiveOrNull(startLine, 1_000_000);
+            endLine = Lenient.positiveOrNull(endLine, 1_000_000);
+            chunk = Lenient.positiveOrNull(chunk, 5000);
             path = Lenient.clip(path, 1024);
             if (quote != null && quote.length() > QUOTE_MAX) {
                 int end = QUOTE_MAX;
