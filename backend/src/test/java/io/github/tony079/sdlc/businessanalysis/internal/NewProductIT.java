@@ -206,5 +206,26 @@ class NewProductIT extends ApiIntegrationTest {
         var designCall = fake.calls().stream().filter(c -> "arch.design".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
         assertThat(designCall.data().stream().filter(d -> d.label().startsWith("repository summary")).findFirst()
                 .orElseThrow().content()).contains("design this as a new product");
+    
+        // GD-31: the author regenerates the BRD: not a change request, no charge. The design in review is replaced,
+        // the open change request withdrawn, and a new BRD version comes back for review.
+        String regenerate = "/api/v1/requirements/" + id + "/brd/regenerate";
+        assertThat(tina.post(regenerate, Map.of()).status()).isEqualTo(403);
+        Response regenerated = alice.post(regenerate, Map.of());
+        assertThat(regenerated.status()).as(regenerated.body().toString()).isEqualTo(200);
+        assertThat(admin.queryForObject("SELECT status FROM app.tdd_version WHERE requirement_id = ?::uuid "
+                + "ORDER BY version_no DESC LIMIT 1", String.class, id)).isEqualTo("SUPERSEDED");
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.change_request WHERE requirement_id = ?::uuid "
+                + "AND status = 'WITHDRAWN'", Integer.class, id)).isEqualTo(1);
+        assertThat(alice.post(regenerate, Map.of()).body().path("error").path("code").asString())
+                .isEqualTo("REGENERATE_NOT_AVAILABLE");
+        drive(tenant);
+        assertThat(state(id)).isEqualTo("INTERNAL_REVIEW");
+        assertThat(admin.queryForObject("""
+                SELECT max(v.version_no) FROM app.brd_version v JOIN app.brd b ON b.id = v.brd_id
+                WHERE b.requirement_id = ?::uuid
+                """, Integer.class, id)).isEqualTo(2);
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.brd_client_decision WHERE requirement_id = ?::uuid "
+                + "AND kind = 'CHANGES_REQUESTED'", Integer.class, id)).as("not counted as a change request").isZero();
     }
 }

@@ -26,6 +26,13 @@ class SourcesController {
         return sources.view(id);
     }
 
+    /** GD-31: a fresh BRD version from the same requirement and inputs, reviewed and approved as usual. */
+    @PostMapping("/api/v1/requirements/{id}/brd/regenerate")
+    java.util.Map<String, String> regenerate(@PathVariable UUID id) {
+        sources.regenerate(id);
+        return java.util.Map.of("status", "REGENERATING");
+    }
+
     @PostMapping("/api/v1/requirements/{id}/reanalyse")
     View reanalyse(@PathVariable UUID id) {
         return sources.reanalyse(id);

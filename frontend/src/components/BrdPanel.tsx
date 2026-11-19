@@ -13,7 +13,7 @@ const WAITING: Partial<Record<RequirementState, string>> = {
   AWAITING_CLARIFICATION: 'The BA agent has a question for you (see Clarifications). Analysis continues after your answer.',
   BRD_DRAFTED: 'The BRD is being prepared for your review.',
   REVISION_REQUESTED: 'Your change request is being analysed; a new BRD version will follow.',
-  CLIENT_CHANGES_REQUESTED: 'Your change request is being analysed; a new BRD version will follow.',
+  CLIENT_CHANGES_REQUESTED: 'A new BRD version is being written; it comes to you for review when ready.',
 };
 
 const VERDICT: Record<string, { label: string; tone: Tone }> = {
@@ -312,6 +312,29 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
                   </button>
                 )}
               </div>
+              {review.stage === 'APPROVED' && review.isAuthor && (
+                <div className="row" style={{ gap: '0.75rem', alignItems: 'center' }}>
+                  <button type="button" className="btn-secondary" disabled={busy} onClick={() => {
+                    if (!window.confirm('Regenerate the BRD from the same requirement with the current analysis rules?\n\n'
+                      + 'A new version is written and comes to you for review and approval; the approved version stays in '
+                      + 'force until then. A technical design in review is replaced, and an open change request is '
+                      + 'withdrawn. This is not a change request and is not charged.')) {
+                      return;
+                    }
+                    setBusy(true);
+                    api.post(`/api/v1/requirements/${requirementId}/brd/regenerate`)
+                      .then(async () => {
+                        setMessage({ tone: 'info', text: 'Regenerating the BRD. Follow the BA agent below; the new version comes to you for review.' });
+                        await queryClient.invalidateQueries();
+                      })
+                      .catch((e) => setMessage({ tone: 'danger', text: e instanceof ApiError ? e.message : 'The BRD could not be regenerated.' }))
+                      .finally(() => setBusy(false));
+                  }}>
+                    Regenerate BRD
+                  </button>
+                  <span className="small">A fresh version from the same requirement, with the latest analysis rules. Not charged.</span>
+                </div>
+              )}
               {review.stage === 'APPROVED' && review.isAuthor && <MyChangeRequests requests={myChanges} />}
               {review.stage === 'APPROVED' && review.isAuthor && !changeOpen && (
                 <form onSubmit={(e) => {
