@@ -124,6 +124,8 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
             Set<String> relevant = relevantPaths(files.output().relevantPaths(), inputs.inventory());
             Map<String, String> code = repositories.readFiles(inputs.inputSet().sources(), relevant);
             List<DataBlock> designData = new ArrayList<>(context);
+            designData.add(checklist(inputs.brd()));
+            designData.add(repositorySummary(inputs.inventory()));
             designData.add(new DataBlock("approach note (model output, untrusted)", files.output().approach()));
             designData.addAll(ContextAssembler.fileExcerpts(code, relevant));
             designData.addAll(ContextAssembler.inventory(inputs.inventory()));
@@ -175,6 +177,30 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
                 text.toString());
     }
 
+    /** The BRD statements the design must reference (the same set the coverage check uses). */
+    static DataBlock checklist(VersionView brd) {
+        StringBuilder text = new StringBuilder();
+        for (ItemView item : brd.items()) {
+            if (DesignService.COVERED_SECTIONS.contains(item.section())) {
+                text.append(item.itemKey()).append(" (").append(item.section()).append("): ").append(item.statement())
+                        .append('\n');
+            }
+        }
+        return new DataBlock("checklist: BRD statements the design must address (each key must appear in brdRefs of "
+                + "at least one item)", text.isEmpty() ? "(none)" : text.toString());
+    }
+
+    /** How much code there is, so the agent designs a new product when there is little or none. */
+    static DataBlock repositorySummary(Inventory inventory) {
+        long source = inventory.files().stream().filter(RepositoryInputs.FileInfo::indexable).count();
+        long bytes = inventory.files().stream().mapToLong(RepositoryInputs.FileInfo::sizeBytes).sum();
+        String verdict = source < 3 || bytes < 2_000
+                ? "The repository contains little or no code: design this as a new product."
+                : "The repository contains existing code: design the change within it.";
+        return new DataBlock("repository summary (computed by the platform)", inventory.files().size() + " files, "
+                + source + " source files, " + bytes + " bytes in total. " + verdict);
+    }
+
     static Set<String> relevantPaths(List<String> proposed, Inventory inventory) {
         Set<String> known = new LinkedHashSet<>();
         inventory.files().forEach(f -> known.add(f.path()));
@@ -188,9 +214,11 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
     }
 
     /**
-     * Engine checks: repository citations verified against the snapshot text; BRD references limited to real item
-     * keys; stable item keys. VERIFIED: at least one citation verified; FLAGGED: citations given but none verified;
-     * NOT_TRACED: no citation.
+     * Engine checks: repository citations verified against the snapshot text and against the item (the cited lines must
+     * share a key term with the item's title or detail); BRD references limited to real item keys; stable item keys.
+     * VERIFIED: at least one citation found and related to the item. FLAGGED: a quote that is not in the cited lines
+     * (the model claimed code that is not there). NOT_TRACED: no citation, or only citations that exist but do not
+     * relate to the item (they are dropped, so a file cited only because it exists never counts as evidence).
      */
     List<ItemRow> verify(DesignContracts.Proposal proposal, Map<String, String> code, Set<String> brdKeys) {
         List<ItemRow> rows = new ArrayList<>();
@@ -198,12 +226,15 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
         int ordinal = 0;
         for (DesignContracts.Item item : proposal.items()) {
             List<Map<String, Object>> valid = new ArrayList<>();
+            boolean fabricated = false;
             for (Evidence e : item.evidence()) {
                 if (e.type() != EvidenceType.REPOSITORY) {
                     continue;
                 }
                 VerifiedEvidence v = EvidenceVerifier.checkRepository(e, item.title() + " " + item.detail(), code);
-                if (v != null) {
+                if (v == null) {
+                    fabricated = true;
+                } else if (v.supportPassed()) {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("path", v.path());
                     m.put("startLine", v.startLine());
@@ -213,7 +244,7 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
                     valid.add(m);
                 }
             }
-            String state = !valid.isEmpty() ? "VERIFIED" : item.evidence().isEmpty() ? "NOT_TRACED" : "FLAGGED";
+            String state = !valid.isEmpty() ? "VERIFIED" : fabricated ? "FLAGGED" : "NOT_TRACED";
             List<String> refs = item.brdRefs().stream().map(String::strip).filter(brdKeys::contains).distinct().toList();
             String section = item.section().name();
             ordinal++;

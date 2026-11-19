@@ -64,8 +64,14 @@ Proposal shape:
 
 ## 4. What the engine checks (the model never decides these)
 
-- **Evidence:** every repository citation is verified against the pinned snapshot exactly as for the BRD. An item
-  whose citations all fail is **flagged**; an item with no citation is shown as **not traced to code**.
+- **Evidence (tightened 2026-11-19):** every repository citation is checked against the pinned snapshot: the quote must
+  be in the cited lines **and** the cited lines must relate to the item (share a key term with its title or detail).
+  **Verified**: at least one citation passes both. **Flagged**: a quote that is not in the cited lines. **Not traced
+  to code**: no citation, or only citations that exist but are unrelated (those are dropped), so citing a file just
+  because it exists never counts as evidence.
+- **Checklist:** the agent receives the BRD statements it must reference, and a repository summary (file count and
+  size). With little or no code it must design a new product: stack, project structure, schema, API contracts,
+  deployment (prompt `arch.design` v2).
 - **Traceability to the BRD:** `brdRefs` that do not name an item of the approved BRD are dropped. The engine then
   computes **coverage**: every BRD scenario, acceptance criterion, impacted component and non-functional point should
   be referenced by at least one design item. Uncovered BRD statements are listed on the design as **"Not covered by

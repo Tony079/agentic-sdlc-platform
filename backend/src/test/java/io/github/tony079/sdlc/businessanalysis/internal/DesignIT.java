@@ -103,7 +103,12 @@ class DesignIT extends ApiIntegrationTest {
                                  "documentVersionId": null, "chunk": null, "quote": "this text is not in the file"}]},
                   {"section": "TEST_PLAN", "kind": "TASK", "title": "Integration test for a missing channel",
                    "detail": "Posting a repayment without channel returns 422.", "component": null,
-                   "brdRefs": ["%2$s"], "evidence": []}
+                   "brdRefs": ["%2$s"], "evidence": []},
+                  {"section": "SECURITY", "kind": "DECISION", "title": "Encrypt uploaded files at rest",
+                   "detail": "Store uploads with AES-256 server-side encryption.", "component": "Storage",
+                   "brdRefs": [],
+                   "evidence": [{"type": "REPOSITORY", "path": "%1$s", "startLine": 1, "endLine": 1,
+                                 "documentVersionId": null, "chunk": null, "quote": "package com.acme;"}]}
                  ], "openQuestions": ["Which channels are allowed?"]}""".formatted(AnalysisScenario.CONTROLLER, scenarioKey));
     }
 
@@ -149,11 +154,20 @@ class DesignIT extends ApiIntegrationTest {
         JsonNode view = tina.get(design).body();
         assertThat(view.path("review").path("stage").asString()).as(view.toString()).isEqualTo("IN_REVIEW");
         JsonNode items = view.path("version").path("items");
-        assertThat(items.size()).isEqualTo(3);
+        assertThat(items.size()).isEqualTo(4);
         assertThat(items.get(0).path("supportState").asString()).isEqualTo("VERIFIED");
         assertThat(items.get(0).path("brdRefs").size()).isEqualTo(1);
         assertThat(items.get(1).path("supportState").asString()).isEqualTo("FLAGGED");
         assertThat(items.get(2).path("supportState").asString()).isEqualTo("NOT_TRACED");
+        // A real line that has nothing to do with the item is not evidence: dropped, and the item is not traced.
+        assertThat(items.get(3).path("supportState").asString()).isEqualTo("NOT_TRACED");
+        assertThat(items.get(3).path("evidence").size()).isZero();
+        // The agent was given the coverage checklist and the repository summary.
+        var designCall = fake.calls().stream().filter(c -> "arch.design".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
+        assertThat(designCall.promptVersion()).isEqualTo(2);
+        assertThat(designCall.data().stream().filter(d -> d.label().startsWith("checklist")).findFirst().orElseThrow()
+                .content()).contains(brdKey(s, "SCENARIOS")).contains(brdKey(s, "ACCEPTANCE_CRITERIA"));
+        assertThat(designCall.data().stream().anyMatch(d -> d.label().startsWith("repository summary"))).isTrue();
         JsonNode coverage = view.path("version").path("coverage");
         assertThat(coverage.size()).isEqualTo(2);
         assertThat(coverage.valueStream().filter(c -> c.path("covered").asBoolean()).count()).isEqualTo(1);
