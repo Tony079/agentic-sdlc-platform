@@ -7,7 +7,7 @@ export interface ActivityEntry {
   id: number;
   stage: 'BRD' | 'DESIGN';
   runId: string | null;
-  kind: 'STEP' | 'DONE' | 'WARN' | 'FAIL';
+  kind: 'STEP' | 'DONE' | 'WARN' | 'FAIL' | 'DRAFT';
   message: string;
   createdAt: string;
 }
@@ -17,6 +17,7 @@ const ICON: Record<ActivityEntry['kind'], IconName> = {
   DONE: 'checkCircle',
   WARN: 'alert',
   FAIL: 'x',
+  DRAFT: 'file',
 };
 
 /** "12s", "3m 05s": time since the run started, so the reader sees progress. */
@@ -37,12 +38,47 @@ function runs(lines: ActivityEntry[]): ActivityEntry[][] {
   return [...groups.values()];
 }
 
+/** Consecutive draft lines form one block under the step that wrote them. */
+type Block = { kind: 'line'; line: ActivityEntry } | { kind: 'drafts'; lines: ActivityEntry[] };
+
+function blocks(lines: ActivityEntry[]): Block[] {
+  const out: Block[] = [];
+  for (const line of lines) {
+    const last = out[out.length - 1];
+    if (line.kind === 'DRAFT' && last?.kind === 'drafts') last.lines.push(line);
+    else if (line.kind === 'DRAFT') out.push({ kind: 'drafts', lines: [line] });
+    else out.push({ kind: 'line', line });
+  }
+  return out;
+}
+
 function Run({ lines, live }: { lines: ActivityEntry[]; live: boolean }) {
   const start = lines[0]?.createdAt ?? new Date().toISOString();
+  const all = blocks(lines);
+  const lastStep = [...lines].reverse().find((l) => l.kind !== 'DRAFT');
   return (
     <ol className="activity" aria-live={live ? 'polite' : undefined}>
-      {lines.map((line, i) => {
-        const working = live && i === lines.length - 1 && line.kind === 'STEP';
+      {all.map((block, i) => {
+        if (block.kind === 'drafts') {
+          const writing = live && i === all.length - 1;
+          return (
+            <li key={`d${block.lines[0]?.id}`} className="activity-drafts">
+              <span className="activity-icon" aria-hidden="true"><Icon name="file" size={15} /></span>
+              <details open={writing}>
+                <summary className="small">
+                  {writing ? 'Drafted so far' : 'Drafted while writing'}: {block.lines.length}{' '}
+                  {block.lines.length === 1 ? 'item' : 'items'} (not checked yet; the final version is below)
+                </summary>
+                <ul>
+                  {block.lines.map((d) => <li key={d.id}>{d.message}</li>)}
+                </ul>
+              </details>
+              <span />
+            </li>
+          );
+        }
+        const line = block.line;
+        const working = live && line.id === lastStep?.id && line.kind === 'STEP';
         return (
           <li key={line.id} className={`activity-${line.kind.toLowerCase()}`}>
             <span className="activity-icon" aria-hidden="true">

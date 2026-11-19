@@ -82,7 +82,10 @@ public class FakeModelProvider implements ModelProvider {
             behaviour = new Reply(canned.getOrDefault(call.promptId(), ""));
         }
         return switch (behaviour) {
-            case Reply reply -> new Result(reply.text(), new Usage(tokens(call), estimate(reply.text()), true));
+            case Reply reply -> {
+                streamTo(call, reply.text());
+                yield new Result(reply.text(), new Usage(tokens(call), estimate(reply.text()), true));
+            }
             case ReplyWithoutUsage reply -> new Result(reply.text(), null);
             case CallTools tools -> new Result(null, new Usage(tokens(call), 8, true), tools.calls());
             case Fail fail -> throw new Failure(fail.kind());
@@ -96,6 +99,16 @@ public class FakeModelProvider implements ModelProvider {
                 yield new Result("{}", new Usage(tokens(call), 1, true));
             }
         };
+    }
+
+    /** GD-29: like a streaming provider, reports the text in four growing parts before returning it. */
+    private static void streamTo(Call call, String text) {
+        if (call.progress() == null || text == null) {
+            return;
+        }
+        for (int part = 1; part <= 4; part++) {
+            call.progress().accept(text.substring(0, text.length() * part / 4));
+        }
     }
 
     private static int tokens(Call call) {

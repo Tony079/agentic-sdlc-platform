@@ -115,8 +115,10 @@ class DesignService {
     /** GD-29: the agents' activity timeline for anyone who can see the requirement; lines after {@code after}. */
     @Transactional(readOnly = true)
     public List<ActivityLog.Entry> activity(UUID requirementId, long after) {
-        requirements.findVisible(requirementId).orElseThrow(ApiException::notFound);
-        return activity.list(requirementId, Math.max(0, after));
+        Access a = access(requirementId);
+        List<ActivityLog.Entry> lines = activity.list(requirementId, Math.max(0, after));
+        // Draft lines are the model's unchecked text: only those who may see the unapproved BRD or design see them.
+        return a.insider() ? lines : lines.stream().filter(l -> !"DRAFT".equals(l.kind())).toList();
     }
 
     @Transactional
@@ -370,7 +372,7 @@ class DesignService {
 
     // --- export -------------------------------------------------------------------------------------------------
 
-    private static final Map<String, String> SECTIONS = sectionTitles();
+    static final Map<String, String> SECTIONS = sectionTitles();
 
     private static Map<String, String> sectionTitles() {
         Map<String, String> m = new LinkedHashMap<>();

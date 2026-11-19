@@ -168,7 +168,7 @@ class DefaultModelGateway implements ModelGateway {
             String instructions = request.prompt().instructions() + (repaired ? REPAIR_NOTE : "");
             ModelProvider.Call call = new ModelProvider.Call(requestId, correlationId, modelId, request.prompt().id(),
                     request.prompt().version(), instructions, request.data(), maxTokens, timeout, specs, exchanges,
-                    JsonSchemas.forType(request.outputType()));
+                    JsonSchemas.forType(request.outputType()), safe(request.progress()));
             ModelProvider.Result result;
             try {
                 attempts.count++;
@@ -289,6 +289,20 @@ class DefaultModelGateway implements ModelGateway {
      * Strict JSON binding (unknown or trailing content rejected) plus Bean Validation of the result. Why an output is
      * rejected is logged structurally only (field paths and rule messages, never values or model text).
      */
+    /** A progress listener can never break a model call. */
+    private static java.util.function.Consumer<String> safe(java.util.function.Consumer<String> listener) {
+        if (listener == null) {
+            return null;
+        }
+        return text -> {
+            try {
+                listener.accept(text);
+            } catch (RuntimeException e) {
+                log.debug("progress listener failed: {}", e.getClass().getSimpleName());
+            }
+        };
+    }
+
     <T> Optional<T> parse(String text, Class<T> type) {
         return parse(text, type, new String[1]);
     }

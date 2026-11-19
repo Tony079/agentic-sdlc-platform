@@ -166,7 +166,8 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
             activity.step(requirementId, ActivityLog.Stage.BRD, run, "Writing the BRD: context, impact, scenarios, risks, "
                     + "acceptance criteria and a feasibility verdict. This usually takes 30 to 90 seconds.");
             ModelResponse<Proposal> phaseB = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_B, phaseBData,
-                    Proposal.class, job.aggregateId(), 16384, null));
+                    Proposal.class, job.aggregateId(), 16384, null)
+                    .withProgress(DraftWatcher.brd(activity, requirementId, run, json)));
             repaired(requirementId, ActivityLog.Stage.BRD, run, phaseB);
             activity.done(requirementId, ActivityLog.Stage.BRD, run, "The model returned "
                     + ActivityLog.count(phaseB.output().items().size(), "statement") + " and "

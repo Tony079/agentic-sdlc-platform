@@ -63,6 +63,56 @@ final class HttpModelProviderSupport {
         return new String(response.body(), java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /**
+     * GD-29: a streamed response (server-sent events), passed line by line to {@code onLine}. Same status mapping and
+     * total size cap as {@link #post}; the connection timeout covers the wait for the response headers.
+     */
+    static void postStream(URI uri, Map<String, String> headers, String body, Duration timeout,
+                           java.util.function.Consumer<String> onLine) throws Failure {
+        HttpRequest.Builder request = HttpRequest.newBuilder(uri).timeout(timeout)
+                .header("Content-Type", "application/json").header("Accept", "text/event-stream")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        headers.forEach(request::header);
+        HttpResponse<java.util.stream.Stream<String>> response;
+        try {
+            response = HTTP.send(request.build(), HttpResponse.BodyHandlers.ofLines());
+        } catch (HttpTimeoutException e) {
+            throw new Failure(Failure.Kind.TIMEOUT);
+        } catch (IOException e) {
+            throw new Failure(Failure.Kind.UNAVAILABLE);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new Failure(Failure.Kind.TIMEOUT);
+        }
+        try (java.util.stream.Stream<String> lines = response.body()) {
+            int status = response.statusCode();
+            if (status == 429) {
+                throw new Failure(Failure.Kind.RATE_LIMITED);
+            }
+            if (status >= 500) {
+                throw new Failure(Failure.Kind.UNAVAILABLE);
+            }
+            if (status != 200) {
+                throw new Failure(Failure.Kind.ERROR);
+            }
+            long[] total = {0};
+            java.util.Iterator<String> it = lines.iterator();
+            while (it.hasNext()) {
+                String line = it.next();
+                total[0] += line.length();
+                if (total[0] > MAX_RESPONSE_BYTES) {
+                    throw new Failure(Failure.Kind.ERROR);
+                }
+                onLine.accept(line);
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new Failure(Failure.Kind.TIMEOUT);
+                }
+            }
+        } catch (java.io.UncheckedIOException e) {
+            throw new Failure(Failure.Kind.UNAVAILABLE);
+        }
+    }
+
     /** Untrusted content travels as a labelled data block, never mixed into the instructions (TDD 12.7). */
     static String dataText(DataBlock block) {
         String label = block.label().replaceAll("[\"<>\\r\\n]", "_");

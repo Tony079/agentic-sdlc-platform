@@ -28,7 +28,7 @@ class ActivityLog {
 
     enum Stage { BRD, DESIGN }
 
-    enum Kind { STEP, DONE, WARN, FAIL }
+    enum Kind { STEP, DONE, WARN, FAIL, DRAFT }
 
     record Entry(long id, String stage, UUID runId, String kind, String message, OffsetDateTime createdAt) {
     }

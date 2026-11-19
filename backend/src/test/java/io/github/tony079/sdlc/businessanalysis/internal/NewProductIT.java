@@ -131,7 +131,16 @@ class NewProductIT extends ApiIntegrationTest {
         assertThat(messages).anyMatch(m -> m.startsWith("STEP Writing the BRD"));
         assertThat(messages).anyMatch(m -> m.startsWith("WARN The model's first answer broke a rule") && m.contains("feasibility.reasons"));
         assertThat(messages).anyMatch(m -> m.startsWith("DONE BRD ready for review: 3 statements, verdict feasible"));
-        assertThat(messages.stream().noneMatch(m -> m.contains("Candidates want a portfolio"))).as("no model text").isTrue();
+        // Step lines never carry the model's text; draft lines do, labelled, and only for those who may see the BRD.
+        assertThat(messages.stream().filter(m -> !m.startsWith("DRAFT")).noneMatch(m -> m.contains("Candidates want")))
+                .as("no model text in step lines").isTrue();
+        assertThat(messages).contains("DRAFT Scenarios: A candidate uploads a resume and reviews the extracted sections.");
+        String viewerEmail = RequirementFixtures.newMember("acme", "viewer");
+        UUID viewer = admin.queryForObject("SELECT id FROM app.app_user WHERE email = ?", UUID.class, viewerEmail);
+        RequirementFixtures.addMember(UUID.fromString(projectId), viewer, "VIEWER");
+        var seenByViewer = loggedIn("acme", viewerEmail).get("/api/v1/requirements/" + id + "/activity").body();
+        assertThat(seenByViewer.size()).isPositive();
+        assertThat(seenByViewer.valueStream().noneMatch(l -> "DRAFT".equals(l.path("kind").asString()))).isTrue();
         long last = lines.get(lines.size() - 1).path("id").asLong();
         assertThat(alice.get("/api/v1/requirements/" + id + "/activity?after=" + last).body().size()).isZero();
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> admin.update(

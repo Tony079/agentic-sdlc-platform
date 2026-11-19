@@ -15,9 +15,22 @@ import java.util.UUID;
  * @param maxOutputTokens upper bound requested from the provider
  * @param timeout         per-attempt timeout; null uses the configured default
  * @param tools           the read-only tools this request allows (the job's registry); empty for none
+ * @param progress        GD-29: optional; receives the answer text received so far while the provider streams it
+ *                        (untrusted, unvalidated, for display only). Called again from the start on a repair attempt.
  */
 public record ModelRequest<T>(PromptTemplate prompt, List<DataBlock> data, Class<T> outputType, UUID requirementId,
-                              int maxOutputTokens, Duration timeout, List<ModelTool> tools) {
+                              int maxOutputTokens, Duration timeout, List<ModelTool> tools,
+                              java.util.function.Consumer<String> progress) {
+
+    public ModelRequest(PromptTemplate prompt, List<DataBlock> data, Class<T> outputType, UUID requirementId,
+                        int maxOutputTokens, Duration timeout, List<ModelTool> tools) {
+        this(prompt, data, outputType, requirementId, maxOutputTokens, timeout, tools, null);
+    }
+
+    /** The same request, streamed to {@code listener} as it is written. */
+    public ModelRequest<T> withProgress(java.util.function.Consumer<String> listener) {
+        return new ModelRequest<>(prompt, data, outputType, requirementId, maxOutputTokens, timeout, tools, listener);
+    }
 
     /** A request without tools. */
     public ModelRequest(PromptTemplate prompt, List<DataBlock> data, Class<T> outputType, UUID requirementId,

@@ -149,7 +149,8 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
             activity.step(requirementId, stage, versionId, "Writing the design: architecture, components, APIs, data "
                     + "model, security, rollout and test plan. This usually takes 30 to 90 seconds.");
             ModelResponse<DesignContracts.Proposal> design = gateway.generate(new ModelRequest<>(BaPrompts.ARCH_DESIGN,
-                    designData, DesignContracts.Proposal.class, inputs.version().requirementId(), 16384, null));
+                    designData, DesignContracts.Proposal.class, inputs.version().requirementId(), 16384, null)
+                    .withProgress(DraftWatcher.design(activity, requirementId, versionId, DesignService.SECTIONS, json)));
             describer.repaired(activity, requirementId, stage, versionId, design);
 
             Set<String> brdKeys = new LinkedHashSet<>();

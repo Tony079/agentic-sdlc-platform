@@ -24,7 +24,15 @@ public interface ModelProvider {
      */
     record Call(UUID requestId, String correlationId, String modelId, String promptId, int promptVersion,
                 String instructions, List<DataBlock> data, int maxOutputTokens, Duration timeout,
-                List<ToolSpec> tools, List<ToolExchange> exchanges, java.util.Map<String, Object> outputSchema) {
+                List<ToolSpec> tools, List<ToolExchange> exchanges, java.util.Map<String, Object> outputSchema,
+                java.util.function.Consumer<String> progress) {
+
+        public Call(UUID requestId, String correlationId, String modelId, String promptId, int promptVersion,
+                    String instructions, List<DataBlock> data, int maxOutputTokens, Duration timeout,
+                    List<ToolSpec> tools, List<ToolExchange> exchanges, java.util.Map<String, Object> outputSchema) {
+            this(requestId, correlationId, modelId, promptId, promptVersion, instructions, data, maxOutputTokens, timeout,
+                    tools, exchanges, outputSchema, null);
+        }
 
         public Call(UUID requestId, String correlationId, String modelId, String promptId, int promptVersion,
                     String instructions, List<DataBlock> data, int maxOutputTokens, Duration timeout,

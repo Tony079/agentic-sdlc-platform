@@ -189,4 +189,31 @@ class HostedProviderAdaptersTest {
         assertThatThrownBy(() -> new OpenAiModelProvider(secrets("llm.openai-key", "k"), json,
                 "http://api.example.test", false).complete(call(false))).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void azureOpenAiStreamsTheAnswerToTheProgressListener() throws Exception {
+        var provider = new AzureOpenAiModelProvider(secrets("llm.azure-openai-key", "test-key-az"), json, base(), true);
+        reply.set("""
+                data: {"choices":[{"delta":{"role":"assistant","content":""}}]}
+
+                data: {"choices":[{"delta":{"content":"{\\"items\\": [{\\"kind\\""}}]}
+
+                data: {"choices":[{"delta":{"content":": \\"FACT\\"}]}"},"finish_reason":"stop"}]}
+
+                data: {"choices":[],"usage":{"prompt_tokens":50,"completion_tokens":12}}
+
+                data: [DONE]
+
+                """);
+        List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ModelProvider.Call base = call(false);
+        ModelProvider.Result result = provider.complete(new ModelProvider.Call(base.requestId(), base.correlationId(),
+                base.modelId(), base.promptId(), base.promptVersion(), base.instructions(), base.data(),
+                base.maxOutputTokens(), base.timeout(), base.tools(), base.exchanges(), null, seen::add));
+        assertThat(lastBody.get().path("stream").asBoolean()).isTrue();
+        assertThat(lastBody.get().path("stream_options").path("include_usage").asBoolean()).isTrue();
+        assertThat(result.text()).isEqualTo("{\"items\": [{\"kind\": \"FACT\"}]}");
+        assertThat(result.usage()).isEqualTo(new ModelProvider.Usage(50, 12, false));
+        assertThat(seen).isNotEmpty().last().isEqualTo(result.text());
+    }
 }

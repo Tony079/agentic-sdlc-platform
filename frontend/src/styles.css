@@ -1960,3 +1960,18 @@ button.link:hover {
 .activity-earlier {
   margin-top: 0.5rem;
 }
+
+.activity-drafts details ul {
+  margin: 0.35rem 0 0.2rem;
+  padding-left: 1rem;
+  color: var(--text-2);
+  font-style: italic;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.activity-drafts details ul li {
+  display: list-item;
+  padding: 0.1rem 0;
+  font-size: 0.88rem;
+}

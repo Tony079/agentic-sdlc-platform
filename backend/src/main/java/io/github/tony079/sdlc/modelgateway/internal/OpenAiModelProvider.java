@@ -90,6 +90,9 @@ public class OpenAiModelProvider implements ModelProvider {
                     "name", t.name(), "description", t.description(), "parameters",
                     Map.of("type", "object", "additionalProperties", Map.of("type", "string"))))).toList());
         }
+        if (call.progress() != null && call.tools().isEmpty()) {
+            return streamed(call, key, body);
+        }
         String response = HttpModelProviderSupport.post(chatCompletionsUri(), authHeaders(key),
                 json.writeValueAsString(body), call.timeout());
         JsonNode root = json.readTree(response);
@@ -119,5 +122,60 @@ public class OpenAiModelProvider implements ModelProvider {
         Usage measured = usage.isObject() ? new Usage(usage.path("prompt_tokens").asInt(0),
                 usage.path("completion_tokens").asInt(0), false) : null;
         return new Result(text == null || text.isEmpty() ? null : text, measured, toolCalls);
+    }
+
+    /**
+     * GD-29: the same request, streamed. The text received so far is passed to the call's progress listener at most
+     * every 400 ms (for display only); the complete text is returned exactly as from the non-streamed call.
+     */
+    private Result streamed(Call call, String key, Map<String, Object> body) throws Failure {
+        body.put("stream", true);
+        body.put("stream_options", Map.of("include_usage", true));
+        StringBuilder text = new StringBuilder();
+        String[] finish = {""};
+        Usage[] usage = {null};
+        long[] lastReport = {0};
+        HttpModelProviderSupport.postStream(chatCompletionsUri(), authHeaders(key), json.writeValueAsString(body),
+                call.timeout(), line -> {
+                    if (!line.startsWith("data:")) {
+                        return;
+                    }
+                    String data = line.substring(5).strip();
+                    if (data.isEmpty() || "[DONE]".equals(data)) {
+                        return;
+                    }
+                    JsonNode chunk;
+                    try {
+                        chunk = json.readTree(data);
+                    } catch (RuntimeException e) {
+                        return; // a malformed event is skipped; the final text is validated by the gateway anyway
+                    }
+                    JsonNode choice = chunk.path("choices").path(0);
+                    JsonNode delta = choice.path("delta").path("content");
+                    if (delta.isString()) {
+                        text.append(delta.asString());
+                        long now = System.nanoTime();
+                        if (now - lastReport[0] > 400_000_000L) {
+                            lastReport[0] = now;
+                            call.progress().accept(text.toString());
+                        }
+                    }
+                    String reason = choice.path("finish_reason").asString("");
+                    if (!reason.isEmpty()) {
+                        finish[0] = reason;
+                    }
+                    JsonNode u = chunk.path("usage");
+                    if (u.isObject()) {
+                        usage[0] = new Usage(u.path("prompt_tokens").asInt(0), u.path("completion_tokens").asInt(0), false);
+                    }
+                });
+        if ("content_filter".equals(finish[0])) {
+            throw new Failure(Failure.Kind.ERROR);
+        }
+        if ("length".equals(finish[0])) {
+            LOG.warn("{} output was cut off at the output token limit ({} tokens)", name(), call.maxOutputTokens());
+        }
+        call.progress().accept(text.toString());
+        return new Result(text.isEmpty() ? null : text.toString(), usage[0], List.of());
     }
 }
