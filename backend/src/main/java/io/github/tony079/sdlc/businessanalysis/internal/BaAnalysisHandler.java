@@ -69,11 +69,14 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
     private final JsonMapper json;
     private final TransactionTemplate readOnly;
     private final ActivityLog activity;
+    private final ClarificationRepository clarifications;
 
     BaAnalysisHandler(ActivityLog activity, ModelGateway gateway, AnalysisRepository repository, RequirementInputs requirements,
                       RepositoryInputs repositories, DocumentProcessing documents, WorkflowEngine workflow, JobQueue jobs,
-                      AuditWriter audit, JsonMapper json, PlatformTransactionManager transactionManager) {
+                      AuditWriter audit, JsonMapper json, PlatformTransactionManager transactionManager,
+                      ClarificationRepository clarifications) {
         this.activity = activity;
+        this.clarifications = clarifications;
         this.gateway = gateway;
         this.repository = repository;
         this.requirements = requirements;
@@ -92,7 +95,8 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
         return JOB_TYPE;
     }
 
-    private record Inputs(InputSetRow inputSet, Content content, Inventory inventory, List<DocumentChunk> chunks) {
+    private record Inputs(InputSetRow inputSet, Content content, Inventory inventory, List<DocumentChunk> chunks,
+                          List<java.util.Map<String, String>> settled) {
     }
 
     @Override
@@ -162,23 +166,32 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
             phaseBData.addAll(ContextAssembler.fileExcerpts(files, relevant));
             phaseBData.addAll(ContextAssembler.inventory(inputs.inventory()));
             phaseBData.addAll(ContextAssembler.documents(inputs.chunks()));
+            // The client's answers to earlier clarifications are settled decisions, given in their own block so the
+            // model applies them instead of asking again. Every question settled for this requirement is included,
+            // not only those carried by this input set (a later revision or re-analysis starts a new one).
             String corrections = inputs.inputSet().correctionsJson();
+            java.util.Map<String, JsonNode> answers = new java.util.LinkedHashMap<>();
+            List<JsonNode> notes = new ArrayList<>();
             if (corrections != null && !"[]".equals(corrections.replace(" ", ""))) {
-                // The client's answers to earlier clarifications are settled decisions, given in their own block so
-                // the model applies them instead of asking again; other notes stay correction notes.
-                List<JsonNode> answers = new ArrayList<>();
-                List<JsonNode> notes = new ArrayList<>();
                 for (JsonNode node : json.readTree(corrections)) {
-                    ("CLARIFICATION".equals(node.path("source").asString("")) ? answers : notes).add(node);
+                    if ("CLARIFICATION".equals(node.path("source").asString(""))) {
+                        answers.put(node.path("clarificationId").asString(String.valueOf(answers.size())), node);
+                    } else {
+                        notes.add(node);
+                    }
                 }
-                if (!answers.isEmpty()) {
-                    phaseBData.add(new DataBlock("answered clarifications (question and the client's answer; settled"
-                            + " decisions, do not ask again)", json.writeValueAsString(answers)));
-                }
-                if (!notes.isEmpty()) {
-                    phaseBData.add(new DataBlock("reviewer correction notes (item key, instruction)",
-                            json.writeValueAsString(notes)));
-                }
+            }
+            for (java.util.Map<String, String> settled : inputs.settled()) {
+                answers.putIfAbsent(settled.get("clarificationId"), json.valueToTree(settled));
+            }
+            if (!answers.isEmpty()) {
+                phaseBData.add(new DataBlock("answered clarifications (question and the client's answer; settled"
+                        + " decisions: apply them and do not ask these questions again, even reworded)",
+                        json.writeValueAsString(answers.values())));
+            }
+            if (!notes.isEmpty()) {
+                phaseBData.add(new DataBlock("reviewer correction notes (item key, instruction)",
+                        json.writeValueAsString(notes)));
             }
             activity.step(requirementId, ActivityLog.Stage.BRD, run, "Writing the BRD: context, impact, scenarios, risks, "
                     + "acceptance criteria and a feasibility verdict. This usually takes 30 to 90 seconds.");
@@ -273,7 +286,7 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
                         chunk.label(), chunk.text()));
             }
         }
-        return new Inputs(set, content, inventory, chunks);
+        return new Inputs(set, content, inventory, chunks, clarifications.answeredInputs(set.requirementId()));
     }
 
     @Override

@@ -77,8 +77,11 @@ final class HttpModelProviderSupport {
         try {
             response = HTTP.send(request.build(), HttpResponse.BodyHandlers.ofLines());
         } catch (HttpTimeoutException e) {
+            org.slf4j.LoggerFactory.getLogger(HttpModelProviderSupport.class).warn("model stream timed out waiting for the response");
             throw new Failure(Failure.Kind.TIMEOUT);
         } catch (IOException e) {
+            org.slf4j.LoggerFactory.getLogger(HttpModelProviderSupport.class).warn("model stream could not start: {}: {}",
+                    e.getClass().getSimpleName(), e.getMessage());
             throw new Failure(Failure.Kind.UNAVAILABLE);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -93,6 +96,8 @@ final class HttpModelProviderSupport {
                 throw new Failure(Failure.Kind.UNAVAILABLE);
             }
             if (status != 200) {
+                org.slf4j.LoggerFactory.getLogger(HttpModelProviderSupport.class).warn("model stream refused: HTTP {}",
+                        status);
                 throw new Failure(Failure.Kind.ERROR);
             }
             long[] total = {0};
@@ -109,6 +114,9 @@ final class HttpModelProviderSupport {
                 }
             }
         } catch (java.io.UncheckedIOException e) {
+            org.slf4j.LoggerFactory.getLogger(HttpModelProviderSupport.class).warn("model stream interrupted: {}: {}",
+                    e.getCause() == null ? e.getClass().getSimpleName() : e.getCause().getClass().getSimpleName(),
+                    e.getCause() == null ? "" : String.valueOf(e.getCause().getMessage()));
             throw new Failure(Failure.Kind.UNAVAILABLE);
         }
     }

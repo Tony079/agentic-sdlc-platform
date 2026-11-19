@@ -1,6 +1,7 @@
 package io.github.tony079.sdlc.businessanalysis.internal;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -210,9 +211,15 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         // result (no BRD) and the workflow (T16); non-blocking ones are recorded and the BRD proceeds.
         boolean blocking = false;
         // A question the client already answered (or declined) is never asked again, even if the model repeats it.
-        Set<String> settled = clarifications.settledQuestions(requirementId);
-        List<BaContracts.ClarificationProposal> asked = outcome.clarifications().stream()
-                .filter(c -> !settled.contains(ClarificationRepository.normalise(c.question()))).toList();
+        // Reworded repeats count too (most meaningful words shared), as do repeats within this answer.
+        List<String> seen = new ArrayList<>(clarifications.settledQuestions(requirementId));
+        List<BaContracts.ClarificationProposal> asked = new ArrayList<>();
+        for (BaContracts.ClarificationProposal c : outcome.clarifications()) {
+            if (seen.stream().noneMatch(s -> ClarificationRepository.sameQuestion(s, c.question()))) {
+                asked.add(c);
+                seen.add(c.question());
+            }
+        }
         for (BaContracts.ClarificationProposal c : asked) {
             clarifications.insert(job.tenantId(), requirementId, "AGENT", pending.stageExecutionId(), null,
                     set.revisionNo(), set.commitSha(), pending.inputHash(), c.blocking(),
@@ -231,7 +238,7 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         if (asked.size() < outcome.clarifications().size()) {
             activity.step(requirementId, ActivityLog.Stage.BRD, run, "Skipped "
                     + ActivityLog.count(outcome.clarifications().size() - asked.size(), "question")
-                    + " you had already answered.");
+                    + " you had already answered (or that repeated another question).");
         }
         if (!asked.isEmpty()) {
             // One notification per analysis, however many questions it raised.

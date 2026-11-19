@@ -39,6 +39,9 @@ class HostedProviderAdaptersTest {
     private final AtomicReference<String> reply = new AtomicReference<>();
     private final AtomicInteger status = new AtomicInteger(200);
     private final AtomicReference<String> lastPath = new AtomicReference<>();
+    /** Status for streamed requests only (-1: same as {@link #status}). */
+    private final AtomicInteger streamStatus = new AtomicInteger(-1);
+    private final AtomicInteger requests = new AtomicInteger();
 
     @BeforeEach
     void start() throws Exception {
@@ -47,6 +50,13 @@ class HostedProviderAdaptersTest {
             lastPath.set(exchange.getRequestURI().getPath());
             lastHeaders.set(Map.copyOf(exchange.getRequestHeaders()));
             lastBody.set(json.readTree(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
+            requests.incrementAndGet();
+            boolean streamed = lastBody.get().path("stream").asBoolean(false);
+            if (streamed && streamStatus.get() >= 0) {
+                exchange.sendResponseHeaders(streamStatus.get(), -1);
+                exchange.close();
+                return;
+            }
             byte[] out = reply.get().getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(status.get(), out.length);
             exchange.getResponseBody().write(out);
@@ -215,5 +225,31 @@ class HostedProviderAdaptersTest {
         assertThat(result.text()).isEqualTo("{\"items\": [{\"kind\": \"FACT\"}]}");
         assertThat(result.usage()).isEqualTo(new ModelProvider.Usage(50, 12, false));
         assertThat(seen).isNotEmpty().last().isEqualTo(result.text());
+    }
+
+    @Test
+    void whenStreamingFailsTheSameAttemptCompletesWithoutItAndStreamingPauses() throws Exception {
+        var provider = new OpenAiModelProvider(secrets("llm.openai-key", "k"), json, base(), true);
+        reply.set("""
+                {"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\\"ok\\":3}"}}],
+                 "usage":{"prompt_tokens":9,"completion_tokens":3}}""");
+        streamStatus.set(503);
+        List<String> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ModelProvider.Call base = call(false);
+        ModelProvider.Call withProgress = new ModelProvider.Call(base.requestId(), base.correlationId(), base.modelId(),
+                base.promptId(), base.promptVersion(), base.instructions(), base.data(), base.maxOutputTokens(),
+                base.timeout(), base.tools(), base.exchanges(), null, seen::add);
+        ModelProvider.Result result = provider.complete(withProgress);
+        assertThat(result.text()).isEqualTo("{\"ok\":3}");
+        assertThat(requests.get()).isEqualTo(2);
+        assertThat(lastBody.get().has("stream")).isFalse();
+        // The next call does not try streaming again for a while.
+        provider.complete(withProgress);
+        assertThat(requests.get()).isEqualTo(3);
+        // A rate limit is not retried here: the gateway's backoff handles it.
+        var fresh = new OpenAiModelProvider(secrets("llm.openai-key", "k"), json, base(), true);
+        streamStatus.set(429);
+        assertThatThrownBy(() -> fresh.complete(withProgress)).isInstanceOfSatisfying(Failure.class,
+                f -> assertThat(f.kind()).isEqualTo(Failure.Kind.RATE_LIMITED));
     }
 }

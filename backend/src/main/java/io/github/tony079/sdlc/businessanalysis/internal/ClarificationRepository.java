@@ -142,12 +142,58 @@ class ClarificationRepository {
                 }).list();
     }
 
-    /** Normalised questions the client already answered or declined for this requirement. */
-    java.util.Set<String> settledQuestions(UUID requirementId) {
+    /** Questions the client already answered or declined for this requirement. */
+    List<String> settledQuestions(UUID requirementId) {
         return jdbc.sql("""
                 SELECT question FROM app.clarification WHERE requirement_id = :r AND status IN ('RESOLVED', 'REJECTED')
-                """).param("r", requirementId).query(String.class).list().stream()
-                .map(ClarificationRepository::normalise).collect(java.util.stream.Collectors.toSet());
+                """).param("r", requirementId).query(String.class).list();
+    }
+
+    private static final java.util.Set<String> STOP_WORDS = java.util.Set.of("the", "a", "an", "and", "or", "of", "to",
+            "for", "in", "on", "at", "by", "with", "is", "are", "be", "should", "would", "could", "can", "will", "do",
+            "does", "did", "what", "which", "how", "who", "when", "where", "why", "this", "that", "these", "those", "it",
+            "its", "you", "your", "we", "our", "they", "their", "any", "there", "if", "as", "from", "into", "about",
+            "please", "need", "needs", "must", "have", "has", "want", "wants", "like", "also", "then", "than", "not");
+
+    /** The meaningful words of a question, lightly stemmed, so rewording and plurals do not make it new. */
+    static java.util.Set<String> keywords(String question) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (String w : normalise(question).split(" ")) {
+            if (w.length() < 3 || STOP_WORDS.contains(w)) {
+                continue;
+            }
+            String stem = w;
+            for (String suffix : new String[] {"ing", "ed", "es", "s"}) {
+                if (stem.length() > suffix.length() + 3 && stem.endsWith(suffix)) {
+                    stem = stem.substring(0, stem.length() - suffix.length());
+                    break;
+                }
+            }
+            out.add(stem);
+        }
+        return out;
+    }
+
+    /**
+     * True when two questions ask the same thing in other words: most of their meaningful words are shared. Exact
+     * matches (after {@link #normalise}) always count; very short questions need an exact match.
+     */
+    static boolean sameQuestion(String a, String b) {
+        if (normalise(a).equals(normalise(b))) {
+            return true;
+        }
+        java.util.Set<String> x = keywords(a);
+        java.util.Set<String> y = keywords(b);
+        if (x.size() < 3 || y.size() < 3) {
+            return false;
+        }
+        java.util.Set<String> shared = new java.util.HashSet<>(x);
+        shared.retainAll(y);
+        java.util.Set<String> union = new java.util.HashSet<>(x);
+        union.addAll(y);
+        double jaccard = (double) shared.size() / union.size();
+        double overlap = (double) shared.size() / Math.min(x.size(), y.size());
+        return jaccard >= 0.6 || (overlap >= 0.8 && shared.size() >= 4);
     }
 
     /** Case, punctuation and spacing do not make a question different. */

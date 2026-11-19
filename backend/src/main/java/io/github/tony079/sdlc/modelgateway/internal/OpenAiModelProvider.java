@@ -32,6 +32,10 @@ public class OpenAiModelProvider implements ModelProvider {
     private final JsonMapper json;
     private final String baseUrl;
     private final boolean allowLoopbackHttp;
+    /** After a streaming failure, calls go unstreamed until this time (System.nanoTime), so a call is not made twice. */
+    private volatile long streamingPausedUntil;
+    private volatile boolean streamingPaused;
+    static final java.time.Duration STREAMING_PAUSE = java.time.Duration.ofMinutes(15);
 
     public OpenAiModelProvider(SecretsProvider secrets, JsonMapper json,
                         @Value("${sdlc.model.openai.base-url:https://api.openai.com}") String baseUrl,
@@ -90,8 +94,20 @@ public class OpenAiModelProvider implements ModelProvider {
                     "name", t.name(), "description", t.description(), "parameters",
                     Map.of("type", "object", "additionalProperties", Map.of("type", "string"))))).toList());
         }
-        if (call.progress() != null && call.tools().isEmpty()) {
-            return streamed(call, key, body);
+        boolean paused = streamingPaused && System.nanoTime() - streamingPausedUntil < 0;
+        if (call.progress() != null && call.tools().isEmpty() && !paused) {
+            try {
+                return streamed(call, key, new LinkedHashMap<>(body));
+            } catch (Failure f) {
+                if (f.kind() == Failure.Kind.RATE_LIMITED || Thread.currentThread().isInterrupted()) {
+                    throw f;
+                }
+                // GD-29: streaming only shows drafts; when it fails, the same attempt continues without it.
+                streamingPausedUntil = System.nanoTime() + STREAMING_PAUSE.toNanos();
+                streamingPaused = true;
+                LOG.warn("{} streaming failed ({}); calling again without streaming, and not streaming for {} minutes",
+                        name(), f.kind(), STREAMING_PAUSE.toMinutes());
+            }
         }
         String response = HttpModelProviderSupport.post(chatCompletionsUri(), authHeaders(key),
                 json.writeValueAsString(body), call.timeout());
