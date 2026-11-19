@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { BrdHistoryEntry, ClientBrd, ClientReview, RequirementState } from '../api/types';
+import type { BrdHistoryEntry, ChangeRequest, ClientBrd, ClientReview, RequirementState } from '../api/types';
 import { money } from '../ui/money';
 import { Badge, Callout, formatDateTime, type Tone } from '../ui/components';
 import { BrdItems } from './BrdItems';
@@ -108,6 +108,44 @@ function BrdHistory({ requirementId, requirementState }: { requirementId: string
  * GD-24: the BRD goes straight to the client. The author accepts flagged statements and confirms (or requests
  * changes); a BRD Approver other than the author approves; the BRD is then released automatically.
  */
+const CHANGE_STATUS: Record<string, { text: string; tone: Tone }> = {
+  SUBMITTED: { text: 'Waiting for Garuda to assess it', tone: 'warning' },
+  ASSESSED: { text: 'Assessed; waiting for Garuda review', tone: 'warning' },
+  AWAITING_CLIENT_DECISION: { text: 'Waiting for a BRD Approver to accept or decline', tone: 'warning' },
+  ACCEPTED: { text: 'Accepted; a new BRD version follows', tone: 'success' },
+  DECLINED: { text: 'Declined', tone: 'danger' },
+  WITHDRAWN: { text: 'Withdrawn', tone: 'neutral' },
+};
+const OPEN_CHANGE = new Set(['SUBMITTED', 'ASSESSED', 'AWAITING_CLIENT_DECISION']);
+
+/** The author's change requests on the approved BRD, newest first, with where each one is in its review. */
+function MyChangeRequests({ requests }: { requests: ChangeRequest[] }) {
+  if (requests.length === 0) return null;
+  return (
+    <div className="stack" aria-label="Your change requests">
+      <div className="label">Your change requests</div>
+      <ul className="brd-items">
+        {requests.map((c) => {
+          const s = CHANGE_STATUS[c.status] ?? { text: c.status, tone: 'neutral' as Tone };
+          return (
+            <li key={c.id}>
+              <Badge tone={s.tone}>{s.text}</Badge> <span className="small">submitted {formatDateTime(c.submittedAt)}</span>
+              <div style={{ whiteSpace: 'pre-wrap', margin: '0.2rem 0' }}>{c.requestedChange}</div>
+              {c.decisionNote && <div className="small">Decision note: {c.decisionNote}</div>}
+            </li>
+          );
+        })}
+      </ul>
+      {requests.some((c) => OPEN_CHANGE.has(c.status)) && (
+        <p className="small">
+          A change request is assessed by Garuda, reviewed, and then accepted or declined by a BRD Approver of the project
+          (not the person who asked). Only one can be open at a time.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function BrdPanel({ requirementId, requirementState }: { requirementId: string; requirementState: RequirementState }) {
   const queryClient = useQueryClient();
   const brd = useQuery({
@@ -122,6 +160,15 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
     },
     refetchInterval: (q) => (q.state.data?.review?.stage === 'PUBLISHING' ? 4000 : false),
   });
+  const approvedForAuthor = brd.data?.review?.stage === 'APPROVED' && brd.data.review.isAuthor;
+  const changes = useQuery({
+    queryKey: ['my-change-requests', requirementId],
+    queryFn: () => api.get<ChangeRequest[]>(`/api/v1/requirements/${requirementId}/change-requests`),
+    enabled: approvedForAuthor === true,
+  });
+  const myChanges = [...(Array.isArray(changes.data) ? changes.data : [])]
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+  const changeOpen = myChanges.some((c) => OPEN_CHANGE.has(c.status));
   const [text, setText] = useState('');
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -265,14 +312,15 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
                   </button>
                 )}
               </div>
-              {review.stage === 'APPROVED' && review.isAuthor && (
+              {review.stage === 'APPROVED' && review.isAuthor && <MyChangeRequests requests={myChanges} />}
+              {review.stage === 'APPROVED' && review.isAuthor && !changeOpen && (
                 <form onSubmit={(e) => {
                   e.preventDefault();
                   setBusy(true);
                   api.post(`/api/v1/requirements/${requirementId}/client-changes`, { text: text.trim() })
                     .then(async () => {
                       setText('');
-                      setMessage({ tone: 'info', text: 'Your change request was submitted. A BRD Approver assesses it; nothing changes until it is accepted.' });
+                      setMessage({ tone: 'info', text: 'Your change request was submitted. Garuda assesses it, then a BRD Approver accepts or declines it; nothing changes until it is accepted.' });
                       await queryClient.invalidateQueries();
                     })
                     .catch((e) => setMessage({ tone: 'danger', text: e instanceof ApiError && e.code === 'CHANGE_REQUEST_OPEN'
