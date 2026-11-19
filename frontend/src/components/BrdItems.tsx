@@ -26,6 +26,9 @@ const SUPPORT_LABELS: Record<string, string> = {
 };
 
 function evidenceText(e: BrdEvidence): string {
+  if (e.type === 'REQUIREMENT') {
+    return `Requirement: ${e.chunkLabel ?? e.path}`;
+  }
   if (e.type === 'REPOSITORY') {
     return `${e.path} lines ${e.startLine}–${e.endLine} @ ${e.commitSha?.substring(0, 12)}`;
   }

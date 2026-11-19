@@ -90,3 +90,5 @@ databaseChangeLog:
   - include: { file: changes/0048-analysis-activity.sql, relativeToChangelogFile: true }
   # GD-29 (2026-11-19): draft lines while the model writes.
   - include: { file: changes/0049-activity-drafts.sql, relativeToChangelogFile: true }
+  # GD-30 (2026-11-20): requirement citations; BA prompt v7 and Architect design prompt v3.
+  - include: { file: changes/0050-requirement-citations.sql, relativeToChangelogFile: true }

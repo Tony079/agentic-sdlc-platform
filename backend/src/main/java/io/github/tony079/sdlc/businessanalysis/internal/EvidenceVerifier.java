@@ -43,9 +43,53 @@ final class EvidenceVerifier {
     record DocumentSource(UUID versionId, int extractionNo, Map<Integer, Chunk> chunks) {
     }
 
+    /** For a REQUIREMENT citation: path is the field key, chunkLabel its label, revisionNo the analysed revision. */
     record VerifiedEvidence(EvidenceType type, String path, Integer startLine, Integer endLine, String rangeSha256,
                             UUID documentVersionId, Integer extractionNo, Integer chunkOrdinal, String chunkLabel,
-                            String quote, boolean supportPassed) {
+                            String quote, boolean supportPassed, Integer revisionNo) {
+
+        VerifiedEvidence(EvidenceType type, String path, Integer startLine, Integer endLine, String rangeSha256,
+                         UUID documentVersionId, Integer extractionNo, Integer chunkOrdinal, String chunkLabel,
+                         String quote, boolean supportPassed) {
+            this(type, path, startLine, endLine, rangeSha256, documentVersionId, extractionNo, chunkOrdinal, chunkLabel,
+                    quote, supportPassed, null);
+        }
+    }
+
+    /** The analysed revision of the client's requirement: its number and field text by key. */
+    record RequirementSource(int revisionNo, Map<String, String> fields) {
+
+        static final Map<String, String> LABELS = labels();
+
+        private static Map<String, String> labels() {
+            Map<String, String> m = new java.util.LinkedHashMap<>();
+            m.put("title", "Title");
+            m.put("description", "Description");
+            m.put("businessObjective", "Business objective");
+            m.put("expectedOutcomes", "Expected outcomes");
+            m.put("acceptanceCriteria", "Acceptance criteria");
+            m.put("constraints", "Constraints");
+            m.put("integrations", "Integrations");
+            return java.util.Collections.unmodifiableMap(m);
+        }
+
+        static RequirementSource of(int revisionNo, io.github.tony079.sdlc.requirement.api.RequirementView.Content c) {
+            Map<String, String> f = new HashMap<>();
+            put(f, "title", c.title());
+            put(f, "description", c.description());
+            put(f, "businessObjective", c.businessObjective());
+            put(f, "expectedOutcomes", c.expectedOutcomes());
+            put(f, "acceptanceCriteria", c.acceptanceCriteria());
+            put(f, "constraints", c.constraints());
+            put(f, "integrations", c.integrations());
+            return new RequirementSource(revisionNo, Map.copyOf(f));
+        }
+
+        private static void put(Map<String, String> f, String key, String value) {
+            if (value != null && !value.isBlank()) {
+                f.put(key, value);
+            }
+        }
     }
 
     record VerifiedItem(int ordinal, String itemKey, Kind kind, Kind proposedKind, String section, String statement,
@@ -61,15 +105,23 @@ final class EvidenceVerifier {
      * @param documents analysed documents of the frozen input set, by version id
      */
     static List<VerifiedItem> verify(Proposal proposal, Map<String, String> files, Map<UUID, DocumentSource> documents) {
+        return verify(proposal, files, documents, null);
+    }
+
+    /** @param requirement the analysed requirement revision, or null when requirement citations are not accepted */
+    static List<VerifiedItem> verify(Proposal proposal, Map<String, String> files, Map<UUID, DocumentSource> documents,
+                                     RequirementSource requirement) {
         List<VerifiedItem> out = new ArrayList<>();
         Map<String, Integer> keys = new HashMap<>();
         int ordinal = 0;
         for (Item item : proposal.items()) {
             List<VerifiedEvidence> valid = new ArrayList<>();
             for (Evidence evidence : item.evidence()) {
-                VerifiedEvidence checked = evidence.type() == EvidenceType.REPOSITORY
-                        ? checkRepository(evidence, item.statement(), files)
-                        : checkDocument(evidence, item.statement(), documents);
+                VerifiedEvidence checked = switch (evidence.type()) {
+                    case REPOSITORY -> checkRepository(evidence, item.statement(), files);
+                    case DOCUMENT -> checkDocument(evidence, item.statement(), documents);
+                    case REQUIREMENT -> checkRequirement(evidence, item.statement(), requirement);
+                };
                 if (checked != null) {
                     valid.add(checked);
                 }
@@ -147,6 +199,34 @@ final class EvidenceVerifier {
         }
         return new VerifiedEvidence(EvidenceType.DOCUMENT, null, null, null, null, versionId, source.extractionNo(),
                 chunk.ordinal(), chunk.label(), evidence.quote().strip(), supports(statement, chunk.text()));
+    }
+
+    /**
+     * Requirement citation: the field exists in the analysed revision and the quote appears in it. Field names are
+     * accepted in either form ("businessObjective" or "Business objective").
+     */
+    static VerifiedEvidence checkRequirement(Evidence evidence, String statement, RequirementSource requirement) {
+        if (requirement == null || evidence.path() == null) {
+            return null;
+        }
+        String key = fieldKey(evidence.path());
+        String text = key == null ? null : requirement.fields().get(key);
+        if (text == null || !contains(text, evidence.quote())) {
+            return null;
+        }
+        return new VerifiedEvidence(EvidenceType.REQUIREMENT, key, null, null, null, null, null, null,
+                RequirementSource.LABELS.get(key), evidence.quote().strip(), supports(statement, text),
+                requirement.revisionNo());
+    }
+
+    static String fieldKey(String name) {
+        String n = name.strip().toLowerCase(Locale.ROOT).replaceAll("[^a-z]", "");
+        for (String key : RequirementSource.LABELS.keySet()) {
+            if (key.toLowerCase(Locale.ROOT).equals(n)) {
+                return key;
+            }
+        }
+        return null;
     }
 
     /** The quote appears in the cited text, ignoring differences in whitespace; at least 3 visible characters. */

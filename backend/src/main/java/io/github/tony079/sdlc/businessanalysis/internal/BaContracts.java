@@ -33,7 +33,8 @@ final class BaContracts {
         }
     }
 
-    enum EvidenceType { REPOSITORY, DOCUMENT }
+    /** REQUIREMENT (v7): a field of the client's requirement, named in "path" (for example "description"). */
+    enum EvidenceType { REPOSITORY, DOCUMENT, REQUIREMENT }
 
     /** Phase A: inventory and relevance. */
     record PhaseA(@NotBlank @Size(max = 2000) String understanding,

@@ -35,13 +35,14 @@ final class ContextAssembler {
 
     static DataBlock requirement(Content content) {
         StringBuilder text = new StringBuilder();
-        append(text, "Title", content.title());
-        append(text, "Description", content.description());
-        append(text, "Business objective", content.businessObjective());
-        append(text, "Expected outcomes", content.expectedOutcomes());
-        append(text, "Acceptance criteria", content.acceptanceCriteria());
-        append(text, "Constraints", content.constraints());
-        append(text, "Integrations", content.integrations());
+        // v7: each field is shown with the key a requirement citation uses in "path".
+        append(text, "Title [path: title]", content.title());
+        append(text, "Description [path: description]", content.description());
+        append(text, "Business objective [path: businessObjective]", content.businessObjective());
+        append(text, "Expected outcomes [path: expectedOutcomes]", content.expectedOutcomes());
+        append(text, "Acceptance criteria [path: acceptanceCriteria]", content.acceptanceCriteria());
+        append(text, "Constraints [path: constraints]", content.constraints());
+        append(text, "Integrations [path: integrations]", content.integrations());
         return new DataBlock("requirement", text.toString());
     }
 

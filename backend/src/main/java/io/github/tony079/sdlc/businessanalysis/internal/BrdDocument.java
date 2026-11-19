@@ -161,6 +161,9 @@ record BrdDocument(DocKind kind, List<Field> cover, String organisation, String 
     }
 
     private static String evidence(EvidenceView e) {
+        if ("REQUIREMENT".equals(e.type())) {
+            return "Requirement: " + (e.chunkLabel() == null ? e.path() : e.chunkLabel());
+        }
         if ("REPOSITORY".equals(e.type())) {
             String sha = e.commitSha() == null ? "" : " @ " + e.commitSha().substring(0, Math.min(12, e.commitSha().length()));
             return e.path() + ", lines " + e.startLine() + "–" + e.endLine() + sha;

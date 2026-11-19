@@ -290,7 +290,7 @@ export function RequirementDetailPage() {
           {detail.state === 'SHARED_WITH_CLIENT' && (
             // GD-26: an approved BRD moves on to the Technical design stage.
             <div className="card">
-              <DesignPanel requirementId={detail.id} />
+              <DesignPanel requirementId={detail.id} newProduct={detail.content.kind === 'NEW_PRODUCT'} />
             </div>
           )}
           {detail.content.repositoryUrl && (

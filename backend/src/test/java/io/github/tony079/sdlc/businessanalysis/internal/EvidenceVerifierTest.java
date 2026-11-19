@@ -127,4 +127,50 @@ class EvidenceVerifierTest {
         String b = EvidenceVerifier.verify(new Proposal(null, List.of(item), List.of(), List.of()), Map.of(), Map.of()).get(0).itemKey();
         assertThat(a).isEqualTo(b);
     }
+
+    private static final EvidenceVerifier.RequirementSource REQ = new EvidenceVerifier.RequirementSource(2, Map.of(
+            "description", "Generate a portfolio website from an uploaded resume in PDF or DOCX format.",
+            "businessObjective", "Remove the manual effort of building a portfolio site."));
+
+    private static VerifiedItem withRequirement(Item item) {
+        return EvidenceVerifier.verify(new Proposal(null, List.of(item), List.of(), List.of()), Map.of(), Map.of(), REQ)
+                .get(0);
+    }
+
+    private static Evidence requirement(String field, String quote) {
+        return new Evidence(EvidenceType.REQUIREMENT, field, null, null, null, null, quote);
+    }
+
+    @Test
+    void aQuoteOfTheClientsRequirementVerifies() {
+        VerifiedItem item = withRequirement(fact("Resumes are uploaded as PDF or DOCX files.",
+                requirement("description", "uploaded resume in PDF or DOCX format")));
+        assertThat(item.kind()).isEqualTo(Kind.FACT);
+        assertThat(item.supportState()).isEqualTo("VERIFIED");
+        assertThat(item.evidence()).singleElement().satisfies(e -> {
+            assertThat(e.type()).isEqualTo(EvidenceType.REQUIREMENT);
+            assertThat(e.path()).isEqualTo("description");
+            assertThat(e.chunkLabel()).isEqualTo("Description");
+            assertThat(e.revisionNo()).isEqualTo(2);
+        });
+        // The field may be named by its label too.
+        assertThat(withRequirement(fact("Manual effort is removed.",
+                requirement("Business objective", "Remove the manual effort"))).supportState()).isEqualTo("VERIFIED");
+    }
+
+    @Test
+    void anInventedOrMisplacedRequirementQuoteIsRejected() {
+        // Not in the requirement at all.
+        VerifiedItem invented = withRequirement(fact("Users sign in with LinkedIn.",
+                requirement("description", "sign in with LinkedIn")));
+        assertThat(invented.kind()).isEqualTo(Kind.ASSUMPTION);
+        assertThat(invented.rejectedCitations()).isEqualTo(1);
+        // Real text, wrong field; unknown field; and no requirement source at all.
+        assertThat(withRequirement(fact("Resumes are PDF or DOCX.", requirement("businessObjective", "PDF or DOCX")))
+                .evidence()).isEmpty();
+        assertThat(withRequirement(fact("Resumes are PDF or DOCX.", requirement("notes", "PDF or DOCX"))).evidence())
+                .isEmpty();
+        assertThat(only(fact("Resumes are PDF or DOCX.", requirement("description", "PDF or DOCX"))).evidence())
+                .isEmpty();
+    }
 }

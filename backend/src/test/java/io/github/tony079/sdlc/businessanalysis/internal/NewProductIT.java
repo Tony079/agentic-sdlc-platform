@@ -43,6 +43,14 @@ class NewProductIT extends ApiIntegrationTest {
                  "items": [
                   {"kind": "ASSUMPTION", "section": "CONTEXT", "statement": "Candidates want a portfolio site from their resume.",
                    "evidence": [], "risk": null, "component": null},
+                  {"kind": "FACT", "section": "CONTEXT", "statement": "The client wants additional repayment metadata stored.",
+                   "evidence": [{"type": "REQUIREMENT", "path": "description", "startLine": null, "endLine": null,
+                                 "documentVersionId": null, "chunk": null,
+                                 "quote": "Store additional repayment metadata"}], "risk": null, "component": null},
+                  {"kind": "FACT", "section": "CONTEXT", "statement": "Users sign in with LinkedIn.",
+                   "evidence": [{"type": "REQUIREMENT", "path": "description", "startLine": null, "endLine": null,
+                                 "documentVersionId": null, "chunk": null,
+                                 "quote": "sign in with LinkedIn"}], "risk": null, "component": null},
                   {"kind": "RECOMMENDATION", "section": "SCENARIOS", "statement": "A candidate uploads a resume and reviews the extracted sections.",
                    "evidence": [], "risk": null, "component": null},
                   {"kind": "RECOMMENDATION", "section": "ACCEPTANCE_CRITERIA", "statement": "The site shows every extracted section.",
@@ -55,7 +63,10 @@ class NewProductIT extends ApiIntegrationTest {
                  "items": [
                   {"section": "ARCHITECTURE", "kind": "DECISION", "title": "Next.js, Spring Boot and PostgreSQL",
                    "detail": "Next.js 15 front end, Spring Boot 4 API, PostgreSQL 16; Apache PDFBox for parsing.",
-                   "component": "Portfolio app", "brdRefs": [], "evidence": []}
+                   "component": "Portfolio app", "brdRefs": [], "evidence": []},
+                  {"section": "TEST_PLAN", "kind": "TASK", "title": "Section coverage test",
+                   "detail": "Test that every extracted section is shown (acceptance-criteria-99f717e05ef9).",
+                   "component": null, "brdRefs": [], "evidence": []}
                  ], "openQuestions": []}""");
     }
 
@@ -114,7 +125,7 @@ class NewProductIT extends ApiIntegrationTest {
         assertThat(state(id)).isEqualTo("INTERNAL_REVIEW");
         assertThat(fake.calls().stream().noneMatch(c -> "ba.phase-a".equals(c.promptId()))).isTrue();
         var phaseB = fake.calls().stream().filter(c -> "ba.phase-b".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
-        assertThat(phaseB.promptVersion()).isEqualTo(6);
+        assertThat(phaseB.promptVersion()).isEqualTo(7);
         assertThat(phaseB.data().stream().filter(d -> d.label().startsWith("product type")).findFirst().orElseThrow()
                 .content()).startsWith("NEW_PRODUCT");
         assertThat(phaseB.data().stream().anyMatch(d -> d.label().contains("brief.txt") || d.content().contains("portfolio site lists")))
@@ -130,7 +141,20 @@ class NewProductIT extends ApiIntegrationTest {
         assertThat(messages).anyMatch(m -> m.startsWith("STEP Started the analysis") && m.contains("new product"));
         assertThat(messages).anyMatch(m -> m.startsWith("STEP Writing the BRD"));
         assertThat(messages).anyMatch(m -> m.startsWith("WARN The model's first answer broke a rule") && m.contains("feasibility.reasons"));
-        assertThat(messages).anyMatch(m -> m.startsWith("DONE BRD ready for review: 3 statements, verdict feasible"));
+        assertThat(messages).anyMatch(m -> m.startsWith("DONE BRD ready for review: 5 statements, verdict feasible"));
+
+        // GD-30: a quote of the client's requirement verifies as a FACT; an invented one is downgraded.
+        String itemsSql = """
+                SELECT i.kind || ' ' || i.support_state FROM app.brd_item i JOIN app.brd_version v ON v.id = i.brd_version_id
+                JOIN app.brd b ON b.id = v.brd_id WHERE b.requirement_id = ?::uuid AND i.statement LIKE ?
+                """;
+        assertThat(admin.queryForObject(itemsSql, String.class, id, "The client wants%")).isEqualTo("FACT VERIFIED");
+        assertThat(admin.queryForObject(itemsSql, String.class, id, "%LinkedIn%")).startsWith("ASSUMPTION");
+        assertThat(admin.queryForObject("""
+                SELECT count(*) FROM app.brd_item_evidence e JOIN app.brd_item i ON i.id = e.brd_item_id
+                JOIN app.brd_version v ON v.id = i.brd_version_id JOIN app.brd b ON b.id = v.brd_id
+                WHERE b.requirement_id = ?::uuid AND e.type = 'REQUIREMENT' AND e.requirement_revision_no IS NOT NULL
+                """, Integer.class, id)).isEqualTo(1);
         // Step lines never carry the model's text; draft lines do, labelled, and only for those who may see the BRD.
         assertThat(messages.stream().filter(m -> !m.startsWith("DRAFT")).noneMatch(m -> m.contains("Candidates want")))
                 .as("no model text in step lines").isTrue();
@@ -166,6 +190,11 @@ class NewProductIT extends ApiIntegrationTest {
         assertThat(alice.get("/api/v1/requirements/" + id + "/activity").body().valueStream()
                 .map(l -> l.path("stage").asString() + " " + l.path("message").asString()))
                 .anyMatch(m -> m.startsWith("DESIGN Design version 1 ready for review"));
+        // GD-30: a BRD item key written in the text is shown as a readable reference.
+        assertThat(admin.queryForObject("""
+                SELECT i.detail FROM app.tdd_item i JOIN app.tdd_version v ON v.id = i.tdd_version_id
+                WHERE v.requirement_id = ?::uuid AND i.title = 'Section coverage test'
+                """, String.class, id)).isEqualTo("Test that every extracted section is shown (BRD acceptance criteria 1).");
         var designCall = fake.calls().stream().filter(c -> "arch.design".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
         assertThat(designCall.data().stream().filter(d -> d.label().startsWith("repository summary")).findFirst()
                 .orElseThrow().content()).contains("design this as a new product");

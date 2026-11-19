@@ -229,9 +229,9 @@ class AnalysisRepository {
                 jdbc.sql("""
                         INSERT INTO app.brd_item_evidence (tenant_id, brd_item_id, type, repository_id, commit_sha, path,
                             start_line, end_line, range_sha256, document_version_id, extraction_no, chunk_ordinal,
-                            chunk_label, quote, support_passed)
+                            chunk_label, quote, support_passed, requirement_revision_no)
                         VALUES (:tenant, :item, :type, :repo, :sha, :path, :start, :end, :rangeHash, :docVersion,
-                                :extraction, :chunk, :label, :quote, :support)
+                                :extraction, :chunk, :label, :quote, :support, :revisionNo)
                         """).param("tenant", tenantId).param("item", itemId).param("type", e.type().name())
                         .param("repo", repo ? set.sourceOf(e.path()).repositoryId() : null)
                         .param("sha", repo ? set.sourceOf(e.path()).commitSha() : null)
@@ -239,6 +239,7 @@ class AnalysisRepository {
                         .param("rangeHash", e.rangeSha256()).param("docVersion", e.documentVersionId())
                         .param("extraction", e.extractionNo()).param("chunk", e.chunkOrdinal())
                         .param("label", e.chunkLabel()).param("quote", e.quote()).param("support", e.supportPassed())
+                        .param("revisionNo", e.revisionNo())
                         .update();
             }
         }

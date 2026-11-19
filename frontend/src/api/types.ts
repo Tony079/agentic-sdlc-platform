@@ -409,7 +409,8 @@ export interface RepositorySummary {
 // R1-M5/M6: BRD versions, review, client view, notifications.
 
 export interface BrdEvidence {
-  type: 'REPOSITORY' | 'DOCUMENT';
+  type: 'REPOSITORY' | 'DOCUMENT' | 'REQUIREMENT';
+  /** For REQUIREMENT: the requirement field key (label in chunkLabel). */
   path: string | null;
   startLine: number | null;
   endLine: number | null;

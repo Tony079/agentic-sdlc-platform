@@ -77,13 +77,16 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
     private final io.github.tony079.sdlc.billing.api.BrdQuotes quotes;
 
     private final ActivityLog activity;
+    private final io.github.tony079.sdlc.requirement.api.RequirementInputs requirements;
 
     BaCommitHandler(ActivityLog activity, AnalysisRepository repository, ClarificationRepository clarifications, ReviewRepository reviews,
                     RepositoryInputs repositories, DocumentProcessing documents,
                     InputSets inputSets, AnalysisStarter starter, WorkflowEngine workflow, AuditWriter audit,
                     Validator validator, JsonMapper json, PlatformTransactionManager transactionManager,
-                    io.github.tony079.sdlc.billing.api.BrdQuotes quotes) {
+                    io.github.tony079.sdlc.billing.api.BrdQuotes quotes,
+                    io.github.tony079.sdlc.requirement.api.RequirementInputs requirements) {
         this.activity = activity;
+        this.requirements = requirements;
         this.quotes = quotes;
         this.repository = repository;
         this.clarifications = clarifications;
@@ -107,7 +110,7 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
     }
 
     private record Loaded(PendingRow pending, InputSetRow inputSet, Map<UUID, DocumentSource> documents,
-                          Set<String> snapshotPaths) {
+                          Set<String> snapshotPaths, EvidenceVerifier.RequirementSource requirement) {
     }
 
     @Override
@@ -144,7 +147,7 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         } catch (IOException e) {
             throw JobFailure.retryable("SNAPSHOT_READ_FAILED", e);
         }
-        return new Outcome(pendingId, EvidenceVerifier.verify(proposal, files, loaded.documents()), null,
+        return new Outcome(pendingId, EvidenceVerifier.verify(proposal, files, loaded.documents(), loaded.requirement()), null,
                 proposal.clarifications(), proposal.feasibility());
     }
 
@@ -169,7 +172,12 @@ class BaCommitHandler implements JobHandler<BaCommitHandler.Outcome> {
         }
         Set<String> paths = new HashSet<>();
         repositories.inventory(set.sources(), 100_000, 0).files().forEach(f -> paths.add(f.path()));
-        return new Loaded(pending, set, sources, paths);
+        // Requirement citations are checked against the revision that was analysed; if the requirement has moved on,
+        // none verify (the result is stale anyway).
+        EvidenceVerifier.RequirementSource requirement = requirements.currentRevision(set.requirementId())
+                .filter(r -> r.revisionNo() == set.revisionNo())
+                .map(r -> EvidenceVerifier.RequirementSource.of(r.revisionNo(), r.content())).orElse(null);
+        return new Loaded(pending, set, sources, paths, requirement);
     }
 
     @Override

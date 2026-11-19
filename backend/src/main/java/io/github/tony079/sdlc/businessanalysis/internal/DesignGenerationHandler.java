@@ -154,10 +154,16 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
             describer.repaired(activity, requirementId, stage, versionId, design);
 
             Set<String> brdKeys = new LinkedHashSet<>();
-            inputs.brd().items().forEach(i -> brdKeys.add(i.itemKey()));
-            List<ItemRow> items = verify(design.output(), code, brdKeys);
+            Map<String, String> brdLabels = new HashMap<>();
+            Map<String, Integer> perSection = new HashMap<>();
+            inputs.brd().items().forEach(i -> {
+                brdKeys.add(i.itemKey());
+                int n = perSection.merge(i.section(), 1, Integer::sum);
+                brdLabels.put(i.itemKey(), "BRD " + sectionLabel(i.section()) + " " + n);
+            });
+            List<ItemRow> items = verify(design.output(), code, brdKeys, brdLabels);
             String questions = json.writeValueAsString(design.output().openQuestions().stream().map(String::strip).toList());
-            String summary = design.output().summary().strip();
+            String summary = readable(design.output().summary().strip(), brdLabels);
             long verified = items.stream().filter(i -> "VERIFIED".equals(i.supportState())).count();
             long flagged = items.stream().filter(i -> "FLAGGED".equals(i.supportState())).count();
             activity.done(requirementId, stage, versionId, "The model returned " + ActivityLog.count(items.size(), "design item")
@@ -249,6 +255,30 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
      * relate to the item (they are dropped, so a file cited only because it exists never counts as evidence).
      */
     List<ItemRow> verify(DesignContracts.Proposal proposal, Map<String, String> code, Set<String> brdKeys) {
+        return verify(proposal, code, brdKeys, Map.of());
+    }
+
+    /** "ACCEPTANCE_CRITERIA" reads as "acceptance criteria". */
+    static String sectionLabel(String section) {
+        return section == null ? "item" : section.toLowerCase(Locale.ROOT).replace('_', ' ');
+    }
+
+    /**
+     * BRD item keys never belong in the text (the model should use brdRefs): each one is replaced by a readable
+     * reference such as "BRD acceptance criteria 2".
+     */
+    static String readable(String text, Map<String, String> brdLabels) {
+        String out = text;
+        for (Map.Entry<String, String> e : brdLabels.entrySet()) {
+            if (out.contains(e.getKey())) {
+                out = out.replace(e.getKey(), e.getValue());
+            }
+        }
+        return out;
+    }
+
+    List<ItemRow> verify(DesignContracts.Proposal proposal, Map<String, String> code, Set<String> brdKeys,
+                         Map<String, String> brdLabels) {
         List<ItemRow> rows = new ArrayList<>();
         Map<String, Integer> used = new HashMap<>();
         int ordinal = 0;
@@ -277,7 +307,8 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
             String section = item.section().name();
             ordinal++;
             rows.add(new ItemRow(ordinal, key(section, item.title(), used), section, item.kind().name(),
-                    item.title().strip(), item.detail().strip(), blankToNull(item.component()),
+                    readable(item.title().strip(), brdLabels), readable(item.detail().strip(), brdLabels),
+                    blankToNull(item.component()),
                     json.writeValueAsString(refs), state, json.writeValueAsString(valid)));
         }
         return rows;

@@ -164,7 +164,7 @@ class DesignIT extends ApiIntegrationTest {
         assertThat(items.get(3).path("evidence").size()).isZero();
         // The agent was given the coverage checklist and the repository summary.
         var designCall = fake.calls().stream().filter(c -> "arch.design".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
-        assertThat(designCall.promptVersion()).isEqualTo(2);
+        assertThat(designCall.promptVersion()).isEqualTo(3);
         assertThat(designCall.data().stream().filter(d -> d.label().startsWith("checklist")).findFirst().orElseThrow()
                 .content()).contains(brdKey(s, "SCENARIOS")).contains(brdKey(s, "ACCEPTANCE_CRITERIA"));
         assertThat(designCall.data().stream().anyMatch(d -> d.label().startsWith("repository summary"))).isTrue();

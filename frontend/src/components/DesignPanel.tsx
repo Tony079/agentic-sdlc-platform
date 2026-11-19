@@ -137,7 +137,7 @@ function failureText(code: string | null): string {
  * review it and approve it (one may approve alone, after confirming so). The author follows it and may request
  * changes. Shows coverage of the BRD so gaps are visible.
  */
-export function DesignPanel({ requirementId }: { requirementId: string }) {
+export function DesignPanel({ requirementId, newProduct = false }: { requirementId: string; newProduct?: boolean }) {
   const queryClient = useQueryClient();
   const design = useQuery({
     queryKey: ['design', requirementId],
@@ -312,7 +312,8 @@ export function DesignPanel({ requirementId }: { requirementId: string }) {
                     <span className="label">{item.kind}</span> <strong>{item.title}</strong>
                     <div style={{ whiteSpace: 'pre-wrap', margin: '0.2rem 0' }}>{item.detail}</div>
                     <div className="small">
-                      {SUPPORT[item.supportState]}
+                      {newProduct && item.supportState === 'NOT_TRACED' ? 'New product (no existing code)'
+                        : SUPPORT[item.supportState]}
                       {item.component && ` · Component: ${item.component}`}
                       {item.brdRefs.length > 0 && ` · Addresses ${item.brdRefs.length} BRD statement${item.brdRefs.length > 1 ? 's' : ''}`}
                     </div>
