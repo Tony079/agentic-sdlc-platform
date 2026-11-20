@@ -35,6 +35,19 @@ function evidenceText(e: BrdEvidence): string {
   return `${e.fileName ?? 'document'}${e.chunkLabel ? `, ${e.chunkLabel}` : ''} (part ${e.chunk})`;
 }
 
+/** Citations of the same source (for example two passages of the requirement's description) are shown once. */
+function groupEvidence(evidence: BrdEvidence[]): { label: string; count: number; quotes: string[] }[] {
+  const groups = new Map<string, { label: string; count: number; quotes: string[] }>();
+  for (const e of evidence) {
+    const label = evidenceText(e);
+    const group = groups.get(label) ?? { label, count: 0, quotes: [] };
+    group.count += 1;
+    if (e.quote) group.quotes.push(e.quote);
+    groups.set(label, group);
+  }
+  return [...groups.values()];
+}
+
 /**
  * BRD statements grouped by section with their classification label (TDD 16.4) and evidence references. Quotes are
  * shown only when the server sent them (reviewers); client views never contain source excerpts (AC-EXT-29).
@@ -81,10 +94,11 @@ export function BrdItems({ items, renderActions }: { items: BrdItem[]; renderAct
                   </div>
                   {item.evidence.length > 0 && (
                     <ul className="evidence">
-                      {item.evidence.map((e, index) => (
-                        <li key={index}>
-                          <code>{evidenceText(e)}</code>
-                          {e.quote && <blockquote>{e.quote}</blockquote>}
+                      {groupEvidence(item.evidence).map((g) => (
+                        <li key={g.label}>
+                          <code>{g.label}</code>
+                          {g.quotes.length === 0 && g.count > 1 && <span className="small"> ({g.count} passages)</span>}
+                          {g.quotes.map((q, i) => <blockquote key={i}>{q}</blockquote>)}
                         </li>
                       ))}
                     </ul>

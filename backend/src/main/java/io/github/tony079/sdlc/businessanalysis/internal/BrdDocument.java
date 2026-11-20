@@ -157,7 +157,7 @@ record BrdDocument(DocKind kind, List<Field> cover, String organisation, String 
             details.add("Component: " + item.component());
         }
         return new Entry(KINDS.getOrDefault(item.kind(), item.kind()), item.statement(), String.join(" · ", details),
-                item.evidence().stream().map(BrdDocument::evidence).toList());
+                item.evidence().stream().map(BrdDocument::evidence).distinct().toList());
     }
 
     private static String evidence(EvidenceView e) {
