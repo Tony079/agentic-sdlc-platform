@@ -1,6 +1,6 @@
 # Garuda: Delivery plan stage
 
-Status: **proposed** (2026-11-20), for owner review before implementation. Decision to record: GD-34.
+Status: **decided** (owner, 2026-11-20), GD-34. Section 7 records the owner's decisions.
 
 An approved estimate moves the requirement to the next stage, **Delivery plan**. A Planning agent turns the approved
 design and estimate into a backlog of epics and user stories; Garuda (never the model) checks that every estimate work
@@ -70,15 +70,13 @@ version keeps everything not asked to change.
 status). Row-level security and guards as for estimates. Job `PLAN_GENERATION`, event `PlanRequested`, hand-over event
 `EstimateApproved`, prompt `plan.backlog` v1, timeline stage `PLAN`.
 
-## 7. Open points (owner to decide)
+## 7. Owner decisions (2026-11-20)
 
-1. **Who plans and who approves.** Proposed: Estimators also plan (they know the work items); a BRD Approver approves.
-   Alternatives: a new Planner role; or Technical Approvers plan.
-2. **Who sees the plan.** Proposed: the whole project, once approved (stories are working material for the team);
-   drafts only to planners and approvers. Alternative: same restriction as estimates.
-3. **Issue tracker.** Proposed: CSV and PDF exports now, plus a push to **GitHub Issues** of the project's repository
-   through the Garuda GitHub App (epics as milestones or labelled issues, stories as issues, acceptance criteria as
-   checklists). This needs the GitHub App to be granted issue-write permission, a change from its read-only use today.
-   Alternatives: Jira (needs a Jira site and API token per organisation); or exports only.
-4. **Sprints.** Proposed: Garuda proposes the sprint layout from capacity; planners can move stories. Alternative: no
-   sprints, a prioritised backlog only.
+1. **Roles.** Estimators plan (start, edit, accept flags, request revisions); a BRD Approver approves, alone only with
+   the explicit confirmation. No new role.
+2. **Visibility.** The approved plan is visible to the whole project (stories with effort in days, never money);
+   drafts only to Estimators and BRD Approvers.
+3. **Tracker.** CSV and PDF exports, plus a push to **GitHub Issues** of a repository registered to the project
+   (stories as issues with acceptance-criteria checklists, epics as milestones). The Garuda GitHub App must be granted
+   issue-write permission for this; until it is, the push is unavailable and says why. Built after the plan itself.
+4. **Sprints.** Garuda proposes sprints (1 to 4 weeks) with dates from the team's capacity; Estimators can move stories.
