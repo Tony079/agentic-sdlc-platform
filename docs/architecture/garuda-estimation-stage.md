@@ -1,6 +1,6 @@
 # Garuda: Estimation stage
 
-Status: **decided** (owner, 2026-11-20), GD-33. Section 7 records the owner's decisions.
+Status: **implemented** (2026-11-20), GD-33. Section 7 records the owner's decisions; section 8 the implementation notes.
 
 An approved technical design moves the requirement to the next stage, **Estimation**. An Estimation agent breaks
 the approved design into work items and proposes an effort range for each; Garuda (never the model) checks coverage
@@ -100,3 +100,18 @@ Job `ESTIMATE_GENERATION` (lease 300 s, runtime 30 min, 3 attempts), events `Est
 4. **Visibility.** Only the project's Estimators and BRD Approvers see the estimate, drafts and the approved version
    alike, and only they can export it. Other members (including the requirement's author, unless they hold one of
    these roles) see that an estimate exists and its status, not its content.
+
+## 8. Implementation notes
+
+- Migration `0055-estimation.sql`: role `ESTIMATOR` (also sees restricted requirements), `app.is_estimator`,
+  `app.sees_estimate`, the five tables with guards and row-level security, job `ESTIMATE_GENERATION`, events
+  `EstimateRequested` and `TddApproved`, timeline stage `ESTIMATE`, prompt `est.items` v1.
+- A member's session sees only its own project membership, so the hand-over to Estimators after design approval is
+  done by the worker on `TddApproved` (Estimators notified, or Organisation Admins when there are none).
+- Approval binds a review hash of the produced content plus every adjustment in effect; a change after the approver
+  opened the estimate is refused (`VERSION_CHANGED`).
+- An adjusted flagged item counts as decided; "Keep as proposed" records a `FLAG_ACCEPTED` decision.
+- Exports: PDF and Word through the shared document renderer, and CSV (UTF-8 with byte-order mark; a cell starting
+  with `=`, `+`, `-`, `@` is prefixed with `'` so a spreadsheet never evaluates it).
+- Timeline: for each role, effort / (people x working days); the dependency chain (expected effort along
+  `dependsOn`) sets a floor. A role with work but nobody in the team is assumed to have one person, and said so.

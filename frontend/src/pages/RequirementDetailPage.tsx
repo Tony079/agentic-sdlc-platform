@@ -13,6 +13,7 @@ import { fieldMessage } from '../components/RequirementForm';
 import { DocumentsPanel } from '../components/DocumentsPanel';
 import { BrdPanel } from '../components/BrdPanel';
 import { DesignPanel } from '../components/DesignPanel';
+import { EstimatePanel } from '../components/EstimatePanel';
 import { RepositoryLinkPanel } from '../components/RepositoryLinkPanel';
 import { SourcesPanel } from '../components/SourcesPanel';
 import { AnalysisRetryPanel } from '../components/AnalysisRetryPanel';
@@ -291,6 +292,12 @@ export function RequirementDetailPage() {
             // GD-26: an approved BRD moves on to the Technical design stage.
             <div className="card">
               <DesignPanel requirementId={detail.id} newProduct={detail.content.kind === 'NEW_PRODUCT'} />
+            </div>
+          )}
+          {detail.state === 'SHARED_WITH_CLIENT' && (
+            // GD-33: an approved design moves on to Estimation.
+            <div className="card">
+              <EstimatePanel requirementId={detail.id} />
             </div>
           )}
           {detail.content.repositoryUrl && (
