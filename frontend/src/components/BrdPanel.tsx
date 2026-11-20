@@ -3,10 +3,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import type { BrdHistoryEntry, ChangeRequest, ClientBrd, ClientReview, RequirementState } from '../api/types';
 import { money } from '../ui/money';
-import { Badge, Callout, formatDateTime, type Tone } from '../ui/components';
+import { Badge, Callout, Modal, formatDateTime, type Tone } from '../ui/components';
 import { BrdItems } from './BrdItems';
 import { ActivityTimeline } from './ActivityTimeline';
 import { FoldSection } from '../ui/Fold';
+import { useToast } from '../ui/Toast';
 
 const WAITING: Partial<Record<RequirementState, string>> = {
   ANALYSING: 'The BA agent is analysing the code and documents. The BRD will appear here for your review.',
@@ -170,6 +171,9 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
     .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
   const changeOpen = myChanges.some((c) => OPEN_CHANGE.has(c.status));
   const [text, setText] = useState('');
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenerateResult, setRegenerateResult] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
+  const toast = useToast();
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [changesOpen, setChangesOpen] = useState(false);
@@ -313,30 +317,62 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
                 )}
               </div>
               {['APPROVED', 'AUTHOR_REVIEW', 'AWAITING_APPROVAL'].includes(review.stage) && review.isAuthor && (
-                <div className="row" style={{ gap: '0.75rem', alignItems: 'center' }}>
-                  <button type="button" className="btn-secondary" disabled={busy} onClick={() => {
-                    if (!window.confirm('Regenerate the BRD from the same requirement with the current analysis rules?\n\n'
-                      + (review.stage === 'APPROVED'
-                        ? 'A new version is written and comes to you for review and approval; the approved version stays in '
-                          + 'force until then. A technical design in review is replaced, and an open change request is '
-                          + 'withdrawn. '
-                        : 'The version under review is replaced by a new one, which comes to you for review. ')
-                      + 'This is not a change request and is not charged.')) {
-                      return;
-                    }
-                    setBusy(true);
-                    api.post(`/api/v1/requirements/${requirementId}/brd/regenerate`)
-                      .then(async () => {
-                        setMessage({ tone: 'info', text: 'Regenerating the BRD. Follow the BA agent below; the new version comes to you for review.' });
-                        await queryClient.invalidateQueries();
-                      })
-                      .catch((e) => setMessage({ tone: 'danger', text: e instanceof ApiError ? e.message : 'The BRD could not be regenerated.' }))
-                      .finally(() => setBusy(false));
-                  }}>
-                    Regenerate BRD
-                  </button>
-                  <span className="small">A fresh version from the same requirement, with the latest analysis rules. Not charged.</span>
+                <div className="stack" style={{ gap: '0.4rem' }}>
+                  <div className="row" style={{ gap: '0.75rem', alignItems: 'center' }}>
+                    <button type="button" className="btn-secondary" disabled={busy} onClick={() => setRegenerating(true)}>
+                      Regenerate BRD
+                    </button>
+                    <span className="small">A fresh version from the same requirement, with the latest analysis rules. Not charged.</span>
+                  </div>
+                  {regenerateResult && (
+                    <Callout tone={regenerateResult.tone === 'danger' ? 'danger' : 'info'}>{regenerateResult.text}</Callout>
+                  )}
                 </div>
+              )}
+              {regenerating && (
+                <Modal
+                  title="Regenerate the BRD"
+                  description="A fresh version from the same requirement, written with the current analysis rules."
+                  onClose={() => setRegenerating(false)}
+                  footer={
+                    <>
+                      <button type="button" className="btn-secondary" onClick={() => setRegenerating(false)}>Cancel</button>
+                      <button type="button" className="btn-primary" disabled={busy} onClick={() => {
+                        setBusy(true);
+                        setRegenerateResult(null);
+                        api.post(`/api/v1/requirements/${requirementId}/brd/regenerate`)
+                          .then(async () => {
+                            setRegenerating(false);
+                            setRegenerateResult({ tone: 'info', text: 'Regenerating the BRD. Follow the BA agent on this page; the new version comes to you for review.' });
+                            toast.success('Regenerating the BRD.');
+                            await queryClient.invalidateQueries();
+                          })
+                          .catch((e) => {
+                            setRegenerating(false);
+                            const text = e instanceof ApiError ? e.message : 'The BRD could not be regenerated. Try again.';
+                            setRegenerateResult({ tone: 'danger', text });
+                            toast.error(text);
+                          })
+                          .finally(() => setBusy(false));
+                      }}>
+                        Regenerate BRD
+                      </button>
+                    </>
+                  }
+                >
+                  {review.stage === 'APPROVED' ? (
+                    <ul>
+                      <li>A new BRD version is written and comes to you for review, then to a BRD Approver.</li>
+                      <li>The approved version stays in force until the new one is approved.</li>
+                      <li>A technical design in review is replaced; an approved design stays, and a new design is started
+                        after the new BRD is approved.</li>
+                      <li>An open change request is withdrawn.</li>
+                    </ul>
+                  ) : (
+                    <p>The version under review is replaced by a new one, which comes to you for review.</p>
+                  )}
+                  <p className="small">This is not a change request and is not charged.</p>
+                </Modal>
               )}
               {review.stage === 'APPROVED' && review.isAuthor && <MyChangeRequests requests={myChanges} />}
               {review.stage === 'APPROVED' && review.isAuthor && !changeOpen && (

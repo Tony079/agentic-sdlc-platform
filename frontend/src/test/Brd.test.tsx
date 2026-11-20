@@ -60,6 +60,29 @@ describe('BrdPanel (client)', () => {
     expect(JSON.parse(String(post?.init.body))).toEqual({ text: 'Please also cover refunds.', acceptCharge: false });
   });
 
+  it('lets the author regenerate an approved BRD from a dialog and shows the result next to the button', async () => {
+    document.cookie = 'XSRF-TOKEN=b1; path=/';
+    const calls = mockFetch((url, init) => {
+      if (init.method === 'POST' && url.endsWith('/brd/regenerate')) return { status: 200, body: { status: 'REGENERATING' } };
+      if (url.endsWith('/change-requests')) return { status: 200, body: [] };
+      if (url.endsWith('/brd')) {
+        return { status: 200, body: { requirementId: 'r1', state: 'SHARED_WITH_CLIENT', version: version([item({})]),
+          review: review({ stage: 'APPROVED', unacceptedFlags: [], canAcceptFlags: false, canRequestChanges: false }) } };
+      }
+      return { status: 200, body: [] };
+    });
+    renderWithProviders(<BrdPanel requirementId="r1" requirementState="SHARED_WITH_CLIENT" />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Regenerate BRD' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('The approved version stays in force until the new one is approved.');
+    expect(calls.some((c) => c.url.endsWith('/brd/regenerate'))).toBe(false);
+    const confirm = Array.from(dialog.querySelectorAll('button')).find((b) => b.textContent === 'Regenerate BRD');
+    await user.click(confirm as HTMLButtonElement);
+    expect(calls.some((c) => c.url === '/api/v1/requirements/r1/brd/regenerate' && c.init.method === 'POST')).toBe(true);
+    expect(await screen.findByText(/Regenerating the BRD. Follow the BA agent/)).toBeInTheDocument();
+  });
+
   it('lets a BRD Approver approve a confirmed BRD bound to its content', async () => {
     document.cookie = 'XSRF-TOKEN=b2; path=/';
     window.confirm = () => true;
