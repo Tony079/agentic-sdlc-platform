@@ -32,7 +32,7 @@ final class DesignContracts {
     }
 
     /** Call 2: the design proposal. */
-    record Proposal(@NotBlank @Size(max = 3000) String summary, @NotNull @Size(max = 60) List<@Valid Item> items,
+    record Proposal(@NotBlank @Size(max = 3000) String summary, @NotNull @Size(max = 150) List<@Valid Item> items,
                     @NotNull @Size(max = 10) List<@NotBlank @Size(max = 1000) String> openQuestions) {
         Proposal {
             summary = Lenient.clip(summary, 3000);

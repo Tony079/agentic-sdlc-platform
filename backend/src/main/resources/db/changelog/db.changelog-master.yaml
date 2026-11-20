@@ -96,3 +96,5 @@ databaseChangeLog:
   - include: { file: changes/0051-brd-regenerate-and-product-type.sql, relativeToChangelogFile: true }
   # O-01 (2026-11-20): register the model configured in .env with its prices (runs on every migration).
   - include: { file: changes/0052-configured-model.sql, relativeToChangelogFile: true }
+  # 2026-11-20: Architect design prompt v4 (longer designs, concise items).
+  - include: { file: changes/0053-arch-design-v4.sql, relativeToChangelogFile: true }

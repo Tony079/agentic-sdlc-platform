@@ -53,6 +53,12 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
 
     static final String JOB_TYPE = "BA_ANALYSIS";
     static final Duration MODEL_RETRY_DELAY = Duration.ofMinutes(2);
+    /**
+     * The BRD and the design are long answers: a large model can stream for several minutes. The cap stays within
+     * the job's runtime limit (30 minutes); output tokens are further capped by the registered model's maximum.
+     */
+    static final Duration LONG_CALL_TIMEOUT = Duration.ofMinutes(10);
+    static final int LONG_OUTPUT_TOKENS = 32768;
     static final Duration NOT_CONFIGURED_DELAY = Duration.ofMinutes(15);
 
     record Outcome(String proposalJson, String understanding, String provider, String modelId) {
@@ -194,9 +200,9 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
                         json.writeValueAsString(notes)));
             }
             activity.step(requirementId, ActivityLog.Stage.BRD, run, "Writing the BRD: context, impact, scenarios, risks, "
-                    + "acceptance criteria and a feasibility verdict. This usually takes 30 to 90 seconds.");
+                    + "acceptance criteria and a feasibility verdict. This takes from about a minute to several minutes for a large requirement.");
             ModelResponse<Proposal> phaseB = gateway.generate(new ModelRequest<>(BaPrompts.PHASE_B, phaseBData,
-                    Proposal.class, job.aggregateId(), 16384, null)
+                    Proposal.class, job.aggregateId(), LONG_OUTPUT_TOKENS, LONG_CALL_TIMEOUT)
                     .withProgress(DraftWatcher.brd(activity, requirementId, run, json)));
             repaired(requirementId, ActivityLog.Stage.BRD, run, phaseB);
             activity.done(requirementId, ActivityLog.Stage.BRD, run, "The model returned "

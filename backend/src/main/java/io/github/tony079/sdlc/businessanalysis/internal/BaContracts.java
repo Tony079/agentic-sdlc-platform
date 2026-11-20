@@ -57,7 +57,7 @@ final class BaContracts {
 
     /** Phase B: the BRD proposal. */
     /** feasibility is optional for compatibility with results proposed before GD-24 (treated as not assessed). */
-    record Proposal(@Valid Feasibility feasibility, @NotNull @Size(max = 60) List<@Valid Item> items,
+    record Proposal(@Valid Feasibility feasibility, @NotNull @Size(max = 100) List<@Valid Item> items,
                     @NotNull @Size(max = 30) List<@Valid Unsupported> unsupported,
                     @NotNull @Size(max = 10) List<@Valid ClarificationProposal> clarifications) {
         Proposal {

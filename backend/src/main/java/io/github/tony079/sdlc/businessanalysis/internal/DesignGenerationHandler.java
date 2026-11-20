@@ -147,9 +147,10 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
             designData.addAll(ContextAssembler.fileExcerpts(code, relevant));
             designData.addAll(ContextAssembler.inventory(inputs.inventory()));
             activity.step(requirementId, stage, versionId, "Writing the design: architecture, components, APIs, data "
-                    + "model, security, rollout and test plan. This usually takes 30 to 90 seconds.");
+                    + "model, security, rollout and test plan. This takes from about a minute to several minutes for a large requirement.");
             ModelResponse<DesignContracts.Proposal> design = gateway.generate(new ModelRequest<>(BaPrompts.ARCH_DESIGN,
-                    designData, DesignContracts.Proposal.class, inputs.version().requirementId(), 16384, null)
+                    designData, DesignContracts.Proposal.class, inputs.version().requirementId(),
+                    BaAnalysisHandler.LONG_OUTPUT_TOKENS, BaAnalysisHandler.LONG_CALL_TIMEOUT)
                     .withProgress(DraftWatcher.design(activity, requirementId, versionId, DesignService.SECTIONS, json)));
             describer.repaired(activity, requirementId, stage, versionId, design);
 

@@ -81,6 +81,9 @@ class DefaultModelGateway implements ModelGateway {
     private final int maxToolRounds;
     private final int maxToolCalls;
 
+    /** A call allowed this long is not retried inside the gateway when it times out. */
+    static final Duration LONG_TIMEOUT = Duration.ofMinutes(5);
+
     DefaultModelGateway(ModelProviderRegistry registry, ModelCallStore store, Validator validator, MeterRegistry meters,
                         PlatformTransactionManager transactionManager,
                         @Value("${sdlc.model.timeout:120s}") Duration defaultTimeout,
@@ -180,7 +183,10 @@ class DefaultModelGateway implements ModelGateway {
                     case RATE_LIMITED -> Code.RATE_LIMITED;
                     case ERROR -> Code.PROVIDER_ERROR;
                 };
-                if ((code == Code.TIMEOUT || code == Code.PROVIDER_UNAVAILABLE) && transientLeft > 0) {
+                // After a long call timed out, retrying at once would only repeat the wait (and could outlast the job);
+                // the caller's job retries later instead.
+                boolean longTimeout = code == Code.TIMEOUT && timeout.compareTo(LONG_TIMEOUT) >= 0;
+                if ((code == Code.TIMEOUT || code == Code.PROVIDER_UNAVAILABLE) && transientLeft > 0 && !longTimeout) {
                     transientLeft--;
                     sleep(retryBackoff);
                     continue;

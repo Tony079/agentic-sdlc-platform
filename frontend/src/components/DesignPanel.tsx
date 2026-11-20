@@ -223,7 +223,7 @@ export function DesignPanel({ requirementId, newProduct = false }: { requirement
         <>
           <p>
             The Architect agent is writing the design from the approved BRD (and the code, when the project has any).
-            This usually takes one or two minutes; you are notified when it is ready.
+            A large design can take several minutes; you are notified when it is ready.
           </p>
           <ActivityTimeline requirementId={requirementId} stage="DESIGN" live title="What the Architect agent is doing" />
         </>
