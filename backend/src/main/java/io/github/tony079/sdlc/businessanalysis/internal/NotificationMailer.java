@@ -149,6 +149,22 @@ class NotificationMailer {
             Map.entry("TDD_FAILED", new String[] {"Technical design could not be written: %s",
                     "The technical design could not be written", "The Architect agent could not produce the technical "
                             + "design for %s. You can try again from the requirement page.", "Try again", null}),
+            // GD-33: estimation. Only counts and links, never figures (estimates are for Estimators and BRD Approvers).
+            Map.entry("ESTIMATE_HANDOVER", new String[] {"Estimate to start: %s", "A technical design is ready to estimate",
+                    "The technical design for %s was approved and handed to you for estimation.", "Start the estimate",
+                    null}),
+            Map.entry("ESTIMATE_NO_ESTIMATOR", new String[] {"No Estimator for %s", "A project needs an Estimator",
+                    "The technical design for %s was approved, but its project has no Estimator. Assign one so the "
+                            + "estimate can start.", "Open the project", null}),
+            Map.entry("ESTIMATE_READY_FOR_REVIEW", new String[] {"Estimate ready for your review: %s",
+                    "An estimate is ready for review", "The Estimation agent has written an estimate for %s. Review and "
+                            + "adjust it before a BRD Approver approves it.", "Review the estimate", null}),
+            Map.entry("ESTIMATE_APPROVED", new String[] {"Estimate approved: %s", "The estimate was approved",
+                    "The estimate for %s was approved. You can download it as PDF, Word or a spreadsheet.",
+                    "Open the estimate", null}),
+            Map.entry("ESTIMATE_FAILED", new String[] {"Estimate could not be written: %s",
+                    "The estimate could not be written", "The Estimation agent could not produce the estimate for %s. "
+                            + "You can try again from the requirement page.", "Try again", null}),
             Map.entry("CLARIFICATION_ASSIGNED", new String[] {"Questions about %s need your answer",
                     "The BA agent has questions for you",
                     "The BA agent needs your answers about %s before it can finish the BRD. The analysis continues "

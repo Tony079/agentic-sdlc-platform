@@ -48,6 +48,10 @@ public final class EventTypes {
     public static final String SOURCES_ROUND_OPENED = "SourcesRoundOpened";
     /** GD-26: a technical design was requested (or retried); the worker enqueues TDD_GENERATION. */
     public static final String TDD_REQUESTED = "TddRequested";
+    /** GD-33: a technical design was approved; the worker hands it to the project's Estimators. */
+    public static final String TDD_APPROVED = "TddApproved";
+    /** GD-33: an estimate version is to be written by the Estimation agent. */
+    public static final String ESTIMATE_REQUESTED = "EstimateRequested";
 
     private static final Map<String, Integer> VERSIONS = Map.ofEntries(
             Map.entry(REQUIREMENT_SUBMITTED, 1),
@@ -87,7 +91,9 @@ public final class EventTypes {
             Map.entry(ENVIRONMENT_BRANCHES_CHANGED, 1),
             Map.entry(BRD_QUOTE_ACCEPTED, 1),
             Map.entry(SOURCES_ROUND_OPENED, 1),
-            Map.entry(TDD_REQUESTED, 1));
+            Map.entry(TDD_REQUESTED, 1),
+            Map.entry(ESTIMATE_REQUESTED, 1),
+            Map.entry(TDD_APPROVED, 1));
 
     private EventTypes() {
     }

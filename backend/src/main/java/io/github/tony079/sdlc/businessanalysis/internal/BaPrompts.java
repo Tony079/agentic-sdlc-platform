@@ -23,6 +23,9 @@ final class BaPrompts {
     static final PromptTemplate ARCH_FILES = load("arch.files", 1, "prompts/arch-files-v1.txt");
     static final PromptTemplate ARCH_DESIGN = load("arch.design", 5, "prompts/arch-design-v5.txt");
 
+    /** GD-33 Estimation agent: work items with effort ranges from the approved design. */
+    static final PromptTemplate EST_ITEMS = load("est.items", 1, "prompts/est-items-v1.txt");
+
     private BaPrompts() {
     }
 

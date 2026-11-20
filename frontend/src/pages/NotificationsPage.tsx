@@ -18,6 +18,11 @@ const KINDS: Record<string, string> = {
   TDD_READY_FOR_REVIEW: 'A technical design is ready for review.',
   TDD_APPROVED: 'A technical design was approved.',
   TDD_FAILED: 'A technical design could not be written. You can try again from the requirement.',
+  ESTIMATE_HANDOVER: 'An approved technical design was handed to you for estimation.',
+  ESTIMATE_NO_ESTIMATOR: 'A design was approved, but its project has no Estimator. Assign one to start the estimate.',
+  ESTIMATE_READY_FOR_REVIEW: 'An estimate is ready for review.',
+  ESTIMATE_APPROVED: 'An estimate was approved.',
+  ESTIMATE_FAILED: 'An estimate could not be written. You can try again from the requirement.',
 };
 
 interface NotificationSettings {

@@ -39,5 +39,10 @@ public interface RequirementDirectory {
         public boolean technicalApprover() {
             return myRoles.contains(io.github.tony079.sdlc.project.api.ProjectRole.TECHNICAL_APPROVER);
         }
+
+        /** GD-33: owns the Estimation stage in the project. */
+        public boolean estimator() {
+            return myRoles.contains(io.github.tony079.sdlc.project.api.ProjectRole.ESTIMATOR);
+        }
     }
 }

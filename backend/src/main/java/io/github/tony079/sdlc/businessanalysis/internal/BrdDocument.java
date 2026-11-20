@@ -29,7 +29,8 @@ record BrdDocument(DocKind kind, List<Field> cover, String organisation, String 
     /** Which document this is; the renderers take titles and short names from it. */
     enum DocKind {
         BRD("Business Requirements Document", "BRD"),
-        TDD("Technical Design Document", "TDD");
+        TDD("Technical Design Document", "TDD"),
+        ESTIMATE("Estimate", "EST");
 
         final String title;
         final String shortName;

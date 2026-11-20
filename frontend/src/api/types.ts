@@ -9,7 +9,7 @@ export interface Me {
 }
 
 export type OrgRole = 'ORG_ADMIN' | 'MEMBER';
-export type ProjectRole = 'REQUIREMENT_AUTHOR' | 'BRD_APPROVER' | 'TECHNICAL_APPROVER' | 'VIEWER';
+export type ProjectRole = 'REQUIREMENT_AUTHOR' | 'BRD_APPROVER' | 'TECHNICAL_APPROVER' | 'ESTIMATOR' | 'VIEWER';
 
 export interface Project {
   id: string;

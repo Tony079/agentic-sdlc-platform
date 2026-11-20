@@ -38,8 +38,9 @@ class SchemaSecurityIT {
                 "document", "document_chunk", "document_decision",
                 "document_extraction", "document_version", "environment", "environment_branch",
                 "environment_change_request",
+                "estimate_adjustment", "estimate_decision", "estimate_item", "estimate_version",
                 "idempotency_record", "job", "job_attempt", "model_call_record", "notification",
-                "outbox_event", "processed_event", "project", "project_member", "project_repository", "release_approval", "repository",
+                "outbox_event", "processed_event", "project", "project_estimate_defaults", "project_member", "project_repository", "release_approval", "repository",
                 "repository_file", "repository_link_request", "repository_snapshot", "requirement",
                 "requirement_closure", "requirement_key_counter", "requirement_repository", "requirement_repository_link", "requirement_revision", "retention_policy", "security_finding", "security_scan_run", "stage_execution",
                 "tdd_decision", "tdd_item", "tdd_version", "user_invitation", "workflow_instance", "workflow_transition");
@@ -50,7 +51,11 @@ class SchemaSecurityIT {
                 "environment_branch", "environment_change_request", "model_call_record",
                 "notification", "project", "project_member", "release_approval", "repository_link_request",
                 "requirement", "requirement_closure", "requirement_repository", "requirement_repository_link",
-                "requirement_revision", "tdd_decision", "tdd_version", "workflow_instance");
+                "requirement_revision", "tdd_decision", "tdd_version", "workflow_instance",
+                "estimate_version");
+        // GD-33: estimate content is restricted further, to the project's Estimators and BRD Approvers.
+        java.util.Set<String> estimateScoped = java.util.Set.of("estimate_item", "estimate_adjustment",
+                "estimate_decision", "project_estimate_defaults");
 
         for (String table : tenantTables) {
             Map<String, Object> rls = admin.queryForMap("""
@@ -73,7 +78,11 @@ class SchemaSecurityIT {
             assertThat(permissive.get(0)).containsEntry("policyname", "tenant_isolation").containsEntry("cmd", "ALL");
             assertThat((String) permissive.get(0).get("qual")).contains("tenant_id = app.current_tenant()");
             assertThat((String) permissive.get(0).get("with_check")).contains("tenant_id = app.current_tenant()");
-            if (projectScoped.contains(table)) {
+            if (estimateScoped.contains(table)) {
+                assertThat(restrictive).as(table).hasSize(1);
+                assertThat(restrictive.get(0)).containsEntry("policyname", "estimate_access").containsEntry("cmd", "ALL");
+                assertThat((String) restrictive.get(0).get("qual")).contains("sees_estimate(project_id)");
+            } else if (projectScoped.contains(table)) {
                 assertThat(restrictive).as(table).hasSize(1);
                 assertThat(restrictive.get(0)).containsEntry("policyname", "project_access").containsEntry("cmd", "ALL");
                 // Inactive without a signed-in client member (staff, worker): it only ever narrows the tenant policy.

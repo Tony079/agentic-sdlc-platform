@@ -91,9 +91,12 @@ class DesignService {
     private final AuditWriter audit;
     private final JsonMapper json;
     private final ActivityLog activity;
+    private final EstimateRepository estimates;
 
     DesignService(DesignRepository designs, ReviewRepository reviews, RequirementDirectory requirements,
-                  OutboxPublisher outbox, AuditWriter audit, JsonMapper json, ActivityLog activity) {
+                  OutboxPublisher outbox, AuditWriter audit, JsonMapper json, ActivityLog activity,
+                  EstimateRepository estimates) {
+        this.estimates = estimates;
         this.activity = activity;
         this.designs = designs;
         this.reviews = reviews;
@@ -118,7 +121,12 @@ class DesignService {
         Access a = access(requirementId);
         List<ActivityLog.Entry> lines = activity.list(requirementId, Math.max(0, after));
         // Draft lines are the model's unchecked text: only those who may see the unapproved BRD or design see them.
-        return a.insider() ? lines : lines.stream().filter(l -> !"DRAFT".equals(l.kind())).toList();
+        // GD-33: estimate lines (even step lines, which name counts) only for Estimators and BRD Approvers.
+        boolean estimateInsider = a.approver() || estimates.isEstimator(a.projectId());
+        return lines.stream()
+                .filter(l -> !"ESTIMATE".equals(l.stage()) || estimateInsider)
+                .filter(l -> !"DRAFT".equals(l.kind()) || ("ESTIMATE".equals(l.stage()) ? estimateInsider : a.insider()))
+                .toList();
     }
 
     @Transactional
@@ -147,11 +155,13 @@ class DesignService {
                 };
         Integer brdNo = releasedBrd == null ? null : releasedBrd.versionNo();
         boolean outdated = shown != null && releasedBrd != null && !releasedBrd.id().equals(shown.brdVersionId());
+        // Members see only their own membership (row-level security), so the count is only known for a Technical
+        // Approver (at least themselves); others are told who acts next without claiming there is nobody.
         int technicalApprovers = designs.technicalApprovers(a.projectId()).size();
         String blocked = null;
-        if (releasedBrd != null && technicalApprovers == 0) {
-            blocked = "This project has no Technical Approver. Ask your Organisation Admin to assign one; the technical "
-                    + "design starts once they do.";
+        if (releasedBrd != null && shown == null && !a.technical()) {
+            blocked = "Waiting for a Technical Approver of the project to start the technical design. If the project has "
+                    + "none, your Organisation Admin can assign one.";
         } else if (inReview && a.technical() && !unaccepted.isEmpty()) {
             blocked = unaccepted.size() + " flagged design item(s) need your decision before you approve.";
         }
@@ -327,6 +337,10 @@ class DesignService {
         designs.setStatus(v.id(), "APPROVED");
         reviews.notify(TenantContext.requireTenant(), designs.requirementOwner(requirementId), "TDD_APPROVED",
                 requirementId);
+        // GD-33: the worker hands the approved design to the project's Estimators (a member's session sees only its
+        // own membership, so the hand-over cannot be decided here).
+        outbox.publish("REQUIREMENT", requirementId, EventTypes.TDD_APPROVED,
+                Map.of("requirementId", requirementId.toString(), "tddVersionId", v.id().toString()));
         audit.record(AuditAction.TDD_APPROVED, "TDD_VERSION", v.id(), AuditResult.SUCCESS);
         return state(requirementId);
     }

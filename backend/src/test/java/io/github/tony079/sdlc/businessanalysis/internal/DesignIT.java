@@ -131,7 +131,7 @@ class DesignIT extends ApiIntegrationTest {
         // No Technical Approver yet: the requirement says so and the Organisation Admin was told.
         JsonNode none = alice.get(design).body();
         assertThat(none.path("review").path("technicalApprovers").asInt()).isZero();
-        assertThat(none.path("review").path("blockedReason").asString()).contains("no Technical Approver");
+        assertThat(none.path("review").path("blockedReason").asString()).contains("Waiting for a Technical Approver");
         assertThat(aaron.get("/api/v1/notifications").body().valueStream().map(n -> n.path("kind").asString()))
                 .contains("TDD_NO_TECHNICAL_APPROVER");
         // The author and the BRD Approver cannot start it.

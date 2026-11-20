@@ -100,3 +100,5 @@ databaseChangeLog:
   - include: { file: changes/0053-arch-design-v4.sql, relativeToChangelogFile: true }
   # 2026-11-20: Architect design prompt v5 (a redesign revises the previous version).
   - include: { file: changes/0054-arch-design-v5.sql, relativeToChangelogFile: true }
+  # GD-33 (2026-11-20): Estimation stage, Estimator role.
+  - include: { file: changes/0055-estimation.sql, relativeToChangelogFile: true }

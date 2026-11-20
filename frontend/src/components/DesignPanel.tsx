@@ -208,10 +208,8 @@ export function DesignPanel({ requirementId, newProduct = false }: { requirement
       }
     >
 
-      {review.blockedReason && review.technicalApprovers === 0 && (
-        <Callout tone="warning" title="No Technical Approver">{review.blockedReason}</Callout>
-      )}
-      {review.stage === 'NOT_STARTED' && review.technicalApprovers > 0 && (
+      {review.stage === 'NOT_STARTED' && review.blockedReason && <Callout tone="info">{review.blockedReason}</Callout>}
+      {review.stage === 'NOT_STARTED' && (
         <p>
           The BRD is approved and handed to the project&apos;s Technical Approvers. The Architect agent writes the
           technical design: components, API and data changes, security, rollout and a test plan, checked against the code
@@ -357,7 +355,7 @@ export function DesignPanel({ requirementId, newProduct = false }: { requirement
                 {review.approvalNote && ` · ${review.approvalNote}`}
               </p>
             )}
-            {review.blockedReason && review.technicalApprovers > 0 && <Callout tone="info">{review.blockedReason}</Callout>}
+            {review.stage === 'IN_REVIEW' && review.blockedReason && <Callout tone="info">{review.blockedReason}</Callout>}
             {review.stage === 'IN_REVIEW' && !review.isTechnicalApprover && (
               <p className="small">
                 A Technical Approver reviews and approves this design.

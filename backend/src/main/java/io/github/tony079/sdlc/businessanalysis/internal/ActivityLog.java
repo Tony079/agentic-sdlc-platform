@@ -26,7 +26,7 @@ class ActivityLog {
     private static final Logger log = LoggerFactory.getLogger(ActivityLog.class);
     private static final int MAX = 600;
 
-    enum Stage { BRD, DESIGN }
+    enum Stage { BRD, DESIGN, ESTIMATE }
 
     enum Kind { STEP, DONE, WARN, FAIL, DRAFT }
 

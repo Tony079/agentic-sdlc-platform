@@ -223,6 +223,7 @@ export const ROLE_LABELS: Record<string, string> = {
   REQUIREMENT_AUTHOR: 'Requirement Author',
   BRD_APPROVER: 'BRD Approver',
   TECHNICAL_APPROVER: 'Technical Approver',
+  ESTIMATOR: 'Estimator',
   VIEWER: 'Viewer',
 };
 
@@ -236,7 +237,7 @@ export function RoleBadge({ role }: { role: string | null | undefined }) {
     return <Badge tone="neutral">No access</Badge>;
   }
   const tone: Tone = role === 'ORG_ADMIN' || role === 'BRD_APPROVER' ? 'primary'
-    : role === 'TECHNICAL_APPROVER' ? 'violet' : role === 'REQUIREMENT_AUTHOR' ? 'info' : 'neutral';
+    : role === 'TECHNICAL_APPROVER' || role === 'ESTIMATOR' ? 'violet' : role === 'REQUIREMENT_AUTHOR' ? 'info' : 'neutral';
   return <Badge tone={tone}>{ROLE_LABELS[role] ?? role}</Badge>;
 }
 

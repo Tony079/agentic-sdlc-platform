@@ -19,7 +19,9 @@ public enum ProjectRole {
     /** Also approves BRDs, decides change requests, authorises repositories and sees restricted requirements. */
     BRD_APPROVER,
     /** GD-27: owns the Technical design stage: starts, reviews and approves designs; sees restricted requirements. */
-    TECHNICAL_APPROVER;
+    TECHNICAL_APPROVER,
+    /** GD-33: owns the Estimation stage: starts, reviews and adjusts estimates (a BRD Approver approves them). */
+    ESTIMATOR;
 
     /** May create requirements and work on their own ones. */
     public static boolean canRequest(Collection<ProjectRole> roles) {
@@ -31,7 +33,7 @@ public enum ProjectRole {
         return roles.contains(BRD_APPROVER);
     }
 
-    /** Valid combination: one to four distinct roles; Viewer only on its own. */
+    /** Valid combination: distinct roles; Viewer only on its own. */
     public static boolean valid(Collection<ProjectRole> roles) {
         if (roles == null || roles.isEmpty() || roles.stream().anyMatch(java.util.Objects::isNull)) {
             return false;

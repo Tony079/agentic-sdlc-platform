@@ -1,12 +1,13 @@
 import type { ProjectRole } from '../api/types';
 import { ROLE_LABELS } from '../ui/components';
 
-export const PROJECT_ROLES: ProjectRole[] = ['REQUIREMENT_AUTHOR', 'BRD_APPROVER', 'TECHNICAL_APPROVER', 'VIEWER'];
+export const PROJECT_ROLES: ProjectRole[] = ['REQUIREMENT_AUTHOR', 'BRD_APPROVER', 'TECHNICAL_APPROVER', 'ESTIMATOR', 'VIEWER'];
 
 export const ROLE_HELP: Record<ProjectRole, string> = {
   REQUIREMENT_AUTHOR: 'Creates requirements, uploads documents, answers clarifications and reviews the BRD of their own requirements.',
   BRD_APPROVER: 'Approves BRDs, decides change requests and repository links, and sees restricted requirements.',
   TECHNICAL_APPROVER: 'Owns the technical design: starts it after BRD approval, reviews it and approves it.',
+  ESTIMATOR: 'Owns the estimate: starts it after design approval, reviews and adjusts it; a BRD Approver approves it. Only Estimators and BRD Approvers see estimates.',
   VIEWER: 'Reads requirements, approved BRDs and designs of the project; cannot change anything. Held on its own.',
 };
 
