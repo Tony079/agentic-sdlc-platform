@@ -161,6 +161,15 @@ class EstimateRepository {
                         rs.getObject(7, OffsetDateTime.class))).list();
     }
 
+    /** Adjustments without who made them: for the worker, which may not read people's names. Oldest first. */
+    List<AdjustmentRow> adjustmentFigures(UUID versionId) {
+        return jdbc.sql("""
+                SELECT item_key, low_days, likely_days, high_days FROM app.estimate_adjustment
+                WHERE estimate_version_id = :v ORDER BY adjusted_at, id
+                """).param("v", versionId).query((rs, n) -> new AdjustmentRow(rs.getString(1), rs.getBigDecimal(2),
+                        rs.getBigDecimal(3), rs.getBigDecimal(4), null, null, null)).list();
+    }
+
     void insertDecision(UUID tenantId, UUID projectId, UUID requirementId, UUID versionId, String kind, String itemKey,
                         String note, UUID decidedBy) {
         jdbc.sql("""
@@ -200,6 +209,12 @@ class EstimateRepository {
                 SELECT id FROM app.tdd_version WHERE requirement_id = :r AND status = 'APPROVED'
                 ORDER BY version_no DESC LIMIT 1
                 """).param("r", requirementId).query(UUID.class).optional();
+    }
+
+    /** The approved BRD version a design was made from. */
+    Optional<UUID> brdVersionOfDesign(UUID tddVersionId) {
+        return jdbc.sql("SELECT brd_version_id FROM app.tdd_version WHERE id = :d").param("d", tddVersionId)
+                .query(UUID.class).optional();
     }
 
     boolean isEstimator(UUID projectId) {

@@ -124,8 +124,10 @@ class DesignService {
         // GD-33: estimate lines (even step lines, which name counts) only for Estimators and BRD Approvers.
         boolean estimateInsider = a.approver() || estimates.isEstimator(a.projectId());
         return lines.stream()
-                .filter(l -> !"ESTIMATE".equals(l.stage()) || estimateInsider)
-                .filter(l -> !"DRAFT".equals(l.kind()) || ("ESTIMATE".equals(l.stage()) ? estimateInsider : a.insider()))
+                // GD-34: plan lines too (drafts of the plan are for the same people).
+                .filter(l -> !Set.of("ESTIMATE", "PLAN").contains(l.stage()) || estimateInsider)
+                .filter(l -> !"DRAFT".equals(l.kind())
+                        || (Set.of("ESTIMATE", "PLAN").contains(l.stage()) ? estimateInsider : a.insider()))
                 .toList();
     }
 

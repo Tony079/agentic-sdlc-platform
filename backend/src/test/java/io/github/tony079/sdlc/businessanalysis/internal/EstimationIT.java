@@ -61,6 +61,22 @@ class EstimationIT extends ApiIntegrationTest {
                    "detail": "Test that every extracted section is shown.", "component": null, "brdRefs": [],
                    "evidence": []}
                  ], "openQuestions": []}""");
+        fake.cannedReply("plan.backlog", """
+                {"epics": [{"title": "Platform", "goal": "A running API.", "designRefs": ["%s"]},
+                           {"title": "Portfolio", "goal": "Pages for every section.", "designRefs": []}],
+                 "stories": [
+                  {"epic": "Platform", "title": "As a developer, I want the API skeleton, so that features can be built",
+                   "acceptanceCriteria": ["Given a deploy, when /health is called, then it answers 200"],
+                   "estimateRefs": ["est-c2fcebd76476"], "brdRefs": ["acceptance-criteria-99f717e05ef9"],
+                   "role": "BACKEND", "priority": "MUST", "dependsOn": []},
+                  {"epic": "Portfolio", "title": "As a candidate, I want my pages built, so that I can share them",
+                   "acceptanceCriteria": ["Every extracted section is shown"], "estimateRefs": ["est-15ac61fe39aa"],
+                   "brdRefs": [], "role": "BACKEND", "priority": "MUST",
+                   "dependsOn": ["As a developer, I want the API skeleton, so that features can be built"]},
+                  {"epic": "Portfolio", "title": "As a candidate, I want a dark theme, so that the site looks modern",
+                   "acceptanceCriteria": ["The dark theme can be chosen"], "estimateRefs": [], "brdRefs": [],
+                   "role": "FRONTEND", "priority": "SHOULD", "dependsOn": []}
+                 ], "risks": ["Template work may grow"]}""".formatted(DESIGN_ARCH));
         fake.cannedReply("est.items", """
                 {"items": [
                   {"title": "Set up the API skeleton", "detail": "Spring Boot project, health endpoint, CI.",
@@ -221,5 +237,69 @@ class EstimationIT extends ApiIntegrationTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> admin.update(
                 "UPDATE app.estimate_item SET title = 'x' WHERE project_id = ?::uuid", projectId))
                 .hasMessageContaining("immutable");
+
+
+        // GD-34: the approved estimate is handed over for the delivery plan.
+        drive(tenant);
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.notification WHERE recipient_id = ? AND kind = "
+                + "'PLAN_HANDOVER'", Integer.class, eveId)).isEqualTo(1);
+        String plan = "/api/v1/requirements/" + id + "/plan";
+        assertThat(victor.get(plan).body().path("canSee").asBoolean()).isFalse();
+        assertThat(aaron.post(plan + "/start", Map.of()).errorCode()).isEqualTo("PLAN_DECISION_NOT_ALLOWED");
+        assertThat(eve.post(plan + "/start", Map.of("settings", Map.of("sprintWeeks", 6, "startDate", "2026-12-07")))
+                .status()).isEqualTo(422);
+        Response planned = eve.post(plan + "/start", Map.of("settings", Map.of("sprintWeeks", 1,
+                "startDate", "2026-12-07", "daysPerWeek", 5, "team", Map.of("BACKEND", 1, "FRONTEND", 1))));
+        assertThat(planned.status()).as(planned.body().toString()).isEqualTo(200);
+        drive(tenant);
+
+        // Effort from the approved estimate (adjustment included), sprints from capacity and dependencies.
+        JsonNode p = eve.get(plan).body();
+        assertThat(p.path("review").path("stage").asString()).isEqualTo("IN_REVIEW");
+        JsonNode stories = p.path("version").path("stories");
+        assertThat(stories.size()).isEqualTo(3);
+        JsonNode skeleton = stories.valueStream().filter(x -> x.path("title").asString().contains("skeleton"))
+                .findFirst().orElseThrow();
+        JsonNode pages = stories.valueStream().filter(x -> x.path("title").asString().contains("pages built"))
+                .findFirst().orElseThrow();
+        JsonNode theme = stories.valueStream().filter(x -> x.path("title").asString().contains("dark theme"))
+                .findFirst().orElseThrow();
+        assertThat(skeleton.path("effortDays").asDouble()).isCloseTo(19 / 6.0, within(0.01));
+        assertThat(pages.path("effortDays").asDouble()).isCloseTo(3.0, within(0.01));
+        assertThat(skeleton.path("sprint").asInt()).isEqualTo(1);
+        assertThat(pages.path("sprint").asInt()).as("one backend person, 5 days a sprint").isEqualTo(2);
+        assertThat(p.path("version").path("sprints").get(1).path("start").asString()).isEqualTo("2026-12-14");
+        assertThat(p.path("version").path("totalEffortDays").asDouble())
+                .isCloseTo(p.path("version").path("estimateEffortDays").asDouble(), within(0.02));
+        assertThat(theme.path("flags").toString()).contains("NO_ESTIMATE");
+        assertThat(p.path("review").path("unacceptedFlags").size()).isEqualTo(1);
+        assertThat(p.path("review").path("openGaps").size()).isZero();
+        assertThat(aaron.get(plan).body().path("review").path("canApprove").asBoolean()).isFalse();
+        assertThat(victor.get(plan).body().path("canSee").asBoolean()).as("drafts stay private").isFalse();
+
+        // The Estimator edits the flagged story (with a reason); a BRD Approver approves.
+        String themeKey = theme.path("storyKey").asString();
+        assertThat(eve.post(plan + "/stories/" + themeKey + "/edit", Map.of("changes", Map.of("priority", "COULD",
+                "sprint", 3), "reason", "Nice to have after launch.")).status()).isEqualTo(200);
+        p = aaron.get(plan).body();
+        assertThat(p.path("review").path("canApprove").asBoolean()).isTrue();
+        JsonNode edited = p.path("version").path("stories").valueStream()
+                .filter(x -> x.path("storyKey").asString().equals(themeKey)).findFirst().orElseThrow();
+        assertThat(edited.path("sprint").asInt()).isEqualTo(3);
+        assertThat(edited.path("priority").asString()).isEqualTo("COULD");
+        Response planApproved = aaron.post(plan + "/approve", Map.of("expectedReviewHash",
+                p.path("version").path("reviewHash").asString(), "confirmApproveAlone", true));
+        assertThat(planApproved.status()).as(planApproved.body().toString()).isEqualTo(200);
+
+        // The approved plan is the project's: a Viewer sees the stories (not the estimate's work items) and exports.
+        JsonNode seen = victor.get(plan).body();
+        assertThat(seen.path("canSee").asBoolean()).isTrue();
+        assertThat(seen.path("version").path("stories").size()).isEqualTo(3);
+        assertThat(seen.path("version").path("stories").get(0).path("estimateRefs").size()).isZero();
+        assertThat(seen.path("version").path("estimateEffortDays").isNull()).isTrue();
+        var planCsv = victor.download(plan + "/export?format=csv");
+        assertThat(planCsv.status()).isEqualTo(200);
+        assertThat(new String(planCsv.body(), StandardCharsets.UTF_8)).contains("2026-12-07").contains("Platform");
+        assertThat(aaron.download(plan + "/export?format=pdf").status()).isEqualTo(200);
     }
 }

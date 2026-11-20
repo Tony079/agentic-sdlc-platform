@@ -23,6 +23,11 @@ const KINDS: Record<string, string> = {
   ESTIMATE_READY_FOR_REVIEW: 'An estimate is ready for review.',
   ESTIMATE_APPROVED: 'An estimate was approved.',
   ESTIMATE_FAILED: 'An estimate could not be written. You can try again from the requirement.',
+  PLAN_HANDOVER: 'An approved estimate was handed to you for the delivery plan.',
+  PLAN_NO_ESTIMATOR: 'An estimate was approved, but its project has no Estimator to plan it. Assign one.',
+  PLAN_READY_FOR_REVIEW: 'A delivery plan is ready for review.',
+  PLAN_APPROVED: 'A delivery plan was approved.',
+  PLAN_FAILED: 'A delivery plan could not be written. You can try again from the requirement.',
 };
 
 interface NotificationSettings {

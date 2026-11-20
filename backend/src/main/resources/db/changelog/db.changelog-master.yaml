@@ -102,3 +102,5 @@ databaseChangeLog:
   - include: { file: changes/0054-arch-design-v5.sql, relativeToChangelogFile: true }
   # GD-33 (2026-11-20): Estimation stage, Estimator role.
   - include: { file: changes/0055-estimation.sql, relativeToChangelogFile: true }
+  # GD-34 (2026-11-20): Delivery plan stage.
+  - include: { file: changes/0056-delivery-plan.sql, relativeToChangelogFile: true }

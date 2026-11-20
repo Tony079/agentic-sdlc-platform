@@ -485,6 +485,9 @@ class EstimateService {
         for (UUID user : new LinkedHashSet<>(estimates.membersWithRole(a.projectId(), "ESTIMATOR"))) {
             reviews.notify(TenantContext.requireTenant(), user, "ESTIMATE_APPROVED", requirementId);
         }
+        // GD-34: the worker hands the approved estimate to the project's Estimators for the delivery plan.
+        outbox.publish("REQUIREMENT", requirementId, EventTypes.ESTIMATE_APPROVED,
+                Map.of("requirementId", requirementId.toString(), "estimateVersionId", v.id().toString()));
         audit.record(AuditAction.ESTIMATE_APPROVED, "ESTIMATE_VERSION", v.id(), AuditResult.SUCCESS);
         return state(requirementId);
     }

@@ -50,6 +50,12 @@ final class DraftWatcher implements Consumer<String> {
         return new DraftWatcher(activity, requirementId, ActivityLog.Stage.BRD, run, "statement", titles, json);
     }
 
+    /** GD-34: plan story titles. */
+    static DraftWatcher plan(ActivityLog activity, UUID requirementId, UUID run, JsonMapper json) {
+        return new DraftWatcher(activity, requirementId, ActivityLog.Stage.PLAN, run, "title",
+                Map.of("__none__", "Story"), json);
+    }
+
     /** GD-33: estimate work item titles. */
     static DraftWatcher estimate(ActivityLog activity, UUID requirementId, UUID run, JsonMapper json) {
         return new DraftWatcher(activity, requirementId, ActivityLog.Stage.ESTIMATE, run, "title",

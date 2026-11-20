@@ -165,6 +165,20 @@ class NotificationMailer {
             Map.entry("ESTIMATE_FAILED", new String[] {"Estimate could not be written: %s",
                     "The estimate could not be written", "The Estimation agent could not produce the estimate for %s. "
                             + "You can try again from the requirement page.", "Try again", null}),
+            // GD-34: delivery plan.
+            Map.entry("PLAN_HANDOVER", new String[] {"Delivery plan to start: %s", "An estimate is ready to plan",
+                    "The estimate for %s was approved and handed to you for the delivery plan.", "Start the plan", null}),
+            Map.entry("PLAN_NO_ESTIMATOR", new String[] {"No Estimator to plan %s", "A project needs an Estimator",
+                    "The estimate for %s was approved, but its project has no Estimator to plan it. Assign one.",
+                    "Open the project", null}),
+            Map.entry("PLAN_READY_FOR_REVIEW", new String[] {"Delivery plan ready for your review: %s",
+                    "A delivery plan is ready for review", "The Planning agent has written the delivery plan for %s. "
+                            + "Review and edit it before a BRD Approver approves it.", "Review the plan", null}),
+            Map.entry("PLAN_APPROVED", new String[] {"Delivery plan approved: %s", "The delivery plan was approved",
+                    "The delivery plan for %s was approved and is visible to the project.", "Open the plan", null}),
+            Map.entry("PLAN_FAILED", new String[] {"Delivery plan could not be written: %s",
+                    "The delivery plan could not be written", "The Planning agent could not produce the delivery plan "
+                            + "for %s. You can try again from the requirement page.", "Try again", null}),
             Map.entry("CLARIFICATION_ASSIGNED", new String[] {"Questions about %s need your answer",
                     "The BA agent has questions for you",
                     "The BA agent needs your answers about %s before it can finish the BRD. The analysis continues "

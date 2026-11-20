@@ -50,6 +50,10 @@ public final class EventTypes {
     public static final String TDD_REQUESTED = "TddRequested";
     /** GD-33: a technical design was approved; the worker hands it to the project's Estimators. */
     public static final String TDD_APPROVED = "TddApproved";
+    /** GD-34: a delivery plan version is to be written by the Planning agent. */
+    public static final String PLAN_REQUESTED = "PlanRequested";
+    /** GD-34: an estimate was approved; the worker hands it to the project's Estimators for planning. */
+    public static final String ESTIMATE_APPROVED = "EstimateApproved";
     /** GD-33: an estimate version is to be written by the Estimation agent. */
     public static final String ESTIMATE_REQUESTED = "EstimateRequested";
 
@@ -93,7 +97,9 @@ public final class EventTypes {
             Map.entry(SOURCES_ROUND_OPENED, 1),
             Map.entry(TDD_REQUESTED, 1),
             Map.entry(ESTIMATE_REQUESTED, 1),
-            Map.entry(TDD_APPROVED, 1));
+            Map.entry(TDD_APPROVED, 1),
+            Map.entry(PLAN_REQUESTED, 1),
+            Map.entry(ESTIMATE_APPROVED, 1));
 
     private EventTypes() {
     }

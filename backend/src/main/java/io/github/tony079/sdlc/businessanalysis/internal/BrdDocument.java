@@ -30,7 +30,8 @@ record BrdDocument(DocKind kind, List<Field> cover, String organisation, String 
     enum DocKind {
         BRD("Business Requirements Document", "BRD"),
         TDD("Technical Design Document", "TDD"),
-        ESTIMATE("Estimate", "EST");
+        ESTIMATE("Estimate", "EST"),
+        PLAN("Delivery plan", "PLAN");
 
         final String title;
         final String shortName;

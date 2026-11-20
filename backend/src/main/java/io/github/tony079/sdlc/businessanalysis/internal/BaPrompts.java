@@ -26,6 +26,9 @@ final class BaPrompts {
     /** GD-33 Estimation agent: work items with effort ranges from the approved design. */
     static final PromptTemplate EST_ITEMS = load("est.items", 1, "prompts/est-items-v1.txt");
 
+    /** GD-34 Planning agent: epics and stories from the approved design and estimate. */
+    static final PromptTemplate PLAN_BACKLOG = load("plan.backlog", 1, "prompts/plan-backlog-v1.txt");
+
     private BaPrompts() {
     }
 

@@ -40,7 +40,7 @@ class SchemaSecurityIT {
                 "environment_change_request",
                 "estimate_adjustment", "estimate_decision", "estimate_item", "estimate_version",
                 "idempotency_record", "job", "job_attempt", "model_call_record", "notification",
-                "outbox_event", "processed_event", "project", "project_estimate_defaults", "project_member", "project_repository", "release_approval", "repository",
+                "outbox_event", "plan_decision", "plan_edit", "plan_epic", "plan_story", "plan_version", "processed_event", "project", "project_estimate_defaults", "project_member", "project_plan_defaults", "project_repository", "release_approval", "repository",
                 "repository_file", "repository_link_request", "repository_snapshot", "requirement",
                 "requirement_closure", "requirement_key_counter", "requirement_repository", "requirement_repository_link", "requirement_revision", "retention_policy", "security_finding", "security_scan_run", "stage_execution",
                 "tdd_decision", "tdd_item", "tdd_version", "user_invitation", "workflow_instance", "workflow_transition");
@@ -52,10 +52,12 @@ class SchemaSecurityIT {
                 "notification", "project", "project_member", "release_approval", "repository_link_request",
                 "requirement", "requirement_closure", "requirement_repository", "requirement_repository_link",
                 "requirement_revision", "tdd_decision", "tdd_version", "workflow_instance",
-                "estimate_version");
+                "estimate_version", "plan_version");
         // GD-33: estimate content is restricted further, to the project's Estimators and BRD Approvers.
         java.util.Set<String> estimateScoped = java.util.Set.of("estimate_item", "estimate_adjustment",
-                "estimate_decision", "project_estimate_defaults");
+                "estimate_decision", "project_estimate_defaults", "project_plan_defaults");
+        // GD-34: plan content: Estimators and BRD Approvers while drafted, the whole project once approved.
+        java.util.Set<String> planScoped = java.util.Set.of("plan_epic", "plan_story", "plan_edit", "plan_decision");
 
         for (String table : tenantTables) {
             Map<String, Object> rls = admin.queryForMap("""
@@ -78,7 +80,11 @@ class SchemaSecurityIT {
             assertThat(permissive.get(0)).containsEntry("policyname", "tenant_isolation").containsEntry("cmd", "ALL");
             assertThat((String) permissive.get(0).get("qual")).contains("tenant_id = app.current_tenant()");
             assertThat((String) permissive.get(0).get("with_check")).contains("tenant_id = app.current_tenant()");
-            if (estimateScoped.contains(table)) {
+            if (planScoped.contains(table)) {
+                assertThat(restrictive).as(table).hasSize(1);
+                assertThat(restrictive.get(0)).containsEntry("policyname", "plan_access").containsEntry("cmd", "ALL");
+                assertThat((String) restrictive.get(0).get("qual")).contains("sees_plan(project_id, plan_version_id)");
+            } else if (estimateScoped.contains(table)) {
                 assertThat(restrictive).as(table).hasSize(1);
                 assertThat(restrictive.get(0)).containsEntry("policyname", "estimate_access").containsEntry("cmd", "ALL");
                 assertThat((String) restrictive.get(0).get("qual")).contains("sees_estimate(project_id)");
