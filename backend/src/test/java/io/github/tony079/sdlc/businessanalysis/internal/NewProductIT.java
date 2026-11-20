@@ -47,6 +47,13 @@ class NewProductIT extends ApiIntegrationTest {
                    "evidence": [{"type": "REQUIREMENT", "path": "description", "startLine": null, "endLine": null,
                                  "documentVersionId": null, "chunk": null,
                                  "quote": "Store additional repayment metadata"}], "risk": null, "component": null},
+                  {"kind": "RECOMMENDATION", "section": "ACCEPTANCE_CRITERIA",
+                   "statement": "1. Uploads accept PDF files. 2. The site lists the projects.",
+                   "evidence": [], "risk": null, "component": null},
+                  {"kind": "FACT", "section": "CURRENT_SYSTEM", "statement": "No system exists yet; it is built from scratch.",
+                   "evidence": [{"type": "REQUIREMENT", "path": "productType", "startLine": null, "endLine": null,
+                                 "documentVersionId": null, "chunk": null,
+                                 "quote": "there is no existing system or code"}], "risk": null, "component": null},
                   {"kind": "FACT", "section": "CONTEXT", "statement": "Users sign in with LinkedIn.",
                    "evidence": [{"type": "REQUIREMENT", "path": "description", "startLine": null, "endLine": null,
                                  "documentVersionId": null, "chunk": null,
@@ -125,7 +132,7 @@ class NewProductIT extends ApiIntegrationTest {
         assertThat(state(id)).isEqualTo("INTERNAL_REVIEW");
         assertThat(fake.calls().stream().noneMatch(c -> "ba.phase-a".equals(c.promptId()))).isTrue();
         var phaseB = fake.calls().stream().filter(c -> "ba.phase-b".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
-        assertThat(phaseB.promptVersion()).isEqualTo(7);
+        assertThat(phaseB.promptVersion()).isEqualTo(8);
         assertThat(phaseB.data().stream().filter(d -> d.label().startsWith("product type")).findFirst().orElseThrow()
                 .content()).startsWith("NEW_PRODUCT");
         assertThat(phaseB.data().stream().anyMatch(d -> d.label().contains("brief.txt") || d.content().contains("portfolio site lists")))
@@ -141,7 +148,7 @@ class NewProductIT extends ApiIntegrationTest {
         assertThat(messages).anyMatch(m -> m.startsWith("STEP Started the analysis") && m.contains("new product"));
         assertThat(messages).anyMatch(m -> m.startsWith("STEP Writing the BRD"));
         assertThat(messages).anyMatch(m -> m.startsWith("WARN The model's first answer broke a rule") && m.contains("feasibility.reasons"));
-        assertThat(messages).anyMatch(m -> m.startsWith("DONE BRD ready for review: 5 statements, verdict feasible"));
+        assertThat(messages).anyMatch(m -> m.startsWith("DONE BRD ready for review: 8 statements, verdict feasible"));
 
         // GD-30: a quote of the client's requirement verifies as a FACT; an invented one is downgraded.
         String itemsSql = """
@@ -154,7 +161,7 @@ class NewProductIT extends ApiIntegrationTest {
                 SELECT count(*) FROM app.brd_item_evidence e JOIN app.brd_item i ON i.id = e.brd_item_id
                 JOIN app.brd_version v ON v.id = i.brd_version_id JOIN app.brd b ON b.id = v.brd_id
                 WHERE b.requirement_id = ?::uuid AND e.type = 'REQUIREMENT' AND e.requirement_revision_no IS NOT NULL
-                """, Integer.class, id)).isEqualTo(1);
+                """, Integer.class, id)).isEqualTo(2);
         // Step lines never carry the model's text; draft lines do, labelled, and only for those who may see the BRD.
         assertThat(messages.stream().filter(m -> !m.startsWith("DRAFT")).noneMatch(m -> m.contains("Candidates want")))
                 .as("no model text in step lines").isTrue();
@@ -194,7 +201,7 @@ class NewProductIT extends ApiIntegrationTest {
         assertThat(admin.queryForObject("""
                 SELECT i.detail FROM app.tdd_item i JOIN app.tdd_version v ON v.id = i.tdd_version_id
                 WHERE v.requirement_id = ?::uuid AND i.title = 'Section coverage test'
-                """, String.class, id)).isEqualTo("Test that every extracted section is shown (BRD acceptance criteria 1).");
+                """, String.class, id)).isEqualTo("Test that every extracted section is shown (BRD acceptance criteria 3).");
         Response change = alice.post("/api/v1/requirements/" + id + "/client-changes",
                 Map.of("text", "Please rewrite the BRD and list each acceptance criterion separately."));
         assertThat(change.status()).isEqualTo(200);
@@ -227,5 +234,17 @@ class NewProductIT extends ApiIntegrationTest {
                 """, Integer.class, id)).isEqualTo(2);
         assertThat(admin.queryForObject("SELECT count(*) FROM app.brd_client_decision WHERE requirement_id = ?::uuid "
                 + "AND kind = 'CHANGES_REQUESTED'", Integer.class, id)).as("not counted as a change request").isZero();
+
+        // While a version is in review, regenerating replaces it with a fresh one (still not a change request).
+        Response inReview = alice.post(regenerate, Map.of());
+        assertThat(inReview.status()).as(inReview.body().toString()).isEqualTo(200);
+        drive(tenant);
+        assertThat(state(id)).isEqualTo("INTERNAL_REVIEW");
+        assertThat(admin.queryForObject("""
+                SELECT max(v.version_no) FROM app.brd_version v JOIN app.brd b ON b.id = v.brd_id
+                WHERE b.requirement_id = ?::uuid
+                """, Integer.class, id)).isEqualTo(3);
+        assertThat(admin.queryForObject("SELECT count(*) FROM app.brd_client_decision WHERE requirement_id = ?::uuid "
+                + "AND kind = 'CHANGES_REQUESTED'", Integer.class, id)).isZero();
     }
 }

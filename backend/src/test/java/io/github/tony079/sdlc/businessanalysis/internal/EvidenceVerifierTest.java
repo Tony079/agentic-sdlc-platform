@@ -173,4 +173,42 @@ class EvidenceVerifierTest {
         assertThat(only(fact("Resumes are PDF or DOCX.", requirement("description", "PDF or DOCX"))).evidence())
                 .isEmpty();
     }
+
+    @Test
+    void aNumberedListBecomesOneItemPerPoint() {
+        assertThat(EvidenceVerifier.numberedParts("Acceptance criteria should include: 1) Support PDF and DOCX upload; "
+                + "2) Accurate parsing into JSON; and 3) Shareable URLs."))
+                .containsExactly("Support PDF and DOCX upload.", "Accurate parsing into JSON.", "Shareable URLs.");
+        assertThat(EvidenceVerifier.numberedParts("1. System accepts PDF. 2. Users can publish."))
+                .containsExactly("System accepts PDF.", "Users can publish.");
+        // Not a list: version numbers, a single point, or numbers out of order.
+        assertThat(EvidenceVerifier.numberedParts("Uses Java 21. Spring Boot 4.1 is chosen.")).hasSize(1);
+        assertThat(EvidenceVerifier.numberedParts("Step 2. Then publish.")).hasSize(1);
+        Item bundled = new Item(Kind.RECOMMENDATION, Section.ACCEPTANCE_CRITERIA,
+                "1. Uploads accept PDF. 2. Parsing extracts skills. 3. Users can publish.", List.of(), null, null);
+        List<VerifiedItem> split = EvidenceVerifier.verify(new Proposal(null, List.of(bundled), List.of(), List.of()),
+                Map.of(), Map.of());
+        assertThat(split).extracting(VerifiedItem::statement)
+                .containsExactly("Uploads accept PDF.", "Parsing extracts skills.", "Users can publish.");
+        assertThat(split).extracting(VerifiedItem::itemKey).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void requirementQuotesIgnoreCaseAndPunctuationAndTheProductTypeCanBeCited() {
+        var req = EvidenceVerifier.RequirementSource.of(1, new io.github.tony079.sdlc.requirement.api.RequirementView
+                .Content("NEW_PRODUCT", "Portfolio", "Built with React.js, Tailwind CSS and Spring Boot.", null, null,
+                null, null, null, null));
+        VerifiedItem stack = EvidenceVerifier.verify(new Proposal(null, List.of(fact("The front end uses React and Tailwind.",
+                requirement("description", "built with react js tailwind css"))), List.of(), List.of()), Map.of(),
+                Map.of(), req).get(0);
+        assertThat(stack.supportState()).isEqualTo("VERIFIED");
+        VerifiedItem none = EvidenceVerifier.verify(new Proposal(null, List.of(new Item(Kind.FACT, Section.CURRENT_SYSTEM,
+                "There is no existing system; it is built from scratch.",
+                List.of(requirement("productType", "no existing system or code")), null, null)), List.of(), List.of()),
+                Map.of(), Map.of(), req).get(0);
+        assertThat(none.kind()).isEqualTo(Kind.FACT);
+        assertThat(none.evidence().getFirst().chunkLabel()).isEqualTo("Product type");
+        // Two words are not enough to count as a quote.
+        assertThat(EvidenceVerifier.looselyContains("Built with React.js", "react js")).isFalse();
+    }
 }

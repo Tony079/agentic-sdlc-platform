@@ -312,13 +312,16 @@ export function BrdPanel({ requirementId, requirementState }: { requirementId: s
                   </button>
                 )}
               </div>
-              {review.stage === 'APPROVED' && review.isAuthor && (
+              {['APPROVED', 'AUTHOR_REVIEW', 'AWAITING_APPROVAL'].includes(review.stage) && review.isAuthor && (
                 <div className="row" style={{ gap: '0.75rem', alignItems: 'center' }}>
                   <button type="button" className="btn-secondary" disabled={busy} onClick={() => {
                     if (!window.confirm('Regenerate the BRD from the same requirement with the current analysis rules?\n\n'
-                      + 'A new version is written and comes to you for review and approval; the approved version stays in '
-                      + 'force until then. A technical design in review is replaced, and an open change request is '
-                      + 'withdrawn. This is not a change request and is not charged.')) {
+                      + (review.stage === 'APPROVED'
+                        ? 'A new version is written and comes to you for review and approval; the approved version stays in '
+                          + 'force until then. A technical design in review is replaced, and an open change request is '
+                          + 'withdrawn. '
+                        : 'The version under review is replaced by a new one, which comes to you for review. ')
+                      + 'This is not a change request and is not charged.')) {
                       return;
                     }
                     setBusy(true);

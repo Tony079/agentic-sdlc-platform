@@ -199,6 +199,9 @@ class ReviewRepository {
                   UNION ALL
                   SELECT jsonb_build_array(jsonb_build_object('source', 'CLIENT', 'instruction', d.note))::text, d.decided_at
                   FROM app.brd_client_decision d WHERE d.requirement_id = :r AND d.kind = 'CHANGES_REQUESTED'
+                  UNION ALL
+                  SELECT jsonb_build_array(jsonb_build_object('source', 'CLIENT', 'instruction', c.text))::text, c.created_at
+                  FROM app.client_change_request c WHERE c.requirement_id = :r
                 ) n ORDER BY at DESC LIMIT 1
                 """).param("r", requirementId).query(String.class).optional();
     }

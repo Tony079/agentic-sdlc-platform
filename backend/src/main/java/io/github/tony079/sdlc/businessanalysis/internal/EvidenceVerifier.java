@@ -70,6 +70,7 @@ final class EvidenceVerifier {
             m.put("acceptanceCriteria", "Acceptance criteria");
             m.put("constraints", "Constraints");
             m.put("integrations", "Integrations");
+            m.put("productType", "Product type");
             return java.util.Collections.unmodifiableMap(m);
         }
 
@@ -82,7 +83,15 @@ final class EvidenceVerifier {
             put(f, "acceptanceCriteria", c.acceptanceCriteria());
             put(f, "constraints", c.constraints());
             put(f, "integrations", c.integrations());
+            put(f, "productType", productType(c.kind()));
             return new RequirementSource(revisionNo, Map.copyOf(f));
+        }
+
+        /** Fixed text for the requirement's kind, so a statement about it can be cited and checked. */
+        static String productType(String kind) {
+            return "NEW_PRODUCT".equals(kind)
+                    ? "New product: there is no existing system or code; the product is built from scratch."
+                    : "Enhancement to an existing product with existing code.";
         }
 
         private static void put(Map<String, String> f, String key, String value) {
@@ -114,7 +123,7 @@ final class EvidenceVerifier {
         List<VerifiedItem> out = new ArrayList<>();
         Map<String, Integer> keys = new HashMap<>();
         int ordinal = 0;
-        for (Item item : proposal.items()) {
+        for (Item item : splitNumbered(proposal.items())) {
             List<VerifiedEvidence> valid = new ArrayList<>();
             for (Evidence evidence : item.evidence()) {
                 VerifiedEvidence checked = switch (evidence.type()) {
@@ -211,7 +220,7 @@ final class EvidenceVerifier {
         }
         String key = fieldKey(evidence.path());
         String text = key == null ? null : requirement.fields().get(key);
-        if (text == null || !contains(text, evidence.quote())) {
+        if (text == null || !looselyContains(text, evidence.quote())) {
             return null;
         }
         return new VerifiedEvidence(EvidenceType.REQUIREMENT, key, null, null, null, null, null, null,
@@ -227,6 +236,71 @@ final class EvidenceVerifier {
             }
         }
         return null;
+    }
+
+    /**
+     * For the client's own requirement text: the quote's words appear in the same order, ignoring case and
+     * punctuation (models often drop a full stop or change "React.js" capitalisation). At least three words.
+     */
+    static boolean looselyContains(String text, String quote) {
+        String q = words(quote);
+        return q.split(" ").length >= 3 && (" " + words(text) + " ").contains(" " + q + " ");
+    }
+
+    private static String words(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", " ").strip();
+    }
+
+    private static final Pattern NUMBERED = Pattern.compile("(?:^|(?<=[\\s:;.]))(\\d{1,2})[.)]\\s+");
+
+    /**
+     * GD-30: a statement holding a numbered list ("1. ... 2. ...") becomes one item per point, so each acceptance
+     * criterion, risk or scenario can be traced and reviewed on its own. An introduction ending in ":" is dropped.
+     * Only a list numbered 1, 2, 3... (at least two points) is split; anything else is left as written.
+     */
+    static List<Item> splitNumbered(List<Item> items) {
+        List<Item> out = new ArrayList<>();
+        for (Item item : items) {
+            List<String> parts = numberedParts(item.statement());
+            if (parts.size() < 2) {
+                out.add(item);
+                continue;
+            }
+            for (String part : parts) {
+                out.add(new Item(item.kind(), item.section(), part, item.evidence(), item.risk(), item.component()));
+            }
+        }
+        return out;
+    }
+
+    static List<String> numberedParts(String statement) {
+        var m = NUMBERED.matcher(statement);
+        List<int[]> marks = new ArrayList<>();
+        int expected = 1;
+        while (m.find()) {
+            if (Integer.parseInt(m.group(1)) == expected) {
+                marks.add(new int[] {m.start(), m.end()});
+                expected++;
+            }
+        }
+        if (marks.size() < 2) {
+            return List.of(statement);
+        }
+        List<String> parts = new ArrayList<>();
+        String intro = statement.substring(0, marks.get(0)[0]).strip();
+        for (int i = 0; i < marks.size(); i++) {
+            int end = i + 1 < marks.size() ? marks.get(i + 1)[0] : statement.length();
+            String part = statement.substring(marks.get(i)[1], end).strip()
+                    .replaceAll("(?i)[;,]?\\s*(and|or)?\\s*$", "").strip();
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (!intro.isEmpty() && !intro.endsWith(":")) {
+                part = intro + " " + part;
+            }
+            parts.add(part.endsWith(".") ? part : part + ".");
+        }
+        return parts.isEmpty() ? List.of(statement) : parts;
     }
 
     /** The quote appears in the cited text, ignoring differences in whitespace; at least 3 visible characters. */

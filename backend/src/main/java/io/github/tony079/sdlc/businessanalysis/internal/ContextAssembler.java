@@ -43,6 +43,7 @@ final class ContextAssembler {
         append(text, "Acceptance criteria [path: acceptanceCriteria]", content.acceptanceCriteria());
         append(text, "Constraints [path: constraints]", content.constraints());
         append(text, "Integrations [path: integrations]", content.integrations());
+        append(text, "Product type [path: productType]", EvidenceVerifier.RequirementSource.productType(content.kind()));
         return new DataBlock("requirement", text.toString());
     }
 

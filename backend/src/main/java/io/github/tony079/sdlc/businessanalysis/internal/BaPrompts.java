@@ -17,7 +17,7 @@ final class BaPrompts {
      * v4: v3 (GD-24 template and feasibility verdict) with explicit kind and section values; earlier versions stay
      * registered but unused.
      */
-    static final PromptTemplate PHASE_B = load("ba.phase-b", 7, "prompts/ba-phase-b-v7.txt");
+    static final PromptTemplate PHASE_B = load("ba.phase-b", 8, "prompts/ba-phase-b-v8.txt");
 
     /** GD-26 Architect agent: choose the code to read, then write the technical design. */
     static final PromptTemplate ARCH_FILES = load("arch.files", 1, "prompts/arch-files-v1.txt");

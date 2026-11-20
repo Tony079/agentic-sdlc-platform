@@ -158,7 +158,7 @@ class AnalysisIT extends ApiIntegrationTest {
         assertThat(admin.queryForList("""
                 SELECT prompt_id || '@' || prompt_version FROM app.model_call_record
                 WHERE requirement_id = ?::uuid AND outcome = 'SUCCEEDED' ORDER BY created_at
-                """, String.class, s.requirementId)).containsExactly("ba.phase-a@1", "ba.phase-b@7");
+                """, String.class, s.requirementId)).containsExactly("ba.phase-a@1", "ba.phase-b@8");
         // Trusted instructions are the registered prompt text only; client content travels as data (TDD 12.7).
         assertThat(fake.calls()).hasSize(2).allSatisfy(call -> {
             assertThat(call.instructions()).doesNotContain(INJECTION).doesNotContain("repayments must carry");
