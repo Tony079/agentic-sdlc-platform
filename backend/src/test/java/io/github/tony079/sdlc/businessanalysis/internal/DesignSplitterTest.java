@@ -72,4 +72,15 @@ class DesignSplitterTest {
         assertThat(out.get(1).detail()).startsWith("On visitor origin, GET /s/{slug}/assets/{digest}/{name}: take no body");
         assertThat(out.get(3).detail()).isEqualTo("Use a fragment for token links and never log it.");
     }
+
+    @Test
+    void aSecondPathWithoutItsOwnMethodJoinsTheTitle() {
+        List<Item> out = DesignSplitter.split(List.of(item(Section.API_CHANGES, "Visitor gateway",
+                "POST /s/{slug}/access: {password?:string} returns 204 or 401. GET /s/{slug}/ and /s/{slug}/assets/{path} "
+                        + "returns 200 HTML or a manifest-listed asset; 404 for unknown paths.")));
+        assertThat(out).extracting(Item::title).contains("GET /s/{slug}/ and /s/{slug}/assets/{path}");
+        assertThat(out).filteredOn(i -> i.title().startsWith("GET")).singleElement().extracting(Item::detail)
+                .isEqualTo("GET /s/{slug}/ and /s/{slug}/assets/{path}: returns 200 HTML or a manifest-listed asset; "
+                        + "404 for unknown paths.");
+    }
 }

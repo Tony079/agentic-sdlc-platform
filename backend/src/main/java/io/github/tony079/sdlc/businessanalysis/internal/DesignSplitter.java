@@ -20,6 +20,7 @@ final class DesignSplitter {
     private static final Pattern ENDPOINT = Pattern.compile("\\b(GET|POST|PUT|PATCH|DELETE)\\s+(/[^\\s,;]+)");
     private static final Pattern TABLE = Pattern.compile("\\b([A-Z][A-Za-z0-9_]*)\\s*\\(((?:[^()]|\\([^()]*\\))*)\\)");
     private static final Pattern KEYS = Pattern.compile("\\b(PK|FK|primary key|foreign key)\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ALSO_PATH = Pattern.compile("(?is)^(?:and|or)\\s+(/[^\\s,;]+)(.*)$");
     private static final Pattern SENTENCE = Pattern.compile("(?<=\\.)\\s+(?=[A-Z])");
 
     private DesignSplitter() {
@@ -92,6 +93,12 @@ final class DesignSplitter {
         }
         List<DesignContracts.Item> out = new ArrayList<>();
         for (int i = 0; i < at.size(); i++) {
+            // "GET /s/{slug}/ and /s/{slug}/assets/{path} -> 200": the same method also serves a second path.
+            Matcher also = ALSO_PATH.matcher(parts[i]);
+            if (also.matches()) {
+                names.set(i, names.get(i) + " and " + also.group(1));
+                parts[i] = also.group(2).replaceFirst("^[\\s:,]+", "").strip();
+            }
             String text = lead + names.get(i) + (parts[i].isEmpty() ? "" : ": " + parts[i]);
             out.add(copy(item, names.get(i), Character.toUpperCase(text.charAt(0)) + text.substring(1)));
         }
