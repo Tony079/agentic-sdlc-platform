@@ -94,3 +94,5 @@ databaseChangeLog:
   - include: { file: changes/0050-requirement-citations.sql, relativeToChangelogFile: true }
   # GD-30/31 (2026-11-20): product type citation; BA prompt v8.
   - include: { file: changes/0051-brd-regenerate-and-product-type.sql, relativeToChangelogFile: true }
+  # O-01 (2026-11-20): register the model configured in .env with its prices (runs on every migration).
+  - include: { file: changes/0052-configured-model.sql, relativeToChangelogFile: true }

@@ -16,6 +16,13 @@ spring:
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: app
     liquibase-schema: migration_meta
+    # O-01: the model named in .env is registered with its prices by changeset 0052 (skipped when prices are empty).
+    parameters:
+      modelProvider: ${SDLC_MODEL_PROVIDER:none}
+      modelId: ${SDLC_MODEL_ID:}
+      modelPriceInputPerMillion: ${SDLC_MODEL_PRICE_INPUT_PER_MILLION:}
+      modelPriceOutputPerMillion: ${SDLC_MODEL_PRICE_OUTPUT_PER_MILLION:}
+      modelMaxOutputTokens: ${SDLC_MODEL_MAX_OUTPUT_TOKENS:16384}
 
 sdlc:
   dev-seed:

@@ -282,7 +282,7 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
         List<ItemRow> rows = new ArrayList<>();
         Map<String, Integer> used = new HashMap<>();
         int ordinal = 0;
-        for (DesignContracts.Item item : proposal.items()) {
+        for (DesignContracts.Item item : DesignSplitter.split(proposal.items())) {
             List<Map<String, Object>> valid = new ArrayList<>();
             boolean fabricated = false;
             for (Evidence e : item.evidence()) {

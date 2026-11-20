@@ -65,3 +65,21 @@ All metric columns are zero because nothing ran. The zeros are not measurements.
 ## 6. Decision status
 
 O-01 approves the adapters and the benchmark, **not** a winner. The default provider stays `none`. Selecting a provider (`SDLC_MODEL_PROVIDER`, `SDLC_MODEL_ID`) is the owner's decision after a real run.
+
+## 7. Switching the model (2026-11-20)
+
+Garuda only calls a model listed in its model registry, because the registry holds the prices that recorded AI cost and
+the budget caps are computed from. `gpt-4.1-mini` (Azure OpenAI) is registered by migration 0039. To use any other
+model, set in `.env`:
+
+| Variable | Meaning |
+|---|---|
+| `SDLC_MODEL_PROVIDER` | `azure-openai`, `openai` or `anthropic` |
+| `SDLC_MODEL_ID` | For Azure OpenAI, the **deployment name** in Microsoft Foundry |
+| `SDLC_MODEL_PRICE_INPUT_PER_MILLION` | Input price in USD per 1 million tokens |
+| `SDLC_MODEL_PRICE_OUTPUT_PER_MILLION` | Output price in USD per 1 million tokens |
+| `SDLC_MODEL_MAX_OUTPUT_TOKENS` | The model's maximum output tokens (default 16384) |
+
+The migration step (changeset 0052, run on every `docker compose up`) registers or updates that model with these
+prices. Without both prices nothing is registered, and analyses wait with "The AI model is not configured or not
+registered". Re-run `docker compose up -d` after changing a price.

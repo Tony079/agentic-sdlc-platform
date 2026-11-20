@@ -237,7 +237,8 @@ class BaAnalysisHandler implements JobHandler<BaAnalysisHandler.Outcome> {
                     + (e.detail() == null ? "" : " (" + e.detail() + ")") + ". Garuda will try again automatically.";
             case EMPTY_OUTPUT -> "The model returned an empty answer twice. Garuda will try again automatically.";
             case BUDGET_EXCEEDED -> "The AI spending limit was reached, so the analysis stopped.";
-            case CONFIGURATION_ERROR -> "The AI model is not configured. The analysis waits until it is.";
+            case CONFIGURATION_ERROR -> "The AI model is not configured or not registered (check the model and its prices in "
+                    + ".env). The analysis waits until it is.";
             case RATE_LIMITED -> "The AI provider asked Garuda to slow down. Waiting a couple of minutes, then retrying.";
             case TIMEOUT, PROVIDER_UNAVAILABLE -> "The AI model did not respond in time. Retrying in a couple of minutes.";
             case PROVIDER_ERROR -> "The AI provider returned an error. Garuda will try again automatically.";
