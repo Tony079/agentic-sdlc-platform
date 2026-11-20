@@ -191,6 +191,12 @@ class NewProductIT extends ApiIntegrationTest {
         RequirementFixtures.addMember(UUID.fromString(projectId), tech, "TECHNICAL_APPROVER");
         ApiClient tina = loggedIn("acme", email);
         String design = "/api/v1/requirements/" + id + "/design";
+        // A long history before the design (as on REQ-000003): 600 earlier BRD lines.
+        admin.update("""
+                INSERT INTO app.analysis_activity (tenant_id, project_id, requirement_id, stage, run_id, kind, message)
+                SELECT r.tenant_id, r.project_id, r.id, 'BRD', gen_random_uuid(), 'STEP', 'Older line ' || g
+                FROM app.requirement r, generate_series(1, 600) g WHERE r.id = ?::uuid
+                """, id);
         assertThat(tina.post(design + "/start", Map.of()).status()).isEqualTo(200);
         drive(tenant);
         assertThat(tina.get(design).body().path("review").path("stage").asString()).isEqualTo("IN_REVIEW");
@@ -210,6 +216,11 @@ class NewProductIT extends ApiIntegrationTest {
         // Only one change request can be open; the reason is returned for the page to show.
         assertThat(again.status()).isEqualTo(409);
         assertThat(again.body().path("error").path("code").asString()).isEqualTo("CHANGE_REQUEST_OPEN");
+        // A long history (many earlier BRD runs) never hides the latest design run from the timeline.
+        var history = alice.get("/api/v1/requirements/" + id + "/activity").body();
+        assertThat(history.valueStream().map(l -> l.path("stage").asString() + " " + l.path("message").asString()))
+                .anyMatch(m -> m.startsWith("DESIGN Design version 1 ready for review"));
+        assertThat(history.size()).isLessThanOrEqualTo(2 * ActivityLog.LINES_PER_STAGE);
         var designCall = fake.calls().stream().filter(c -> "arch.design".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
         assertThat(designCall.data().stream().filter(d -> d.label().startsWith("repository summary")).findFirst()
                 .orElseThrow().content()).contains("design this as a new product");

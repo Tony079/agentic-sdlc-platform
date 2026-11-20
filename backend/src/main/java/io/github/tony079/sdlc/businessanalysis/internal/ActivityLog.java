@@ -72,12 +72,22 @@ class ActivityLog {
         }
     }
 
-    /** Lines after {@code afterId}, oldest first (API, under the reader's row-level security). */
+    /** Most recent lines kept per stage; older runs beyond this are not shown (the latest runs always are). */
+    static final int LINES_PER_STAGE = 400;
+
+    /**
+     * Lines after {@code afterId}, oldest first (API, under the reader's row-level security): the most recent
+     * {@link #LINES_PER_STAGE} of each stage, so a requirement with a long history still shows its latest BRD and
+     * design runs (the oldest lines were returned before, which hid every newer run once a requirement had many).
+     */
     List<Entry> list(UUID requirementId, long afterId) {
         return jdbc.sql("""
-                SELECT id, stage, run_id, kind, message, created_at FROM app.analysis_activity
-                WHERE requirement_id = :r AND id > :after ORDER BY id LIMIT 500
-                """).param("r", requirementId).param("after", afterId)
+                SELECT id, stage, run_id, kind, message, created_at FROM (
+                  SELECT a.id, a.stage, a.run_id, a.kind, a.message, a.created_at,
+                         row_number() OVER (PARTITION BY a.stage ORDER BY a.id DESC) AS recent
+                  FROM app.analysis_activity a WHERE a.requirement_id = :r AND a.id > :after
+                ) t WHERE recent <= :perStage ORDER BY id
+                """).param("perStage", LINES_PER_STAGE).param("r", requirementId).param("after", afterId)
                 .query((rs, n) -> new Entry(rs.getLong(1), rs.getString(2), rs.getObject(3, UUID.class),
                         rs.getString(4), rs.getString(5), rs.getObject(6, OffsetDateTime.class))).list();
     }
