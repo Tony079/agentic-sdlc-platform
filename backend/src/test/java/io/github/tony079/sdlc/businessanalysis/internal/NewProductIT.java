@@ -130,7 +130,10 @@ class NewProductIT extends ApiIntegrationTest {
 
         // Analysed (not parked in manual intake), from the requirement and its document only.
         assertThat(state(id)).isEqualTo("INTERNAL_REVIEW");
-        assertThat(fake.calls().stream().noneMatch(c -> "ba.phase-a".equals(c.promptId()))).isTrue();
+        // Only this requirement's calls: the fake provider is shared, and another test's queued work may run too.
+        String title = String.valueOf(body.get("title"));
+        assertThat(fake.calls().stream().noneMatch(c -> "ba.phase-a".equals(c.promptId())
+                && c.data().stream().anyMatch(d -> d.content().contains(title)))).isTrue();
         var phaseB = fake.calls().stream().filter(c -> "ba.phase-b".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
         assertThat(phaseB.promptVersion()).isEqualTo(8);
         assertThat(phaseB.data().stream().filter(d -> d.label().startsWith("product type")).findFirst().orElseThrow()
