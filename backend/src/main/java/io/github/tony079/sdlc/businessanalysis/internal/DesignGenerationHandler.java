@@ -60,8 +60,13 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
                    String provider, String modelId) {
     }
 
+    /** @param previous the version this redesign revises (null for a first design) */
     private record Inputs(VersionRow version, VersionView brd, Content requirement, List<Map<String, String>> answers,
-                          InputSetRow inputSet, Inventory inventory) {
+                          InputSetRow inputSet, Inventory inventory, Previous previous) {
+    }
+
+    /** The design version a change request was made on, as text for the model. */
+    record Previous(int versionNo, String text) {
     }
 
     private final ModelGateway gateway;
@@ -144,8 +149,17 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
             designData.add(checklist(inputs.brd()));
             designData.add(repositorySummary(inputs.inventory()));
             designData.add(new DataBlock("approach note (model output, untrusted)", files.output().approach()));
+            if (inputs.previous() != null) {
+                designData.add(new DataBlock("previous design version " + inputs.previous().versionNo()
+                        + " (revise it: keep each item unless the change request or the BRD requires a change)",
+                        inputs.previous().text()));
+            }
             designData.addAll(ContextAssembler.fileExcerpts(code, relevant));
             designData.addAll(ContextAssembler.inventory(inputs.inventory()));
+            if (inputs.previous() != null) {
+                activity.step(requirementId, stage, versionId, "Revising design version " + inputs.previous().versionNo()
+                        + " with the change request; everything else is kept as it was.");
+            }
             activity.step(requirementId, stage, versionId, "Writing the design: architecture, components, APIs, data "
                     + "model, security, rollout and test plan. This takes from about a minute to several minutes for a large requirement.");
             ModelResponse<DesignContracts.Proposal> design = gateway.generate(new ModelRequest<>(BaPrompts.ARCH_DESIGN,
@@ -181,6 +195,33 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
         }
     }
 
+    static final int PREVIOUS_MAX_CHARS = 80_000;
+
+    /**
+     * A redesign (a version made from a change request) revises the latest produced version instead of starting
+     * again: its summary, items and open questions are given to the model, which keeps them unless the change request
+     * (or the BRD) requires a change. Too long a design is cut at the end.
+     */
+    Previous previous(VersionRow version) {
+        if (version.changeRequest() == null) {
+            return null;
+        }
+        VersionRow before = designs.versions(version.requirementId()).stream()
+                .filter(v -> v.versionNo() < version.versionNo() && v.contentHash() != null).findFirst().orElse(null);
+        if (before == null) {
+            return null;
+        }
+        StringBuilder text = new StringBuilder("Summary: ").append(before.summary()).append("\n\nItems:\n");
+        for (DesignRepository.ItemRow item : designs.items(before.id())) {
+            text.append("- [").append(item.section()).append(" | ").append(item.kind()).append("] ").append(item.title())
+                    .append(": ").append(item.detail()).append(" (brdRefs ").append(item.brdRefsJson()).append(")\n");
+        }
+        text.append("\nOpen questions: ").append(before.openQuestionsJson());
+        String all = text.toString();
+        return new Previous(before.versionNo(), all.length() <= PREVIOUS_MAX_CHARS ? all
+                : all.substring(0, PREVIOUS_MAX_CHARS - 1) + "…");
+    }
+
     private Inputs load(UUID versionId) {
         VersionRow version = designs.find(versionId, false).orElse(null);
         if (version == null || !"GENERATING".equals(version.status())) {
@@ -191,7 +232,8 @@ class DesignGenerationHandler implements JobHandler<DesignGenerationHandler.Outc
         Content content = requirements.currentRevision(version.requirementId()).orElseThrow().content();
         Inventory inventory = repositories.inventory(set.sources(), ContextAssembler.MAX_FILES_LISTED,
                 ContextAssembler.MAX_SYMBOLS);
-        return new Inputs(version, brd, content, clarifications.answeredInputs(version.requirementId()), set, inventory);
+        return new Inputs(version, brd, content, clarifications.answeredInputs(version.requirementId()), set, inventory,
+                previous(version));
     }
 
     /** The approved BRD, one line per statement with its item key (the keys the design must reference). */

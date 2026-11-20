@@ -164,7 +164,7 @@ class DesignIT extends ApiIntegrationTest {
         assertThat(items.get(3).path("evidence").size()).isZero();
         // The agent was given the coverage checklist and the repository summary.
         var designCall = fake.calls().stream().filter(c -> "arch.design".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
-        assertThat(designCall.promptVersion()).isEqualTo(4);
+        assertThat(designCall.promptVersion()).isEqualTo(5);
         assertThat(designCall.data().stream().filter(d -> d.label().startsWith("checklist")).findFirst().orElseThrow()
                 .content()).contains(brdKey(s, "SCENARIOS")).contains(brdKey(s, "ACCEPTANCE_CRITERIA"));
         assertThat(designCall.data().stream().anyMatch(d -> d.label().startsWith("repository summary"))).isTrue();
@@ -226,6 +226,13 @@ class DesignIT extends ApiIntegrationTest {
         assertThat(view.path("version").path("versionNo").asInt()).isEqualTo(2);
         assertThat(view.path("version").path("changeRequest").asString()).isEqualTo("Also cover refunds of repayments.");
         assertThat(view.path("history").size()).isEqualTo(2);
+        // A redesign revises version 1: the agent is given it and told to keep what the change request does not touch.
+        var redesign = fake.calls().stream().filter(c -> "arch.design".equals(c.promptId())).reduce((a, b) -> b).orElseThrow();
+        var previous = redesign.data().stream().filter(d -> d.label().startsWith("previous design version 1"))
+                .findFirst().orElseThrow();
+        assertThat(previous.content()).contains("Validate the repayment channel").contains("Add repayment.channel");
+        assertThat(s.alice.get("/api/v1/requirements/" + s.requirementId + "/activity").body().valueStream()
+                .map(l -> l.path("message").asString())).anyMatch(m -> m.startsWith("Revising design version 1"));
 
         // The model fails: the design is FAILED, then retried by the Technical Approver (not the author).
         fake.reset();
