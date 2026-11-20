@@ -58,12 +58,18 @@ final class DesignSplitter {
         if (at.size() < 2) {
             return List.of();
         }
-        List<DesignContracts.Item> out = new ArrayList<>();
         List<String> common = new ArrayList<>();
         String intro = detail.substring(0, at.get(0)[0]).strip();
+        // A short lead-in ("On visitor origin,") applies to every endpoint; a longer one is a rule of its own.
+        String lead = "";
         if (!intro.isEmpty() && !intro.endsWith(":")) {
-            common.add(intro);
+            if (intro.split("\\s+").length <= 6) {
+                lead = intro.replaceAll("[,;]$", "").strip() + ", ";
+            } else {
+                common.add(intro);
+            }
         }
+        String[] parts = new String[at.size()];
         for (int i = 0; i < at.size(); i++) {
             int end = i + 1 < at.size() ? at.get(i + 1)[0] : detail.length();
             String part = clean(detail.substring(at.get(i)[1], end));
@@ -76,7 +82,18 @@ final class DesignSplitter {
                 }
             }
             part = clean(part.replaceFirst("^[\\s\\-–—:]+", ""));
-            out.add(copy(item, names.get(i), part.isEmpty() ? names.get(i) : names.get(i) + ": " + part));
+            // "GET /a and GET /b take no body": the first has no description of its own.
+            parts[i] = part.matches("(?i)^(and|or|,|&)?$") ? "" : part;
+        }
+        for (int i = parts.length - 2; i >= 0; i--) {
+            if (parts[i].isEmpty()) {
+                parts[i] = parts[i + 1];
+            }
+        }
+        List<DesignContracts.Item> out = new ArrayList<>();
+        for (int i = 0; i < at.size(); i++) {
+            String text = lead + names.get(i) + (parts[i].isEmpty() ? "" : ": " + parts[i]);
+            out.add(copy(item, names.get(i), Character.toUpperCase(text.charAt(0)) + text.substring(1)));
         }
         if (!common.isEmpty()) {
             out.add(copy(item, item.title() + ": common rules", String.join(" ", common)));

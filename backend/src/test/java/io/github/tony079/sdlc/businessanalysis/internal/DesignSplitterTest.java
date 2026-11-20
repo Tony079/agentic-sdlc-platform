@@ -58,4 +58,18 @@ class DesignSplitterTest {
         Item single = item(Section.API_CHANGES, "Upload", "POST /api/resumes accepts a PDF or DOCX file up to 10 MB.");
         assertThat(DesignSplitter.split(List.of(single))).containsExactly(single);
     }
+
+    @Test
+    void endpointsSharingOneDescriptionBothGetItAndAShortLeadInStaysWithThem() {
+        List<Item> out = DesignSplitter.split(List.of(item(Section.API_CHANGES, "Serve pages and assets through the same gate",
+                "On visitor origin, GET /s/{slug}/ and GET /s/{slug}/assets/{digest}/{name} take no body and return 200 "
+                        + "only after checking protection. POST /s/{slug}/unlock {password?:string} returns 204 or 401. "
+                        + "Use a fragment for token links and never log it.")));
+        assertThat(out).extracting(Item::title).containsExactly("GET /s/{slug}/", "GET /s/{slug}/assets/{digest}/{name}",
+                "POST /s/{slug}/unlock", "Serve pages and assets through the same gate: common rules");
+        assertThat(out.get(0).detail()).isEqualTo("On visitor origin, GET /s/{slug}/: take no body and return 200 only "
+                + "after checking protection.");
+        assertThat(out.get(1).detail()).startsWith("On visitor origin, GET /s/{slug}/assets/{digest}/{name}: take no body");
+        assertThat(out.get(3).detail()).isEqualTo("Use a fragment for token links and never log it.");
+    }
 }
