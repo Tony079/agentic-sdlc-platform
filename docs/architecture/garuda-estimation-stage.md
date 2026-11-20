@@ -1,6 +1,6 @@
 # Garuda: Estimation stage
 
-Status: **proposed** (2026-11-20), for owner review before implementation. Decision to record: GD-33.
+Status: **decided** (owner, 2026-11-20), GD-33. Section 7 records the owner's decisions.
 
 An approved technical design moves the requirement to the next stage, **Estimation**. An Estimation agent breaks
 the approved design into work items and proposes an effort range for each; Garuda (never the model) checks coverage
@@ -90,15 +90,13 @@ competent developer of that role; never totals, timelines or money (Garuda compu
 Job `ESTIMATE_GENERATION` (lease 300 s, runtime 30 min, 3 attempts), events `EstimateRequested`, prompt
 `est.items` v1, timeline stage `ESTIMATE`.
 
-## 7. Open points (owner to decide)
+## 7. Owner decisions (2026-11-20)
 
-1. **Who estimates and who approves.** Proposed: a new project role **Estimator** starts, reviews and adjusts; a
-   **BRD Approver** approves (the estimate is a commercial commitment). One person may hold both roles; approving
-   alone needs the confirmation used for designs.
-   Alternative: Technical Approvers do both.
-2. **Money.** Proposed: effort and timeline always; cost only when the project sets day rates per role.
-   Alternative: effort only, never cost.
-3. **Reviewer adjustments.** Proposed: estimators may adjust any item's figures with a reason; originals are kept.
-   Alternative: no manual edits; changes only through a new version.
-4. **Client visibility.** Proposed: the approved estimate is visible to the project (including the requirement's
-   author), and exportable; drafts are not.
+1. **Roles.** A new project role **Estimator** starts, reviews and adjusts the estimate; a **BRD Approver** approves it.
+   One person may hold both roles; approving alone needs the confirmation used for designs.
+2. **Money.** Effort and timeline always; cost only when the project sets a day rate per role.
+3. **Adjustments.** Estimators may change any item's figures with a reason; the original figures and every
+   adjustment are kept and shown.
+4. **Visibility.** Only the project's Estimators and BRD Approvers see the estimate, drafts and the approved version
+   alike, and only they can export it. Other members (including the requirement's author, unless they hold one of
+   these roles) see that an estimate exists and its status, not its content.
