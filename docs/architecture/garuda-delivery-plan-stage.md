@@ -1,6 +1,6 @@
 # Garuda: Delivery plan stage
 
-Status: **decided** (owner, 2026-11-20), GD-34. Section 7 records the owner's decisions.
+Status: **phase 1 implemented** (2026-11-20), GD-34: the plan, its review, approval and exports. The GitHub Issues push (7.3) is phase 2.
 
 An approved estimate moves the requirement to the next stage, **Delivery plan**. A Planning agent turns the approved
 design and estimate into a backlog of epics and user stories; Garuda (never the model) checks that every estimate work
@@ -80,3 +80,18 @@ status). Row-level security and guards as for estimates. Job `PLAN_GENERATION`, 
    (stories as issues with acceptance-criteria checklists, epics as milestones). The Garuda GitHub App must be granted
    issue-write permission for this; until it is, the push is unavailable and says why. Built after the plan itself.
 4. **Sprints.** Garuda proposes sprints (1 to 4 weeks) with dates from the team's capacity; Estimators can move stories.
+
+## 8. Implementation notes (phase 1)
+
+- Migration `0056-delivery-plan.sql`: the tables, `app.sees_plan` (Estimators and BRD Approvers, or anyone in the
+  project once the version is approved), guards, job `PLAN_GENERATION`, events `PlanRequested` and `EstimateApproved`,
+  timeline stage `PLAN`, prompt `plan.backlog` v1.
+- The worker may not read people's names, so it reads estimate adjustments without them (figures only).
+- Effort per story: expected effort (PERT, adjustments included) of the estimate work items it carries, shared equally
+  when a work item is split across stories. The plan total and the estimate total are shown side by side to insiders.
+- Sprints: stories in dependency order (priority, then the agent's order, breaks ties; a cycle is broken and flagged),
+  packed per role into sprints of people x working days x weeks; a story may share a sprint with what it depends on;
+  an Estimator's pinned sprint is kept and flagged if it comes before a dependency; a story bigger than a sprint is
+  flagged OVERSIZED and given a sprint of its own role.
+- Visibility: before approval, only Estimators and BRD Approvers see the plan and its timeline; once approved, every
+  project member sees epics, stories, sprints and risks (not the estimate's work items, gaps or edit history).

@@ -6,7 +6,7 @@ import { formatDateTime } from '../ui/components';
 
 export interface ActivityEntry {
   id: number;
-  stage: 'BRD' | 'DESIGN' | 'ESTIMATE';
+  stage: 'BRD' | 'DESIGN' | 'ESTIMATE' | 'PLAN';
   runId: string | null;
   kind: 'STEP' | 'DONE' | 'WARN' | 'FAIL' | 'DRAFT';
   message: string;
