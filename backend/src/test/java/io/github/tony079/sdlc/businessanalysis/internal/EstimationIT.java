@@ -536,6 +536,19 @@ class EstimationIT extends ApiIntegrationTest {
                 p.path("version").path("reviewHash").asString(), "confirmApproveAlone", true));
         assertThat(approved.status()).as(approved.body().toString()).isEqualTo(200);
 
+        // The requirement's environment names releases/qc for this repository: work starts there and pull requests go
+        // into it, not into the default branch. (Set directly: the environment is fixed once the quote is accepted.)
+        UUID requirementUuid = UUID.fromString(id);
+        admin.update("""
+                DO $$ DECLARE e uuid; BEGIN
+                  SET LOCAL session_replication_role = replica;
+                  INSERT INTO app.environment (tenant_id, project_id, name, created_by)
+                    SELECT tenant_id, project_id, 'QC for development', created_by FROM app.requirement
+                    WHERE id = '%s' RETURNING id INTO e;
+                  INSERT INTO app.environment_branch (tenant_id, project_id, environment_id, repository_id, branch, added_by)
+                    SELECT tenant_id, project_id, e, '%s', 'releases/qc', created_by FROM app.requirement WHERE id = '%s';
+                  UPDATE app.requirement SET target_environment_id = e WHERE id = '%s';
+                END $$""".formatted(requirementUuid, pushed.repositoryId(), requirementUuid, requirementUuid));
         String dev = "/api/v1/requirements/" + id + "/development";
         JsonNode before = eve.get(dev).body();
         assertThat(before.path("run").isNull()).isTrue();
@@ -592,6 +605,8 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(github.pulls("acme-org", pushed.name())).hasSize(wave1.size());
         Map<String, Object> pr = github.pulls("acme-org", pushed.name()).values().iterator().next();
         assertThat(String.valueOf(pr.get("body"))).contains("Closes #").contains("Garuda never merges");
+        assertThat(pr.get("base")).isEqualTo("releases/qc");
+        assertThat(state.path("run").path("baseBranch").asString()).isEqualTo("releases/qc");
         assertThat(github.committedFiles(String.valueOf(((Map<?, ?>) pr.get("head")).get("sha"))).keySet())
                 .containsAnyOf("hello.py", "theme.css");
         // Wave 2 waits until wave 1 is merged in GitHub.

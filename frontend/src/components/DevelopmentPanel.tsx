@@ -20,6 +20,8 @@ interface DevTask {
 interface DevRun {
   id: string; status: 'RUNNING' | 'PAUSED' | 'DELIVERED' | 'STOPPED'; repository: string; currentWave: number;
   agentSlots: number; startedAt: string; finishedAt: string | null; tasks: DevTask[]; counts: Record<string, number>;
+  /** The environment's branch pull requests go into; null means the repository's default branch. */
+  baseBranch?: string | null;
 }
 interface DevState {
   requirementId: string; canControl: boolean; run: DevRun | null; canStart?: boolean; notStarted?: string | null;
@@ -145,7 +147,8 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
       actions={<Badge tone={status.tone}>{status.label}</Badge>}
     >
       <p className="small">
-        Garuda’s Developer agent codes each story in a sandbox and opens a pull request on {run.repository} ({run.agentSlots} at
+        Garuda’s Developer agent codes each story in a sandbox and opens a pull request on {run.repository} into{' '}
+        <code>{run.baseBranch ?? 'the default branch'}</code> ({run.agentSlots} at
         a time). Review and merge them in GitHub; the next wave starts once the current one is merged. Started{' '}
         {formatDateTime(run.startedAt)}{run.finishedAt && ` · finished ${formatDateTime(run.finishedAt)}`}.
       </p>

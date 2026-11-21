@@ -34,7 +34,7 @@ class DevService {
     }
 
     record RunV(UUID id, String status, String repository, int currentWave, int agentSlots, OffsetDateTime startedAt,
-                OffsetDateTime finishedAt, List<TaskV> tasks, Map<String, Long> counts) {
+                OffsetDateTime finishedAt, List<TaskV> tasks, Map<String, Long> counts, String baseBranch) {
     }
 
     /**
@@ -97,7 +97,8 @@ class DevService {
         Map<String, Long> counts = new java.util.TreeMap<>();
         tasks.stream().filter(t -> !t.external()).forEach(t -> counts.merge(t.status(), 1L, Long::sum));
         return new DevState(requirementId, controls(v), new RunV(run.id(), run.status(), run.repository(),
-                run.currentWave(), run.agentSlots(), run.startedAt(), run.finishedAt(), tasks, counts), false, null);
+                run.currentWave(), run.agentSlots(), run.startedAt(), run.finishedAt(), tasks, counts,
+                devs.baseBranch(requirementId, run.repositoryId())), false, null);
     }
 
     private boolean forAgents(PlanPushRepository.PushRow push) {

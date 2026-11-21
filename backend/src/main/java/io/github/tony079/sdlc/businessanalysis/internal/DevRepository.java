@@ -140,6 +140,20 @@ class DevRepository {
                 .param("f", failureCode).param("id", id).update();
     }
 
+    /**
+     * The branch the requirement's environment names for the repository (pull requests go into it); null when the
+     * requirement names no environment or the environment has no branch for this repository.
+     */
+    String baseBranch(UUID requirementId, UUID repositoryId) {
+        return jdbc.sql("""
+                SELECT eb.branch FROM app.requirement r
+                JOIN app.environment_branch eb ON eb.environment_id = r.target_environment_id
+                                              AND eb.repository_id = :repo
+                WHERE r.id = :r
+                """).param("r", requirementId).param("repo", repositoryId).query(String.class).optional()
+                .orElse(null);
+    }
+
     void startCoding(UUID id) {
         jdbc.sql("UPDATE app.dev_task SET status = 'CODING', attempts = attempts + 1, failure_code = NULL WHERE id = :id")
                 .param("id", id).update();

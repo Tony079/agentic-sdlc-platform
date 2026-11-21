@@ -13,16 +13,25 @@ import io.github.tony079.sdlc.sourcerepo.api.IssueTracker.TrackerException;
  */
 public interface CodeHost {
 
-    /** Opens a session on a verified repository of the current tenant. Requires an active transaction. */
-    Session open(UUID repositoryId) throws TrackerException;
+    /**
+     * Opens a session on a verified repository of the current tenant, working from {@code baseBranch} (the branch the
+     * requirement's environment names; the repository's default branch when null). Requires an active transaction.
+     */
+    Session open(UUID repositoryId, String baseBranch) throws TrackerException;
+
+    /** A session on the repository's default branch. */
+    default Session open(UUID repositoryId) throws TrackerException {
+        return open(repositoryId, null);
+    }
 
     interface Session {
 
         String repository();
 
-        String defaultBranch();
+        /** The branch Garuda starts from and opens pull requests into. */
+        String baseBranch();
 
-        /** The commit SHA at the head of the default branch. */
+        /** The commit SHA at the head of the base branch. */
         String head() throws TrackerException;
 
         /** The repository tarball at a commit (GitHub's format). The caller closes the stream. */
@@ -30,8 +39,8 @@ public interface CodeHost {
 
         /**
          * Commits the files on top of {@code baseSha} to the branch (created, or moved when it exists from an
-         * earlier attempt) and opens a pull request against the default branch, or updates the open one (title and
-         * body). A draft pull request holds unfinished work; publishing the same branch with {@code draft} false
+         * earlier attempt) and opens a pull request into the base branch, or updates the open one (title, body and
+         * base). A draft pull request holds unfinished work; publishing the same branch with {@code draft} false
          * marks it ready for review.
          */
         PullRequest publish(String branch, String baseSha, List<FileChange> files, String message, String title,

@@ -125,12 +125,15 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
         try {
             CodeHost.Session session = tx.execute(s -> {
                 try {
-                    return codeHost.open(in.run().repositoryId());
+                    return codeHost.open(in.run().repositoryId(), devs.baseBranch(requirementId,
+                            in.run().repositoryId()));
                 } catch (TrackerException e) {
                     throw new Wrapped(e);
                 }
             });
             String baseSha = session.head();
+            activity.step(requirementId, stage, in.run().id(), "\"" + in.task().title() + "\": working from "
+                    + session.baseBranch() + "; its pull request goes into " + session.baseBranch() + ".");
             String branch = branch(in.requirementKey(), in.task().storyKey());
             // Unfinished work from an earlier attempt is on the story's branch (with anything a person pushed there):
             // carry on from its head and its work log.

@@ -45,14 +45,18 @@ class GitHubCodeHost implements CodeHost {
     }
 
     @Override
-    public Session open(UUID repositoryId) throws TrackerException {
+    public Session open(UUID repositoryId, String baseBranch) throws TrackerException {
         RepositoryRow repo = repositories.repository(repositoryId, false).orElse(null);
         if (repo == null || !"VERIFIED".equals(repo.status()) || repo.defaultBranch() == null) {
             throw new TrackerException(TrackerException.Kind.DENIED, "REPOSITORY_NOT_VERIFIED", null);
         }
         try {
             GitHubBroker.Token token = broker.codeToken(broker.installation(repo.owner(), repo.name()), repo.name());
-            return new GitHubSession(repo.owner(), repo.name(), repo.defaultBranch(), token);
+            String base = baseBranch == null || baseBranch.isBlank() ? repo.defaultBranch() : baseBranch;
+            if (CodeHost.garudaBranch(base)) {
+                throw new TrackerException(TrackerException.Kind.DENIED, "BASE_BRANCH_INVALID", null);
+            }
+            return new GitHubSession(repo.owner(), repo.name(), base, token);
         } catch (GitHubException e) {
             throw GitHubIssueTracker.translate(e);
         }
@@ -62,6 +66,7 @@ class GitHubCodeHost implements CodeHost {
 
         private final String owner;
         private final String name;
+        /** The branch Garuda starts from and opens pull requests into (the environment's, or the default). */
         private final String defaultBranch;
         private final GitHubBroker.Token token;
         private boolean wrote;
@@ -79,7 +84,7 @@ class GitHubCodeHost implements CodeHost {
         }
 
         @Override
-        public String defaultBranch() {
+        public String baseBranch() {
             return defaultBranch;
         }
 
@@ -174,7 +179,8 @@ class GitHubCodeHost implements CodeHost {
                     pr = open.body().get(0);
                     int existing = pr.path("number").asInt(0);
                     // The open one is from an earlier attempt: bring its title and notes up to date.
-                    write("PATCH", "/pulls/" + existing, Map.of("title", title, "body", body), Set.of());
+                    write("PATCH", "/pulls/" + existing, Map.of("title", title, "body", body, "base", defaultBranch),
+                            Set.of());
                     if (!draft && pr.path("draft").asBoolean(false)) {
                         // REST cannot take a pull request out of draft; GraphQL can, with the same token.
                         String node = pr.path("node_id").asString("");
