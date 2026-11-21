@@ -33,7 +33,7 @@ const version = {
 describe('PlanPanel (GD-34)', () => {
   it('keeps a draft private from other members', async () => {
     mockFetch(() => ({ status: 200, body: { requirementId: 'r1', canSee: false, insider: false,
-      review: review({ isEstimator: false, canEdit: false, canRequestChanges: false }), version: null, history: [], defaults: null } }));
+      review: review({ isEstimator: false, canEdit: false, canRequestChanges: false }), version: null, history: [], defaults: null, push: null } }));
     renderWithProviders(<PlanPanel requirementId="r1" />);
     expect(await screen.findByText(/shown to the project once a BRD Approver approves it/)).toBeInTheDocument();
     expect(screen.queryByText(/API skeleton/)).not.toBeInTheDocument();
@@ -41,7 +41,7 @@ describe('PlanPanel (GD-34)', () => {
 
   it('shows stories by sprint and lets an Estimator move a flagged story with a reason', async () => {
     document.cookie = 'XSRF-TOKEN=p1; path=/';
-    const body = { requirementId: 'r1', canSee: true, insider: true, review: review(), version, history: [], defaults: null };
+    const body = { requirementId: 'r1', canSee: true, insider: true, review: review(), version, history: [], defaults: null, push: null };
     const calls = mockFetch((url, init) => ({ status: 200, body: url.endsWith('/plan') || init.method === 'POST' ? body : [] }));
     renderWithProviders(<PlanPanel requirementId="r1" />);
     const sprint2 = await screen.findByRole('region', { name: 'Sprint 2' });
@@ -57,5 +57,37 @@ describe('PlanPanel (GD-34)', () => {
     await user.click(within(flagged).getByRole('button', { name: 'Save changes' }));
     const post = calls.find((c) => c.url.endsWith('/plan/stories/story-b/edit'));
     expect(JSON.parse(String(post?.init.body))).toEqual({ changes: { priority: 'COULD', sprint: 3 }, reason: 'Nice to have after launch.' });
+  });
+
+  it('lets an Estimator push the approved plan to a GitHub repository and links the pushed issues', async () => {
+    document.cookie = 'XSRF-TOKEN=p1; path=/';
+    const approved = { ...version, status: 'APPROVED' };
+    const push = {
+      canPush: true, unavailableReason: null, repositories: [{ id: 'repo-1', fullName: 'acme-org/portfolio' }],
+      pushes: [{ id: 'x1', repository: 'acme-org/portfolio', planVersionNo: 1, status: 'FAILED', itemsTotal: 4, created: 0,
+        updated: 0, failed: 0, failureCode: 'GITHUB_ISSUES_PERMISSION', message: 'Not pushed: the Garuda GitHub App has not been granted Issues: Read and write.',
+        requestedAt: '2026-11-21T10:00:00Z', finishedAt: '2026-11-21T10:00:05Z' }],
+      issueUrls: { 'story-a': 'https://github.com/acme-org/portfolio/issues/7' },
+    };
+    const body = { requirementId: 'r1', canSee: true, insider: true, review: review({ stage: 'APPROVED', canEdit: false, canRequestChanges: false, unacceptedFlags: [] }),
+      version: approved, history: [], defaults: null, push };
+    const calls = mockFetch((url, init) => ({ status: 200, body: url.endsWith('/plan') || init.method === 'POST' ? body : [] }));
+    renderWithProviders(<PlanPanel requirementId="r1" />);
+    const section = await screen.findByRole('region', { name: 'GitHub Issues' });
+    expect(within(section).getByText(/Issues: Read and write/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '#7' })).toHaveAttribute('href', 'https://github.com/acme-org/portfolio/issues/7');
+    await userEvent.setup().click(within(section).getByRole('button', { name: 'Push again' }));
+    const post = calls.find((c) => c.url.endsWith('/plan/push'));
+    expect(JSON.parse(String(post?.init.body))).toEqual({ repositoryId: 'repo-1' });
+  });
+
+  it('tells an Estimator why the push is not available without a verified repository', async () => {
+    const body = { requirementId: 'r1', canSee: true, insider: true, review: review({ stage: 'APPROVED', canEdit: false, unacceptedFlags: [] }),
+      version: { ...version, status: 'APPROVED' }, history: [], defaults: null,
+      push: { canPush: false, unavailableReason: 'The project has no verified GitHub repository.', repositories: [], pushes: [], issueUrls: {} } };
+    mockFetch((url) => ({ status: 200, body: url.endsWith('/plan') ? body : [] }));
+    renderWithProviders(<PlanPanel requirementId="r1" />);
+    expect(await screen.findByText(/no verified GitHub repository/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Push/ })).not.toBeInTheDocument();
   });
 });

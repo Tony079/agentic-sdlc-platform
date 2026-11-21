@@ -104,3 +104,5 @@ databaseChangeLog:
   - include: { file: changes/0055-estimation.sql, relativeToChangelogFile: true }
   # GD-34 (2026-11-20): Delivery plan stage.
   - include: { file: changes/0056-delivery-plan.sql, relativeToChangelogFile: true }
+  # GD-34 phase 2 (2026-11-21): push the approved plan to GitHub Issues.
+  - include: { file: changes/0057-plan-push.sql, relativeToChangelogFile: true }

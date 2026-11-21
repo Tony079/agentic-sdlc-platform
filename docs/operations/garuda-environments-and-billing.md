@@ -2,13 +2,25 @@
 
 How to run project environments (GD-20, GD-21) and BRD billing (GD-22) in an installation.
 
-## GitHub App (read-only)
+## GitHub App
 
-1. Create a GitHub App owned by Garuda with **read-only** permissions: *Contents* and *Metadata*. It needs no webhooks and no write permission.
+1. Create a GitHub App owned by Garuda with the repository permissions *Contents: Read* and *Metadata: Read*. It needs no webhooks. To let Estimators push approved delivery plans to GitHub Issues (GD-34 phase 2), also give it *Issues: Read and write* (see "Delivery plan push" below).
 2. Mount its private key in the **worker** only: `SDLC_GITHUB_PRIVATE_KEY_FILE`, with `SDLC_GITHUB_APP_ID` and `SDLC_GITHUB_ENABLED=true` (see `secrets-and-key-management.md`). The API never holds GitHub credentials.
 3. Each client installs the App on its GitHub organisation, on the repositories of its products.
 
 When the App is not installed on a repository, its Environment Manager sees **App not installed** on the Environments tab. Ask the client's GitHub administrator to install it, then use **Check again**.
+
+## Delivery plan push to GitHub Issues (GD-34 phase 2)
+
+Garuda never writes code. The only write permission it ever asks for is *Issues: Read and write*, and only for the job that pushes a plan.
+
+1. **Garuda (App owner):** GitHub → Settings → Developer settings → GitHub Apps → the Garuda App → *Permissions & events* → Repository permissions → *Issues: Read and write*. Save. GitHub then asks every installation to accept the new permission.
+2. **Client (owner of the GitHub organisation or account where the App is installed):** GitHub → Settings → Applications → Installed GitHub Apps → the Garuda App → *Review request* → *Accept new permissions*. Until this is accepted, a push fails with "the Garuda GitHub App has not been granted Issues: Read and write", and nothing is written.
+3. **Repository:** the plan is pushed to a **verified repository of the project** (Environments tab). For a new product this can be a new, empty repository: create it on GitHub, make sure the App installation includes it, and connect it on the Environments tab. Issues must be turned on in the repository's settings.
+
+What a push does: one issue per story (acceptance criteria as a checklist, epic, sprint, role, priority and expected effort in the description), one milestone per sprint named `REQ-xxxxxx Sprint n` with the sprint's end date, and labels `garuda`, `epic: …`, `role: …`, `priority: …`. Pushing again updates the same issues and milestones (title, labels, milestone and description); acceptance criteria ticked on GitHub stay ticked, and closed issues stay closed. An issue deleted on GitHub is created again.
+
+The token for a push is narrowed to the one repository with *Issues: Read and write* and *Metadata: Read*, never *Contents*. Writes are spaced by `SDLC_GITHUB_ISSUE_WRITE_PAUSE` (default 1 s) to respect GitHub's limits on content creation; a rate limit waits and continues where it stopped.
 
 ## Environments
 

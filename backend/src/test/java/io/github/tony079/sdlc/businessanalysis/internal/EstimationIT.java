@@ -14,6 +14,7 @@ import io.github.tony079.sdlc.queue.internal.JobWorker;
 import io.github.tony079.sdlc.support.ApiClient;
 import io.github.tony079.sdlc.support.ApiClient.Response;
 import io.github.tony079.sdlc.support.ApiIntegrationTest;
+import io.github.tony079.sdlc.support.FakeGitHub;
 import io.github.tony079.sdlc.support.RequirementFixtures;
 import io.github.tony079.sdlc.support.TestDatabase;
 import io.github.tony079.sdlc.support.WorkerContext;
@@ -301,5 +302,93 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(planCsv.status()).isEqualTo(200);
         assertThat(new String(planCsv.body(), StandardCharsets.UTF_8)).contains("2026-12-07").contains("Platform");
         assertThat(aaron.download(plan + "/export?format=pdf").status()).isEqualTo(200);
+
+        pushToGitHubIssues(tenant, projectId, plan, eve, aaron, victor);
+    }
+
+    /** GD-34 phase 2: the approved plan pushed to GitHub Issues of a verified project repository. */
+    private void pushToGitHubIssues(UUID tenant, String projectId, String plan, ApiClient eve, ApiClient aaron,
+                                    ApiClient victor) {
+        FakeGitHub github = FakeGitHub.get();
+        github.reset();
+        String name = "portfolio-" + UUID.randomUUID().toString().substring(0, 8);
+        long githubId = 900_000_000L + (long) (Math.random() * 1_000_000);
+        github.put(new FakeGitHub.Repo("acme-org", name, githubId, "main", "a".repeat(40), new byte[0], true));
+        assertThat(eve.get(plan).body().path("push").path("canPush").asBoolean())
+                .as("no verified repository yet").isFalse();
+        assertThat(eve.get(plan).body().path("push").path("unavailableReason").asString()).contains("Issues: Read and write");
+        UUID staff = io.github.tony079.sdlc.support.AnalysisScenario.registrar().id();
+        UUID repositoryId = admin.queryForObject("""
+                INSERT INTO app.repository (tenant_id, github_owner, github_name, repository_url, status, github_repo_id,
+                                            default_branch, registered_by, verified_at)
+                VALUES (?, 'acme-org', ?, ?, 'VERIFIED', ?, 'main', ?, now()) RETURNING id
+                """, UUID.class, tenant, name, "https://github.com/acme-org/" + name, githubId, staff);
+        admin.update("INSERT INTO app.project_repository (tenant_id, project_id, repository_id) VALUES (?, ?::uuid, ?)",
+                tenant, projectId, repositoryId);
+
+        JsonNode push = eve.get(plan).body().path("push");
+        assertThat(push.path("canPush").asBoolean()).isTrue();
+        assertThat(push.path("repositories").get(0).path("fullName").asString()).isEqualTo("acme-org/" + name);
+        assertThat(victor.get(plan).body().path("push").path("canPush").asBoolean()).isFalse();
+        assertThat(victor.get(plan).body().path("push").path("repositories").size()).isZero();
+        assertThat(aaron.post(plan + "/push", Map.of("repositoryId", repositoryId.toString())).errorCode())
+                .isEqualTo("PLAN_DECISION_NOT_ALLOWED");
+
+        // Before the App is granted Issues: Read and write, the push fails and says why.
+        github.issuesPermission(false);
+        Response first = eve.post(plan + "/push", Map.of("repositoryId", repositoryId.toString()));
+        assertThat(first.status()).as(first.body().toString()).isEqualTo(200);
+        assertThat(eve.post(plan + "/push", Map.of("repositoryId", repositoryId.toString())).errorCode())
+                .as("one push at a time").isEqualTo("PLAN_PUSH_RUNNING");
+        drive(tenant);
+        JsonNode failed = eve.get(plan).body().path("push").path("pushes").get(0);
+        assertThat(failed.path("status").asString()).isEqualTo("FAILED");
+        assertThat(failed.path("failureCode").asString()).isEqualTo("GITHUB_ISSUES_PERMISSION");
+        assertThat(failed.path("message").asString()).contains("Issues: Read and write");
+        assertThat(github.issues("acme-org", name)).isEmpty();
+        // The token asked for issues and metadata only: never the repository's contents.
+        assertThat(github.tokenRequests().getLast()).contains("\"issues\":\"write\"").doesNotContain("contents");
+
+        // Granted: stories become issues with checklists, sprints become milestones, labels for epic/role/priority.
+        github.issuesPermission(true);
+        assertThat(eve.post(plan + "/push", Map.of("repositoryId", repositoryId.toString())).status()).isEqualTo(200);
+        drive(tenant);
+        JsonNode done = eve.get(plan).body().path("push");
+        assertThat(done.path("pushes").get(0).path("status").asString()).as(done.toString()).isEqualTo("DONE");
+        int sprints = eve.get(plan).body().path("version").path("sprints").size();
+        assertThat(done.path("pushes").get(0).path("created").asInt()).isEqualTo(3 + sprints);
+        assertThat(github.issues("acme-org", name)).hasSize(3);
+        assertThat(github.milestones("acme-org", name)).hasSize(sprints);
+        assertThat(github.labels("acme-org", name)).containsKeys("garuda", "epic: platform", "priority: must",
+                "role: backend");
+        assertThat(done.path("issueUrls").size()).isEqualTo(3);
+        Map.Entry<Integer, Map<String, Object>> skeletonIssue = github.issues("acme-org", name).entrySet().stream()
+                .filter(e -> String.valueOf(e.getValue().get("title")).contains("skeleton")).findFirst().orElseThrow();
+        Map<String, Object> pagesIssue = github.issues("acme-org", name).values().stream()
+                .filter(i -> String.valueOf(i.get("title")).contains("pages built")).findFirst().orElseThrow();
+        assertThat(String.valueOf(skeletonIssue.getValue().get("body")))
+                .contains("- [ ] Given a deploy, when /health is called, then it answers 200").contains("**Sprint:** 1");
+        assertThat(String.valueOf(pagesIssue.get("body"))).as("dependencies link the pushed issue")
+                .contains("- #" + skeletonIssue.getKey() + " As a developer, I want the API skeleton");
+        assertThat(pagesIssue.get("milestone")).isNotNull();
+
+        // A developer ticks a criterion on GitHub; pushing again updates the same issues and keeps the tick.
+        github.editIssueBody("acme-org", name, skeletonIssue.getKey(),
+                String.valueOf(skeletonIssue.getValue().get("body")).replace("- [ ] Given", "- [x] Given"));
+        assertThat(eve.post(plan + "/push", Map.of("repositoryId", repositoryId.toString())).status()).isEqualTo(200);
+        drive(tenant);
+        JsonNode again = eve.get(plan).body().path("push").path("pushes").get(0);
+        assertThat(again.path("status").asString()).isEqualTo("DONE");
+        assertThat(again.path("created").asInt()).isZero();
+        assertThat(again.path("updated").asInt()).isEqualTo(3 + sprints);
+        assertThat(github.issues("acme-org", name)).hasSize(3);
+        assertThat(String.valueOf(github.issues("acme-org", name).get(skeletonIssue.getKey()).get("body")))
+                .contains("- [x] Given a deploy");
+        // A Viewer sees the push status and the issue links once the plan is approved.
+        assertThat(victor.get(plan).body().path("push").path("issueUrls").size()).isEqualTo(3);
+        // What was pushed is never deleted from Garuda's record.
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> admin.update("DELETE FROM app.plan_push_item"))
+                .hasMessageContaining("not deleted");
+        github.reset();
     }
 }

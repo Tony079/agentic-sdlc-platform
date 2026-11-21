@@ -33,10 +33,12 @@ class PlanConsumers implements EventConsumer {
     private final AuditWriter audit;
     private final JdbcClient jdbc;
     private final ActivityLog activity;
+    private final PlanPushRepository pushes;
 
-    PlanConsumers(JobQueue jobs, PlanRepository plans, EstimateRepository estimates, DesignRepository designs,
+    PlanConsumers(JobQueue jobs, PlanPushRepository pushes, PlanRepository plans, EstimateRepository estimates, DesignRepository designs,
                   ReviewRepository reviews, AuditWriter audit, JdbcClient jdbc, ActivityLog activity) {
         this.jobs = jobs;
+        this.pushes = pushes;
         this.plans = plans;
         this.estimates = estimates;
         this.designs = designs;
@@ -54,7 +56,7 @@ class PlanConsumers implements EventConsumer {
     @Override
     public boolean accepts(String eventType) {
         return EventTypes.PLAN_REQUESTED.equals(eventType) || EventTypes.ESTIMATE_APPROVED.equals(eventType)
-                || EventTypes.JOB_DEAD.equals(eventType);
+                || EventTypes.PLAN_PUSH_REQUESTED.equals(eventType) || EventTypes.JOB_DEAD.equals(eventType);
     }
 
     @Override
@@ -77,6 +79,16 @@ class PlanConsumers implements EventConsumer {
             }
             return;
         }
+        if (EventTypes.PLAN_PUSH_REQUESTED.equals(event.eventType())) {
+            UUID pushId = event.uuid("planPushId");
+            jobs.enqueue(new JobRequest(PlanPushHandler.JOB_TYPE, "plan-push:" + pushId, "REQUIREMENT",
+                    event.aggregateId(), null, Map.of("planPushId", pushId.toString()), 100));
+            return;
+        }
+        if (PlanPushHandler.JOB_TYPE.equals(event.payload().get("jobType"))) {
+            pushDead(event);
+            return;
+        }
         if (!PlanGenerationHandler.JOB_TYPE.equals(event.payload().get("jobType"))) {
             return;
         }
@@ -90,5 +102,28 @@ class PlanConsumers implements EventConsumer {
             reviews.notify(v.tenantId(), v.requestedBy(), "PLAN_FAILED", v.requirementId());
             audit.record(AuditAction.PLAN_FAILED, "PLAN_VERSION", v.id(), AuditResult.FAILED);
         });
+    }
+
+    /** A dead PLAN_PUSH job (retries used up, for example GitHub unreachable for a day) ends its push as FAILED. */
+    private void pushDead(DomainEvent event) {
+        Map<String, Object> row = jdbc.sql("SELECT payload->>'planPushId' AS push, last_error_code AS code FROM app.job "
+                + "WHERE id = :id").param("id", event.uuid("jobId")).query().singleRow();
+        UUID pushId;
+        try {
+            pushId = UUID.fromString(String.valueOf(row.get("push")));
+        } catch (IllegalArgumentException e) {
+            return;
+        }
+        String code = row.get("code") instanceof String c && c.matches("^[A-Z][A-Z0-9_]{1,63}$") ? c
+                : "PLAN_PUSH_FAILED";
+        pushes.find(pushId, true).filter(p -> "QUEUED".equals(p.status()) || "RUNNING".equals(p.status()))
+                .ifPresent(p -> {
+                    pushes.finish(p.id(), p.created() + p.updated() > 0 ? "PARTIAL" : "FAILED", 0, code);
+                    activity.fail(p.requirementId(), ActivityLog.Stage.PLAN, p.planVersionId(), "Pushing to GitHub "
+                            + "stopped after its automatic retries (" + PlanService.pushReason(code)
+                            + "). An Estimator can push again from this page; what was pushed is kept.");
+                    reviews.notify(p.tenantId(), p.requestedBy(), "PLAN_PUSH_FAILED", p.requirementId());
+                    audit.record(AuditAction.PLAN_PUSH_FAILED, "PLAN_PUSH", p.id(), AuditResult.FAILED);
+                });
     }
 }

@@ -53,6 +53,12 @@ class GitHubBroker {
     static final long MAX_JSON_BYTES = 1_048_576;
     private static final String KEY_LABEL = "PRIVATE" + " KEY";
     private static final Map<String, String> TOKEN_PERMISSIONS = Map.of("contents", "read", "metadata", "read");
+    /** GD-34 phase 2: pushing a delivery plan. No contents access: the token cannot read or change code. */
+    static final Map<String, String> ISSUE_PERMISSIONS = Map.of("issues", "write", "metadata", "read");
+
+    /** A response whose status the caller handles itself; {@code body} is null unless the status was 2xx. */
+    record Reply(int status, JsonNode body) {
+    }
 
     record Installation(long id) {
     }
@@ -156,10 +162,25 @@ class GitHubBroker {
     }
 
     Token token(Installation installation, String repositoryName) throws GitHubException {
+        return guardedToken(installation, repositoryName, TOKEN_PERMISSIONS);
+    }
+
+    /**
+     * GD-34 phase 2: a token narrowed to one repository with Issues: Read and write and Metadata: Read. When the App
+     * has not been granted the Issues permission (GitHub answers 422), fails ACCESS_DENIED / GITHUB_ISSUES_PERMISSION.
+     */
+    Token issuesToken(Installation installation, String repositoryName) throws GitHubException {
+        return guardedToken(installation, repositoryName, ISSUE_PERMISSIONS);
+    }
+
+    private Token guardedToken(Installation installation, String repositoryName, Map<String, String> wanted)
+            throws GitHubException {
         try {
-            return exchangeToken(installation, repositoryName);
+            return exchangeToken(installation, repositoryName, wanted);
         } catch (GitHubException e) {
-            if (securityEvents != null && (e.kind() == Kind.ACCESS_DENIED || "GITHUB_TOKEN_SCOPE".equals(e.code()))) {
+            // A missing Issues permission is a setup step, not a credential failure.
+            if (securityEvents != null && !"GITHUB_ISSUES_PERMISSION".equals(e.code())
+                    && (e.kind() == Kind.ACCESS_DENIED || "GITHUB_TOKEN_SCOPE".equals(e.code()))) {
                 securityEvents.record(
                         io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder.SecurityEventType
                                 .GITHUB_CREDENTIAL_FAILURE,
@@ -172,11 +193,12 @@ class GitHubBroker {
         }
     }
 
-    private Token exchangeToken(Installation installation, String repositoryName) throws GitHubException {
+    private Token exchangeToken(Installation installation, String repositoryName, Map<String, String> wanted)
+            throws GitHubException {
         requireEnabled();
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("repositories", List.of(repositoryName));
-        request.put("permissions", TOKEN_PERMISSIONS);
+        request.put("permissions", wanted);
         HttpRequest post = HttpRequest.newBuilder(api("/app/installations/" + installation.id() + "/access_tokens"))
                 .timeout(Duration.ofSeconds(30))
                 .header("Accept", "application/vnd.github+json")
@@ -184,7 +206,17 @@ class GitHubBroker {
                 .header("X-GitHub-Api-Version", "2022-11-28")
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(request)))
                 .build();
-        JsonNode body = readJson(send(post));
+        HttpResponse<InputStream> response = sendStream(post);
+        if (response.statusCode() == 422 && wanted.containsKey("issues")) {
+            // The installation was not granted the permission asked for.
+            closeQuietly(response.body());
+            throw new GitHubException(Kind.ACCESS_DENIED, "GITHUB_ISSUES_PERMISSION");
+        }
+        if (response.statusCode() / 100 != 2) {
+            closeQuietly(response.body());
+            throw classify(response);
+        }
+        JsonNode body = readJson(response);
         String token = body.path("token").asString("");
         if (token.isEmpty() || token.length() > 512) {
             throw new GitHubException(Kind.INVALID_RESPONSE, "GITHUB_INVALID_RESPONSE");
@@ -193,7 +225,9 @@ class GitHubBroker {
         if (permissions.isObject()) {
             for (var entry : permissions.properties()) {
                 String granted = entry.getValue().asString("");
-                if (!"read".equals(granted) || !TOKEN_PERMISSIONS.containsKey(entry.getKey())) {
+                String asked = wanted.get(entry.getKey());
+                // Never more than asked for: "read" where "write" was asked is fine, the reverse is refused.
+                if (asked == null || !("read".equals(granted) || granted.equals(asked))) {
                     throw new GitHubException(Kind.INVALID_RESPONSE, "GITHUB_TOKEN_SCOPE");
                 }
             }
@@ -271,6 +305,34 @@ class GitHubBroker {
             throw classify(second);
         }
         return second.body();
+    }
+
+    /**
+     * GD-34 phase 2: a JSON request to the repository API ({@code path} after /repos/owner/name). A 2xx answer is
+     * parsed (object or array); a status in {@code handled} is returned without reading the body; anything else is
+     * classified. Bodies are never logged.
+     */
+    Reply call(String method, String owner, String name, String path, Object body, Token token, Set<Integer> handled)
+            throws GitHubException {
+        HttpRequest.BodyPublisher publisher = body == null ? HttpRequest.BodyPublishers.noBody()
+                : HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body));
+        HttpRequest request = HttpRequest.newBuilder(api("/repos/" + segment(owner) + "/" + segment(name) + path))
+                .timeout(Duration.ofSeconds(30))
+                .header("Accept", "application/vnd.github+json")
+                .header("Authorization", "Bearer " + token.value())
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("Content-Type", "application/json")
+                .method(method, publisher).build();
+        HttpResponse<InputStream> response = sendStream(request);
+        int status = response.statusCode();
+        if (status / 100 == 2) {
+            return new Reply(status, readNode(response));
+        }
+        closeQuietly(response.body());
+        if (handled.contains(status)) {
+            return new Reply(status, null);
+        }
+        throw classify(response);
     }
 
     // --- App JWT -------------------------------------------------------------------------------------------------
@@ -438,13 +500,21 @@ class GitHubBroker {
     }
 
     private JsonNode readJson(HttpResponse<InputStream> response) throws GitHubException {
+        JsonNode node = readNode(response);
+        if (!node.isObject()) {
+            throw new GitHubException(Kind.INVALID_RESPONSE, "GITHUB_INVALID_RESPONSE");
+        }
+        return node;
+    }
+
+    private JsonNode readNode(HttpResponse<InputStream> response) throws GitHubException {
         try (InputStream in = response.body()) {
             byte[] bytes = in.readNBytes((int) MAX_JSON_BYTES + 1);
             if (bytes.length > MAX_JSON_BYTES) {
                 throw new GitHubException(Kind.INVALID_RESPONSE, "GITHUB_RESPONSE_TOO_LARGE");
             }
             JsonNode node = json.readTree(bytes);
-            if (node == null || !node.isObject()) {
+            if (node == null || !(node.isObject() || node.isArray())) {
                 throw new GitHubException(Kind.INVALID_RESPONSE, "GITHUB_INVALID_RESPONSE");
             }
             return node;

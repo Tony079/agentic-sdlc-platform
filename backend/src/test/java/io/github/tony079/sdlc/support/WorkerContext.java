@@ -50,6 +50,7 @@ public final class WorkerContext {
                             "--sdlc.github.api-base-url=" + FakeGitHub.get().apiBaseUrl(),
                             "--sdlc.github.allowed-hosts=localhost,127.0.0.1",
                             "--sdlc.github.allow-loopback-http=true",
+                            "--sdlc.github.issue-write-pause=0s",
                             "--logging.structured.format.console=");
         }
         return context;

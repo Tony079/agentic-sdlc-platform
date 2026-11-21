@@ -28,6 +28,8 @@ const KINDS: Record<string, string> = {
   PLAN_READY_FOR_REVIEW: 'A delivery plan is ready for review.',
   PLAN_APPROVED: 'A delivery plan was approved.',
   PLAN_FAILED: 'A delivery plan could not be written. You can try again from the requirement.',
+  PLAN_PUSHED: 'A delivery plan was pushed to GitHub Issues.',
+  PLAN_PUSH_FAILED: 'A delivery plan push to GitHub did not complete. The plan says why; you can push again.',
 };
 
 interface NotificationSettings {

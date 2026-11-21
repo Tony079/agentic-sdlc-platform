@@ -88,6 +88,15 @@ class PlanController {
         return plans.requestChanges(id, body.text());
     }
 
+    record PushBody(UUID repositoryId) {
+    }
+
+    /** GD-34 phase 2: push the approved plan to GitHub Issues of a verified project repository. */
+    @PostMapping(BASE + "/push")
+    PlanState push(@PathVariable UUID id, @RequestBody PushBody body) {
+        return plans.push(id, body == null ? null : body.repositoryId());
+    }
+
     @GetMapping(BASE + "/export")
     ResponseEntity<byte[]> export(@PathVariable UUID id, @RequestParam(defaultValue = "pdf") String format,
                                   @RequestParam(required = false) String tz,

@@ -52,9 +52,65 @@ interface PlanHistory {
   versionNo: number; status: string; createdAt: string; changeRequest: string | null; approvedBy: string | null;
   approvedAt: string | null;
 }
+interface PlanPush {
+  id: string; repository: string; planVersionNo: number; status: 'QUEUED' | 'RUNNING' | 'DONE' | 'PARTIAL' | 'FAILED';
+  itemsTotal: number; created: number; updated: number; failed: number; failureCode: string | null; message: string;
+  requestedAt: string; finishedAt: string | null;
+}
+interface PushInfo {
+  canPush: boolean; unavailableReason: string | null; repositories: { id: string; fullName: string }[];
+  pushes: PlanPush[]; issueUrls: Record<string, string>;
+}
 interface PlanState {
   requirementId: string; canSee: boolean; insider: boolean; review: PlanReview; version: PlanVersion | null;
-  history: PlanHistory[]; defaults: Settings | null;
+  history: PlanHistory[]; defaults: Settings | null; push: PushInfo | null;
+}
+
+const PUSH_TONE: Record<PlanPush['status'], Tone> = {
+  QUEUED: 'info', RUNNING: 'info', DONE: 'success', PARTIAL: 'warning', FAILED: 'danger',
+};
+const pushing = (p: PushInfo | null | undefined) => p?.pushes.some((x) => x.status === 'QUEUED' || x.status === 'RUNNING') ?? false;
+const issueNumber = (url: string) => url.split('/').pop();
+
+/** GD-34 phase 2: push the approved plan to GitHub Issues (Estimators), and the status of recent pushes (everyone). */
+function PushSection({ push, busy, onPush }: { push: PushInfo; busy: boolean; onPush: (repositoryId: string) => void }) {
+  const [repositoryId, setRepositoryId] = useState(push.repositories[0]?.id ?? '');
+  const running = pushing(push);
+  return (
+    <section aria-label="GitHub Issues" className="stack" style={{ marginTop: '1rem' }}>
+      <h3>GitHub Issues</h3>
+      {push.canPush && (
+        <>
+          <p className="small">
+            Each story becomes an issue with its acceptance criteria as a checklist; each sprint becomes a milestone with its
+            end date; epics, roles and priorities become labels. Pushing again updates the same issues, and criteria ticked
+            on GitHub stay ticked.
+          </p>
+          <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <label>Repository
+              <select value={repositoryId} onChange={(e) => setRepositoryId(e.target.value)}>
+                {push.repositories.map((r) => <option key={r.id} value={r.id}>{r.fullName}</option>)}
+              </select>
+            </label>
+            <button type="button" className="btn-primary" disabled={busy || running || !repositoryId}
+              onClick={() => onPush(repositoryId)}>{push.pushes.length > 0 ? 'Push again' : 'Push to GitHub Issues'}</button>
+          </div>
+        </>
+      )}
+      {push.unavailableReason && <Callout tone="info" title="Not available yet">{push.unavailableReason}</Callout>}
+      {push.pushes.length > 0 && (
+        <ul className="brd-items">
+          {push.pushes.map((p) => (
+            <li key={p.id}>
+              <Badge tone={PUSH_TONE[p.status]}>{p.status.toLowerCase()}</Badge> <strong>{p.repository}</strong>{' '}
+              <span className="small">plan v{p.planVersionNo} · {formatDateTime(p.requestedAt)}</span>
+              <div className="small">{p.message}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 const STAGE: Record<Stage, { label: string; tone: Tone }> = {
@@ -153,7 +209,7 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
   const plan = useQuery({
     queryKey: ['plan', requirementId],
     queryFn: () => api.get<PlanState>(`/api/v1/requirements/${requirementId}/plan`),
-    refetchInterval: (q) => (q.state.data?.review.stage === 'GENERATING' ? 4000 : false),
+    refetchInterval: (q) => (q.state.data?.review.stage === 'GENERATING' || pushing(q.state.data?.push) ? 4000 : false),
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
@@ -285,6 +341,10 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
                   <li key={s.storyKey} className={s.flags.length > 0 && !s.accepted && s.edits.length === 0 ? 'support-flagged' : ''}>
                     <Badge tone={PRIORITY_TONE[s.priority] ?? 'neutral'}>{s.priority.toLowerCase()}</Badge>{' '}
                     <span className="label">{ROLE_LABEL[s.role] ?? s.role}</span> <strong>{s.title}</strong>
+                    {(() => {
+                      const url = data.push?.issueUrls[s.storyKey];
+                      return url ? <> <a href={url} target="_blank" rel="noopener noreferrer" className="small">#{issueNumber(url)}</a></> : null;
+                    })()}
                     <div className="small">{epicTitle(s.epicKey)} · {one(s.effortDays)} days{s.pinned && ' · sprint set by an Estimator'}
                       {s.dependsOn.length > 0 && ` · after: ${s.dependsOn.join('; ')}`}</div>
                     <ul className="small" style={{ margin: '0.2rem 0 0', paddingLeft: '1.1rem' }}>
@@ -340,6 +400,10 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
               </form>
             )}
           </div>
+          {review.stage === 'APPROVED' && data.push && (
+            <PushSection push={data.push} busy={busy}
+              onPush={(repositoryId) => void act('push', { repositoryId }, 'Pushing to GitHub. This page updates as issues are created.')} />
+          )}
           {data.insider && (
             <div style={{ marginTop: '1.25rem' }}>
               <ActivityTimeline requirementId={requirementId} stage="PLAN" live={false} title="How this plan was produced" />

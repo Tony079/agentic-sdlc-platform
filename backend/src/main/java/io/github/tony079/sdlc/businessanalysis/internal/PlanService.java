@@ -89,7 +89,24 @@ class PlanService {
     }
 
     record PlanState(UUID requirementId, boolean canSee, boolean insider, ReviewV review, VersionV version,
-                     List<HistoryV> history, Map<String, Object> defaults) {
+                     List<HistoryV> history, Map<String, Object> defaults, PushInfo push) {
+    }
+
+    /** GD-34 phase 2: one push of the approved plan to GitHub Issues. */
+    record PushV(UUID id, String repository, int planVersionNo, String status, int itemsTotal, int created,
+                 int updated, int failed, String failureCode, String message, OffsetDateTime requestedAt,
+                 OffsetDateTime finishedAt) {
+    }
+
+    record RepositoryV(UUID id, String fullName) {
+    }
+
+    /**
+     * Push status for the approved plan: the project's verified repositories (Estimators only), recent pushes and the
+     * GitHub issue of each story in the repository pushed to last.
+     */
+    record PushInfo(boolean canPush, String unavailableReason, List<RepositoryV> repositories, List<PushV> pushes,
+                    Map<String, String> issueUrls) {
     }
 
     private record Access(UUID me, UUID projectId, boolean estimator, boolean approver) {
@@ -99,6 +116,7 @@ class PlanService {
     }
 
     private final PlanRepository plans;
+    private final PlanPushRepository pushes;
     private final EstimateRepository estimates;
     private final ReviewRepository reviews;
     private final RequirementDirectory requirements;
@@ -106,9 +124,10 @@ class PlanService {
     private final AuditWriter audit;
     private final JsonMapper json;
 
-    PlanService(PlanRepository plans, EstimateRepository estimates, ReviewRepository reviews,
+    PlanService(PlanRepository plans, PlanPushRepository pushes, EstimateRepository estimates, ReviewRepository reviews,
                 RequirementDirectory requirements, OutboxPublisher outbox, AuditWriter audit, JsonMapper json) {
         this.plans = plans;
+        this.pushes = pushes;
         this.estimates = estimates;
         this.reviews = reviews;
         this.requirements = requirements;
@@ -148,7 +167,7 @@ class PlanService {
             ReviewV review = new ReviewV(stage, a.estimator(), a.approver(), a.estimator() && approvedEstimate != null
                     && latest == null, false, false, false, false, List.of(), List.of(), null, null, null, false, blocked);
             return new PlanState(requirementId, false, a.insider(), review, null, List.of(),
-                    a.estimator() ? settingsMap(defaultSettings(a.projectId(), approvedEstimate)) : null);
+                    a.estimator() ? settingsMap(defaultSettings(a.projectId(), approvedEstimate)) : null, null);
         }
         List<DecisionRow> decisions = plans.decisions(shown.id());
         DecisionRow approved = first(decisions, "APPROVED");
@@ -181,7 +200,8 @@ class PlanService {
             }
         }
         return new PlanState(requirementId, true, a.insider(), review, version, history,
-                a.estimator() ? settingsMap(defaultSettings(a.projectId(), approvedEstimate)) : null);
+                a.estimator() ? settingsMap(defaultSettings(a.projectId(), approvedEstimate)) : null,
+                pushInfo(requirementId, a, approvedVersion));
     }
 
     private static DecisionRow first(List<DecisionRow> decisions, String kind) {
@@ -615,6 +635,93 @@ class PlanService {
 
     private static ApiException forbidden(String message) {
         return new ApiException(HttpStatus.FORBIDDEN, "PLAN_DECISION_NOT_ALLOWED", message);
+    }
+
+    // --- GitHub Issues push (GD-34 phase 2) -------------------------------------------------------------------
+
+    static final int PUSH_HISTORY = 5;
+
+    private PushInfo pushInfo(UUID requirementId, Access a, VersionRow approvedVersion) {
+        if (approvedVersion == null) {
+            return null;
+        }
+        List<PlanPushRepository.PushRow> rows = pushes.recent(requirementId, PUSH_HISTORY);
+        List<PushV> recent = rows.stream().map(PlanService::pushView).toList();
+        List<RepositoryV> repositories = a.estimator() ? pushes.verifiedRepositories(a.projectId()).stream()
+                .map(r -> new RepositoryV(r.id(), r.fullName())).toList() : List.of();
+        String unavailable = !a.estimator() ? null : repositories.isEmpty()
+                ? "The project has no verified GitHub repository. Its Environment Manager connects one on the "
+                        + "project's Environments tab (it can be a new, empty repository); the Garuda GitHub App must be "
+                        + "installed on it and granted Issues: Read and write." : null;
+        Map<String, String> urls = rows.isEmpty() ? Map.of()
+                : pushes.issueUrls(requirementId, rows.getFirst().repositoryId());
+        return new PushInfo(a.estimator() && !repositories.isEmpty(), unavailable, repositories, recent, urls);
+    }
+
+    private static PushV pushView(PlanPushRepository.PushRow p) {
+        String message = switch (p.status()) {
+            case "QUEUED" -> "Waiting for a worker to push to GitHub.";
+            case "RUNNING" -> "Pushing to GitHub: " + (p.created() + p.updated()) + " of " + p.itemsTotal()
+                    + " milestones and issues so far.";
+            case "DONE" -> "Pushed: " + p.created() + " created, " + p.updated() + " updated.";
+            case "PARTIAL" -> "Partly pushed (" + pushReason(p.failureCode()) + "): " + p.created() + " created, "
+                    + p.updated() + " updated, " + p.failed() + " refused by GitHub.";
+            default -> "Not pushed: " + pushReason(p.failureCode()) + ".";
+        };
+        return new PushV(p.id(), p.repository(), p.planVersionNo(), p.status(), p.itemsTotal(), p.created(),
+                p.updated(), p.failed(), p.failureCode(), message, p.requestedAt(), p.finishedAt());
+    }
+
+    /** What a push failure code means for the person who asked. */
+    static String pushReason(String code) {
+        if (code == null) {
+            return "no error";
+        }
+        return switch (code) {
+            case "GITHUB_ISSUES_PERMISSION" -> "the Garuda GitHub App has not been granted Issues: Read and write on "
+                    + "this repository; an owner of the GitHub organisation accepts the new permission, then push again";
+            case "REPO_ACCESS" -> "the Garuda GitHub App is not installed on this repository or cannot reach it";
+            case "REPOSITORY_NOT_VERIFIED" -> "the repository is no longer verified";
+            case "REPOSITORY_UNAVAILABLE" -> "the repository moved or is no longer available";
+            case "GITHUB_ISSUES_DISABLED" -> "issues are turned off in this repository's settings";
+            case "GITHUB_ITEMS_REJECTED" -> "GitHub refused some items";
+            case "GITHUB_NOT_CONFIGURED" -> "the GitHub integration is not configured on the worker";
+            default -> "GitHub answered unexpectedly (" + code + ")";
+        };
+    }
+
+    /** An Estimator pushes the approved plan to a verified repository of the project. */
+    @Transactional
+    public PlanState push(UUID requirementId, UUID repositoryId) {
+        Access a = access(requirementId);
+        requireEstimator(a, "An Estimator of the project pushes the delivery plan to GitHub.");
+        if (repositoryId == null) {
+            throw ApiException.validation(List.of(new FieldError("repositoryId", "REQUIRED")));
+        }
+        VersionRow v = plans.versions(requirementId).stream().filter(x -> "APPROVED".equals(x.status())).findFirst()
+                .orElseThrow(() -> ApiException.conflict("PLAN_NOT_APPROVED",
+                        "Only an approved delivery plan is pushed to GitHub."));
+        PlanPushRepository.RepositoryOption repo = pushes.verifiedRepositories(a.projectId()).stream()
+                .filter(r -> r.id().equals(repositoryId)).findFirst()
+                .orElseThrow(() -> ApiException.validation(List.of(new FieldError("repositoryId", "NOT_VERIFIED"))));
+        if (pushes.running(requirementId, repositoryId)) {
+            throw ApiException.conflict("PLAN_PUSH_RUNNING", "This plan is already being pushed to " + repo.fullName()
+                    + ". Wait for it to finish.");
+        }
+        VersionV view = versionView(v, plans.decisions(v.id()), false);
+        Map<String, String> keyByTitle = new LinkedHashMap<>();
+        plans.stories(v.id()).forEach(s -> keyByTitle.putIfAbsent(s.title(), s.storyKey()));
+        BrdDocument.Header h = reviews.exportHeader(requirementId);
+        PlanIssues.Payload payload = PlanIssues.payload(h.requirementKey(), h.title(), view, keyByTitle);
+        if (payload.items() == 0 || payload.items() > 1000) {
+            throw ApiException.conflict("PLAN_PUSH_TOO_LARGE", "A plan is pushed with 1 to 1000 milestones and issues.");
+        }
+        UUID pushId = pushes.insert(TenantContext.requireTenant(), a.projectId(), requirementId, v.id(), repositoryId,
+                json.writeValueAsString(payload), payload.items(), a.me());
+        outbox.publish("REQUIREMENT", requirementId, EventTypes.PLAN_PUSH_REQUESTED,
+                Map.of("planPushId", pushId.toString()));
+        audit.record(AuditAction.PLAN_PUSH_REQUESTED, "PLAN_PUSH", pushId, AuditResult.SUCCESS);
+        return state(requirementId);
     }
 
     // --- export -------------------------------------------------------------------------------------------------

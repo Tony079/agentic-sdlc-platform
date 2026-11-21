@@ -1,6 +1,7 @@
 # Garuda: Delivery plan stage
 
-Status: **phase 1 implemented** (2026-11-20), GD-34: the plan, its review, approval and exports. The GitHub Issues push (7.3) is phase 2.
+Status: **implemented**. Phase 1 (2026-11-20): the plan, its review, approval and exports. Phase 2 (2026-11-21): the
+GitHub Issues push (7.3, section 9).
 
 An approved estimate moves the requirement to the next stage, **Delivery plan**. A Planning agent turns the approved
 design and estimate into a backlog of epics and user stories; Garuda (never the model) checks that every estimate work
@@ -77,7 +78,7 @@ status). Row-level security and guards as for estimates. Job `PLAN_GENERATION`, 
 2. **Visibility.** The approved plan is visible to the whole project (stories with effort in days, never money);
    drafts only to Estimators and BRD Approvers.
 3. **Tracker.** CSV and PDF exports, plus a push to **GitHub Issues** of a repository registered to the project
-   (stories as issues with acceptance-criteria checklists, epics as milestones). The Garuda GitHub App must be granted
+   (stories as issues with acceptance-criteria checklists; see section 9 for how epics and sprints map). The Garuda GitHub App must be granted
    issue-write permission for this; until it is, the push is unavailable and says why. Built after the plan itself.
 4. **Sprints.** Garuda proposes sprints (1 to 4 weeks) with dates from the team's capacity; Estimators can move stories.
 
@@ -95,3 +96,31 @@ status). Row-level security and guards as for estimates. Job `PLAN_GENERATION`, 
   flagged OVERSIZED and given a sprint of its own role.
 - Visibility: before approval, only Estimators and BRD Approvers see the plan and its timeline; once approved, every
   project member sees epics, stories, sprints and risks (not the estimate's work items, gaps or edit history).
+
+## 9. GitHub Issues push (phase 2, 2026-11-21)
+
+- **Who:** an Estimator, on the approved plan, to a **verified repository of the project** (Environments tab). For a
+  new product this is a new, empty code repository connected to the project. Anyone in the project sees the push
+  status and each story's issue link once the plan is approved.
+- **Mapping:** each story is an issue (description: epic and goal, sprint and dates, role, priority, expected effort,
+  acceptance criteria as a checklist, dependencies as links to the pushed issues). Each sprint is a milestone
+  `REQ-xxxxxx Sprint n` due on the sprint's last day: a GitHub issue has one milestone, and milestones carry dates, so
+  sprints fit them better than epics. Epics, roles and priorities are labels (`epic: …`, `role: …`, `priority: …`),
+  plus `garuda`.
+- **Frozen content:** the API builds what is pushed from the approved, project-visible plan when the push is requested
+  (`plan_push.payload`), so the worker never reads plan internals or people's names.
+- **Idempotent:** every milestone and issue is recorded (`plan_push_item`) in its own transaction as soon as GitHub
+  returns it. A retry of the same push continues where it stopped; a later push updates the recorded items. Title,
+  labels, milestone and description are updated; criteria ticked on GitHub stay ticked; the issue's open or closed
+  state is never changed. A recorded item deleted on GitHub is created again. Residual risk: if the worker stops
+  between GitHub creating an item and Garuda recording it, the next attempt creates a duplicate.
+- **Untrusted text:** plan text is made inert before it reaches GitHub: no mentions (`@name`), no references to other
+  issues (`#12`), no HTML, no markdown structure from the model.
+- **Credentials:** the worker's GitHub App broker asks for a token narrowed to the one repository with Issues: Read and
+  write and Metadata: Read only (never Contents). If the installation has not accepted the Issues permission, the push
+  fails with a message saying so and writes nothing. Operations steps: `docs/operations/garuda-environments-and-billing.md`.
+- **Data model:** migration `0057-plan-push.sql`: `plan_push` (QUEUED → RUNNING → DONE / PARTIAL / FAILED; guard: an
+  Estimator, an approved version, a verified project repository; one open push per requirement and repository) and
+  `plan_push_item` (never deleted). Job `PLAN_PUSH`, event `PlanPushRequested`. Endpoint
+  `POST /api/v1/requirements/{id}/plan/push {repositoryId}`; the plan state carries `push`.
+

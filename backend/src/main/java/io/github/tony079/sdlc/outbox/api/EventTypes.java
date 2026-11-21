@@ -54,6 +54,8 @@ public final class EventTypes {
     public static final String PLAN_REQUESTED = "PlanRequested";
     /** GD-34: an estimate was approved; the worker hands it to the project's Estimators for planning. */
     public static final String ESTIMATE_APPROVED = "EstimateApproved";
+    /** GD-34 phase 2: an Estimator asked to push the approved plan to GitHub Issues; the worker enqueues PLAN_PUSH. */
+    public static final String PLAN_PUSH_REQUESTED = "PlanPushRequested";
     /** GD-33: an estimate version is to be written by the Estimation agent. */
     public static final String ESTIMATE_REQUESTED = "EstimateRequested";
 
@@ -99,7 +101,8 @@ public final class EventTypes {
             Map.entry(ESTIMATE_REQUESTED, 1),
             Map.entry(TDD_APPROVED, 1),
             Map.entry(PLAN_REQUESTED, 1),
-            Map.entry(ESTIMATE_APPROVED, 1));
+            Map.entry(ESTIMATE_APPROVED, 1),
+            Map.entry(PLAN_PUSH_REQUESTED, 1));
 
     private EventTypes() {
     }

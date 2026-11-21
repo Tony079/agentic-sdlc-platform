@@ -62,6 +62,13 @@ public final class FakeGitHub {
     private final AtomicInteger serverErrorNext = new AtomicInteger();
     private volatile String redirectOverride;
     private volatile Map<String, String> grantedPermissions;
+    private volatile boolean issuesPermission = true;
+    private final AtomicInteger rejectIssueNext = new AtomicInteger();
+    /** GD-34 phase 2: issues, milestones and labels per repository ("owner/name" lower case). */
+    private final Map<String, Map<Integer, Map<String, Object>>> issues = new ConcurrentHashMap<>();
+    private final Map<String, Map<Integer, Map<String, Object>>> milestones = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Map<String, Object>>> labels = new ConcurrentHashMap<>();
+    private final AtomicInteger numbers = new AtomicInteger();
 
     private FakeGitHub() throws Exception {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
@@ -133,7 +140,37 @@ public final class FakeGitHub {
         grantedPermissions = permissions;
     }
 
+    /** Whether the App installation has been granted Issues: Read and write (default true). */
+    public void issuesPermission(boolean granted) {
+        issuesPermission = granted;
+    }
+
+    /** GitHub refuses the next {@code count} issue creations with 422. */
+    public void rejectIssueNext(int count) {
+        rejectIssueNext.set(count);
+    }
+
+    /** The repository's issues by number (copies). */
+    public Map<Integer, Map<String, Object>> issues(String owner, String name) {
+        return Map.copyOf(issues.getOrDefault(key(owner, name), Map.of()));
+    }
+
+    public Map<Integer, Map<String, Object>> milestones(String owner, String name) {
+        return Map.copyOf(milestones.getOrDefault(key(owner, name), Map.of()));
+    }
+
+    public Map<String, Map<String, Object>> labels(String owner, String name) {
+        return Map.copyOf(labels.getOrDefault(key(owner, name), Map.of()));
+    }
+
+    /** Simulates a person ticking or editing an issue's description on GitHub. */
+    public void editIssueBody(String owner, String name, int number, String body) {
+        issues.get(key(owner, name)).get(number).put("body", body);
+    }
+
     public void reset() {
+        issuesPermission = true;
+        rejectIssueNext.set(0);
         rateLimitNext.set(0);
         serverErrorNext.set(0);
         redirectOverride = null;
@@ -168,6 +205,10 @@ public final class FakeGitHub {
                 }
                 JsonNode body = JSON.readTree(exchange.getRequestBody().readAllBytes());
                 tokenRequests.add(body.toString());
+                if (body.path("permissions").has("issues") && !issuesPermission) {
+                    send(exchange, 422, Map.of("message", "The permissions requested are not granted to this installation."));
+                    return;
+                }
                 String repo = body.path("repositories").path(0).asString("");
                 String token = "ghs_" + UUID.randomUUID().toString().replace("-", "");
                 tokens.put(token, repo.toLowerCase(Locale.ROOT));
@@ -197,6 +238,8 @@ public final class FakeGitHub {
                 if (parts.length == 4) {
                     send(exchange, 200, Map.of("id", repo.id(), "full_name", repo.owner() + "/" + repo.name(),
                             "default_branch", repo.defaultBranch(), "private", true));
+                } else if (parts.length >= 5 && List.of("issues", "milestones", "labels").contains(parts[4])) {
+                    handleIssues(exchange, repo, method, parts);
                 } else if (parts.length == 6 && parts[4].equals("branches")) {
                     send(exchange, 200, Map.of("name", repo.defaultBranch(), "commit", Map.of("sha", repo.headSha())));
                 } else if (parts.length == 6 && parts[4].equals("tarball")) {
@@ -210,6 +253,62 @@ public final class FakeGitHub {
                 }
                 return;
             }
+            send(exchange, 404, Map.of("message", "Not Found"));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleIssues(HttpExchange exchange, Repo repo, String method, String[] parts) throws IOException {
+        String repoKey = key(repo.owner(), repo.name());
+        String html = "https://github.com/" + repo.owner() + "/" + repo.name();
+        Map<String, Object> body = method.equals("GET") ? Map.of()
+                : JSON.readValue(exchange.getRequestBody().readAllBytes(), Map.class);
+        if (parts[4].equals("labels")) {
+            Map<String, Map<String, Object>> all = labels.computeIfAbsent(repoKey, k -> new ConcurrentHashMap<>());
+            String name = String.valueOf(body.get("name"));
+            if (all.containsKey(name.toLowerCase(Locale.ROOT))) {
+                send(exchange, 422, Map.of("message", "Validation Failed"));
+                return;
+            }
+            all.put(name.toLowerCase(Locale.ROOT), new LinkedHashMap<>(body));
+            send(exchange, 201, body);
+            return;
+        }
+        boolean isIssue = parts[4].equals("issues");
+        Map<Integer, Map<String, Object>> all = (isIssue ? issues : milestones)
+                .computeIfAbsent(repoKey, k -> new ConcurrentHashMap<>());
+        String kind = isIssue ? "issues" : "milestone";
+        if (parts.length == 5 && method.equals("GET")) {
+            send(exchange, 200, new ArrayList<>(all.values()));
+            return;
+        }
+        if (parts.length == 5 && method.equals("POST")) {
+            if (isIssue && rejectIssueNext.getAndUpdate(n -> Math.max(0, n - 1)) > 0) {
+                send(exchange, 422, Map.of("message", "Validation Failed"));
+                return;
+            }
+            if (!isIssue && all.values().stream().anyMatch(m -> m.get("title").equals(body.get("title")))) {
+                send(exchange, 422, Map.of("message", "Validation Failed", "errors", List.of(Map.of("code",
+                        "already_exists"))));
+                return;
+            }
+            int number = numbers.incrementAndGet();
+            Map<String, Object> item = new LinkedHashMap<>(body);
+            item.put("number", number);
+            item.put("html_url", html + "/" + kind + "/" + number);
+            all.put(number, item);
+            send(exchange, 201, item);
+            return;
+        }
+        Map<String, Object> item = parts.length == 6 ? all.get(Integer.parseInt(parts[5])) : null;
+        if (item == null) {
+            send(exchange, 404, Map.of("message", "Not Found"));
+        } else if (method.equals("GET")) {
+            send(exchange, 200, item);
+        } else if (method.equals("PATCH")) {
+            item.putAll(body);
+            send(exchange, 200, item);
+        } else {
             send(exchange, 404, Map.of("message", "Not Found"));
         }
     }
