@@ -243,6 +243,8 @@ public class OpenAiModelProvider implements ModelProvider {
             tool.put("strict", false);
             return tool;
         }).toList());
+        // The final message must be one JSON object (the instructions say so, as json_object requires).
+        body.put("text", Map.of("format", Map.of("type", "json_object")));
         String effort = toolsReasoningEffort == null ? "" : toolsReasoningEffort.strip();
         if (!effort.isEmpty() && !"none".equalsIgnoreCase(effort)) {
             body.put("reasoning", Map.of("effort", effort));

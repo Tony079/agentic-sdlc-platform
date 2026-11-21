@@ -563,7 +563,7 @@ class EstimationIT extends ApiIntegrationTest {
         github.codePermission(true);
         fake.reset();
         fake.enqueue(writeAndDone("hello.py", "print('hello')\n"), done(), writeAndDone("theme.css", "body{}\n"),
-                done(), writeAndDone("pages.py", "PAGES = ['about']\n"), done());
+                done(), idle(), idle());
         // One story is retried by a person; the other is left CODING with no job behind it (as when a job ends
         // without a result): the orchestrator queues it again on its next look.
         boolean first = true;
@@ -584,6 +584,10 @@ class EstimationIT extends ApiIntegrationTest {
         tasks = state.path("run").path("tasks");
         List<JsonNode> wave1 = tasks.valueStream().filter(t -> t.path("wave").asInt() == 1).toList();
         assertThat(wave1).allMatch(t -> "PR_OPEN".equals(t.path("status").asString()));
+        // Each session leaves one line on the timeline: its answer, the tools it used and the files changed.
+        assertThat(tina.get("/api/v1/requirements/" + id + "/activity").body().valueStream()
+                .map(l -> l.path("message").asString()))
+                .anyMatch(m -> m.contains(", session 1: DONE · tools: run_command 1, write_file 1 · 1 file(s) changed"));
         assertThat(wave1.get(0).path("branch").asString()).startsWith("garuda/req-");
         assertThat(github.pulls("acme-org", pushed.name())).hasSize(wave1.size());
         Map<String, Object> pr = github.pulls("acme-org", pushed.name()).values().iterator().next();
@@ -600,6 +604,18 @@ class EstimationIT extends ApiIntegrationTest {
         tasks = tina.get(dev).body().path("run").path("tasks");
         assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 1)
                 .allMatch(t -> "MERGED".equals(t.path("status").asString()))).isTrue();
+        // The wave 2 story answered CONTINUE twice without doing anything: it stops early instead of using all
+        // its sessions, and a person retries it.
+        List<JsonNode> wave2 = tasks.valueStream().filter(t -> t.path("wave").asInt() == 2).toList();
+        assertThat(wave2).as(tasks.toString()).allMatch(t -> "FAILED".equals(t.path("status").asString()));
+        assertThat(wave2.get(0).path("reason").asString()).contains("no progress in two sessions");
+        fake.enqueue(writeAndDone("pages.py", "PAGES = ['about']\n"), done());
+        for (JsonNode t : wave2) {
+            assertThat(tina.post(dev + "/tasks/" + t.path("id").asString() + "/retry", Map.of()).status())
+                    .isEqualTo(200);
+        }
+        drive(tenant);
+        tasks = tina.get(dev).body().path("run").path("tasks");
         assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 2)
                 .allMatch(t -> "PR_OPEN".equals(t.path("status").asString()))).as(tasks.toString()).isTrue();
         // Wave 2 merged: development is complete.
@@ -625,6 +641,12 @@ class EstimationIT extends ApiIntegrationTest {
                         Map.of("path", path, "content", content)),
                 new io.github.tony079.sdlc.modelgateway.api.ModelProvider.ToolCall("c2", "run_command",
                         Map.of("command", "python3 " + path))));
+    }
+
+    private static FakeModelProvider.Reply idle() {
+        return new FakeModelProvider.Reply("""
+                {"status": "CONTINUE", "summary": "Looked around.", "testsRun": [], "testsPassed": false,
+                 "nextSteps": "Write the code."}""");
     }
 
     private static FakeModelProvider.Reply done() {

@@ -112,3 +112,5 @@ databaseChangeLog:
   - include: { file: changes/0059-agent-delivery.sql, relativeToChangelogFile: true }
   # GD-36 (2026-11-21): Garuda's Developer agent (development stage).
   - include: { file: changes/0060-development.sql, relativeToChangelogFile: true }
+  # GD-36 follow-up (2026-11-21): Developer agent prompt v2.
+  - include: { file: changes/0061-dev-story-v2.sql, relativeToChangelogFile: true }

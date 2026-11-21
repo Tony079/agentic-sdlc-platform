@@ -128,6 +128,8 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
             }
             List<String> log = new ArrayList<>();
             DevContracts.Step last = null;
+            String previousChanged = null;
+            int idle = 0;
             for (int n = 1; n <= MAX_SESSIONS; n++) {
                 String changed = devbox.action(workspace, "exec", Map.of("argv", List.of("git", "status", "--short"),
                         "timeoutSeconds", 60));
@@ -139,26 +141,57 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
                 data.add(new DataBlock("work log of your earlier sessions on this story", log.isEmpty()
                         ? "(this is your first session)" : String.join("\n\n", log)));
                 data.add(new DataBlock("files changed so far (git status --short, as JSON)", changed));
-                activity.step(requirementId, stage, in.run().id(), "\"" + in.task().title() + "\": session " + n
-                        + " of at most " + MAX_SESSIONS + ".");
+                String title = "\"" + in.task().title() + "\"";
+                activity.step(requirementId, stage, in.run().id(), title + ": session " + n + " of at most "
+                        + MAX_SESSIONS + ".");
+                String outcome;
+                int toolCalls;
                 try {
                     ModelResponse<DevContracts.Step> response = gateway.generate(new ModelRequest<>(BaPrompts.DEV_STORY,
                             data, DevContracts.Step.class, requirementId, 4096, BaAnalysisHandler.LONG_CALL_TIMEOUT,
                             DevTools.forWorkspace(devbox, workspace)));
                     last = response.output();
-                    log.add("Session " + n + " (" + last.status() + "): " + last.summary()
+                    toolCalls = response.toolCalls().values().stream().mapToInt(Integer::intValue).sum();
+                    outcome = last.status() + " · " + tools(response.toolCalls());
+                    log.add("Session " + n + " (" + last.status() + ", " + toolCalls + " tool calls): " + last.summary()
                             + (last.testsRun().isEmpty() ? "" : " Commands: " + String.join("; ", last.testsRun()))
                             + (last.nextSteps() == null ? "" : " Next: " + last.nextSteps()));
                 } catch (ModelException e) {
-                    if (e.code() == ModelException.Code.INVALID_OUTPUT || e.code() == ModelException.Code.EMPTY_OUTPUT) {
-                        // Usually the session ran out of tool rounds; the workspace keeps its changes.
-                        log.add("Session " + n + ": ended without an answer (out of steps); continue from the files.");
-                        continue;
+                    if (e.code() != ModelException.Code.INVALID_OUTPUT && e.code() != ModelException.Code.EMPTY_OUTPUT) {
+                        throw e;
                     }
-                    throw e;
+                    if (ModelException.TOOL_LIMIT.equals(e.detail())) {
+                        // It worked but did not answer in time; the workspace keeps its changes.
+                        toolCalls = 1;
+                        outcome = "used all its tool rounds without answering";
+                        log.add("Session " + n + ": used all 10 tool rounds without answering. Next session: write the "
+                                + "change now, run the tests, and answer by round 8.");
+                    } else {
+                        toolCalls = 0;
+                        outcome = "no usable answer" + (e.detail() == null ? "" : " (" + PlanIssues.text(e.detail(), 120)
+                                + ")");
+                        log.add("Session " + n + ": your answer could not be used" + (e.detail() == null ? ""
+                                : " (" + e.detail() + ")") + ". Answer with the JSON object only.");
+                    }
                 }
-                if (last.status() != DevContracts.Status.CONTINUE) {
+                String nowChanged = devbox.action(workspace, "exec", Map.of("argv", List.of("git", "status",
+                        "--short"), "timeoutSeconds", 60));
+                int files = changedFiles(nowChanged);
+                activity.add(requirementId, stage, in.run().id(), ActivityLog.Kind.STEP, title + ", session " + n + ": "
+                        + outcome + " · " + files + " file(s) changed so far" + (last != null && last.summary() != null
+                        && outcome.startsWith(last.status().name()) ? ". " + PlanIssues.text(last.summary(), 300) : "."));
+                if (last != null && last.status() != DevContracts.Status.CONTINUE
+                        && outcome.startsWith(last.status().name())) {
                     break;
+                }
+                // Two sessions in a row with no tool use and no new changes: stop instead of burning the rest.
+                boolean progressed = toolCalls > 0 || !nowChanged.equals(previousChanged == null ? changed
+                        : previousChanged);
+                previousChanged = nowChanged;
+                idle = progressed ? 0 : idle + 1;
+                if (idle >= 2) {
+                    return new Outcome(taskId, false, "AGENT_STALLED", last == null ? null : last.summary(), null, null,
+                            null, 0, null, null, 0);
                 }
             }
             if (last == null || last.status() == DevContracts.Status.GIVE_UP) {
@@ -219,6 +252,36 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
         Wrapped(TrackerException cause) {
             super(cause.code(), null, false, false);
             this.cause = cause;
+        }
+    }
+
+    /** "read_file 5, write_file 2" from the gateway's counts ("read_file:ok" -> 5); refusals counted apart. */
+    static String tools(Map<String, Integer> counts) {
+        if (counts == null || counts.isEmpty()) {
+            return "no tool calls";
+        }
+        Map<String, Integer> byTool = new java.util.TreeMap<>();
+        int refused = 0;
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            String[] parts = e.getKey().split(":", 2);
+            if (parts.length == 2 && !"ok".equals(parts[1])) {
+                refused += e.getValue();
+            }
+            byTool.merge(parts[0], e.getValue(), Integer::sum);
+        }
+        StringBuilder out = new StringBuilder("tools: ");
+        byTool.forEach((k, v) -> out.append(k).append(' ').append(v).append(", "));
+        out.setLength(out.length() - 2);
+        return out + (refused > 0 ? " (" + refused + " refused)" : "");
+    }
+
+    /** Lines of "git status --short" in the devbox's JSON answer. */
+    int changedFiles(String execJson) {
+        try {
+            String output = json.readTree(execJson).path("output").asString("");
+            return (int) output.lines().filter(l -> !l.isBlank()).count();
+        } catch (RuntimeException e) {
+            return 0;
         }
     }
 

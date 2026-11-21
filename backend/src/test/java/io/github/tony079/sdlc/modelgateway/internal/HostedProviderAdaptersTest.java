@@ -168,6 +168,7 @@ class HostedProviderAdaptersTest {
         assertThat(body.path("instructions").asString()).isEqualTo("Answer with JSON only.");
         assertThat(body.path("store").asBoolean(true)).isFalse();
         assertThat(body.has("reasoning_effort")).isFalse();
+        assertThat(body.path("text").path("format").path("type").asString()).isEqualTo("json_object");
         assertThat(body.path("tools").path(0).path("name").asString()).isEqualTo("repo.read_range");
         assertThat(body.path("tools").path(0).path("parameters").path("properties").has("path")).isTrue();
         assertThat(body.path("input").valueStream().map(i -> i.path("type").asString("")).toList())

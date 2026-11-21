@@ -7,7 +7,15 @@ import java.util.UUID;
  * or call tools; callers decide what to do with it through their own engine commands.
  */
 public record ModelResponse<T>(T output, UUID requestId, String correlationId, String provider, String modelId,
-                               String promptId, int promptVersion, ModelUsage usage, String repairedBecause) {
+                               String promptId, int promptVersion, ModelUsage usage, String repairedBecause,
+                               java.util.Map<String, Integer> toolCalls) {
+
+    /** GD-36: tool calls made during the request, by tool name and outcome ("read_file:ok"); empty without tools. */
+    public ModelResponse(T output, UUID requestId, String correlationId, String provider, String modelId,
+                         String promptId, int promptVersion, ModelUsage usage, String repairedBecause) {
+        this(output, requestId, correlationId, provider, modelId, promptId, promptVersion, usage, repairedBecause,
+                java.util.Map.of());
+    }
 
     /**
      * @param repairedBecause why the first answer was rejected when a repair attempt fixed it (field paths and rule

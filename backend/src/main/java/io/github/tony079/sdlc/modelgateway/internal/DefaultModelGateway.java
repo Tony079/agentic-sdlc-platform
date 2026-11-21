@@ -201,7 +201,7 @@ class DefaultModelGateway implements ModelGateway {
                     log.warn("Model exceeded the tool limits (request {}, rounds {}, calls {})", requestId, rounds,
                             exchanges.size() + result.toolCalls().size());
                     attempts.finish("INVALID_OUTPUT");
-                    throw new ModelException(Code.INVALID_OUTPUT, requestId, null);
+                    throw new ModelException(Code.INVALID_OUTPUT, requestId, null, ModelException.TOOL_LIMIT);
                 }
                 for (ModelProvider.ToolCall toolCall : result.toolCalls()) {
                     exchanges.add(runTool(request, toolCall, toolCounts));
@@ -235,7 +235,8 @@ class DefaultModelGateway implements ModelGateway {
             }
             ModelUsage usage = attempts.finish("SUCCEEDED");
             return new ModelResponse<>(output.get(), requestId, correlationId, provider.name(), modelId,
-                    request.prompt().id(), request.prompt().version(), usage, repaired ? rejection : null);
+                    request.prompt().id(), request.prompt().version(), usage, repaired ? rejection : null,
+                    java.util.Map.copyOf(toolCounts));
         }
     }
 

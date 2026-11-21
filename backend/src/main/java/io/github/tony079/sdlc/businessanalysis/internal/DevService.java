@@ -188,6 +188,8 @@ class DevService {
             case "AGENT_OUT_OF_SESSIONS" -> "the Developer agent ran out of work sessions before finishing";
             case "AGENT_NO_ANSWER" -> "the Developer agent did not finish a session";
             case "AGENT_NO_CHANGES" -> "the Developer agent changed no files";
+            case "AGENT_STALLED" -> "the Developer agent made no progress in two sessions in a row; its last summary "
+                    + "says where it was stuck";
             case "CHANGE_TOUCHES_CI" -> "the change touched CI configuration (.github/workflows), which Garuda never "
                     + "commits";
             case "CHANGE_TOO_LARGE" -> "the change was too large for one pull request";

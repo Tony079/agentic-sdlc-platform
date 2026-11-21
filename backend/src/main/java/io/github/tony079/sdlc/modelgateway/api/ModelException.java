@@ -41,6 +41,9 @@ public class ModelException extends RuntimeException {
         }
     }
 
+    /** GD-36: the detail of an INVALID_OUTPUT raised because the model used up its tool rounds or calls. */
+    public static final String TOOL_LIMIT = "tool limit reached";
+
     private final Code code;
     private final UUID requestId;
     private final String detail;
