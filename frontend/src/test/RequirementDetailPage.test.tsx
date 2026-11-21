@@ -130,6 +130,32 @@ describe('RequirementDetailPage', () => {
     expect(screen.queryByRole('link', { name: 'Edit' })).not.toBeInTheDocument();
   });
 
+  it('shows one stage at a time, opening on the current one', async () => {
+    const run = {
+      id: 'd1', status: 'RUNNING', repository: 'acme/site', currentWave: 2, agentSlots: 2, baseBranch: 'releases/qc',
+      startedAt: '2026-11-21T10:00:00Z', finishedAt: null, counts: {}, tasks: [],
+    };
+    mockFetch((url) => {
+      if (url.endsWith('/timeline')) return { status: 200, body: timeline };
+      if (url.endsWith('/development')) return { status: 200, body: { requirementId: 'r1', canControl: false, run } };
+      if (/\/(design|estimate|plan)$/.test(url)) return { status: 200, body: { review: { stage: 'APPROVED' } } };
+      if (url.endsWith('/r1')) return { status: 200, body: detail({ state: 'SHARED_WITH_CLIENT' }) };
+      return { status: 404, body: { code: 'NOT_FOUND' } };
+    });
+    renderDetail();
+    // Development is running: its tab is selected and its card is the first thing under the header.
+    const current = await screen.findByRole('tab', { name: 'Development (current)' });
+    expect(current).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByText('releases/qc')).toBeInTheDocument();
+    for (const done of ['✓ BRD', '✓ Technical design', '✓ Estimate', '✓ Delivery plan']) {
+      expect(screen.getByRole('tab', { name: done })).toHaveAttribute('aria-selected', 'false');
+    }
+    // An earlier stage is one click away; the current one is no longer rendered.
+    await userEvent.click(screen.getByRole('tab', { name: '✓ BRD' }));
+    expect(screen.getByRole('tab', { name: '✓ BRD' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByText('releases/qc')).not.toBeInTheDocument();
+  });
+
   it('treats a 404 as not found without revealing anything', async () => {
     mockFetch(() => ({ status: 404, body: { error: { code: 'NOT_FOUND', message: 'x', correlationId: null } } }));
     renderDetail();

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { api, ApiError, ifMatch } from '../api/client';
 import type {
   RequirementContent,
@@ -30,6 +30,7 @@ import {
   PageHeader,
   RoleBadges,
   StatePill,
+  Tabs,
   formatDateTime,
   relativeTime,
   stateLabel,
@@ -102,6 +103,12 @@ const EARLY_STATES = new Set(['DRAFT', 'SUBMITTED', 'MANUAL_INTAKE', 'REPO_VALID
 const ACTIVE_STATES = new Set(['SUBMITTED', 'REPO_VALIDATING', 'AWAITING_DOCUMENTS', 'ANALYSING', 'BRD_DRAFTED',
   'REVISION_REQUESTED', 'CLIENT_CHANGES_REQUESTED', 'INTERNAL_APPROVED']);
 
+type Stage = 'brd' | 'design' | 'estimate' | 'plan' | 'development';
+const STAGES: Stage[] = ['brd', 'design', 'estimate', 'plan', 'development'];
+const STAGE_LABELS: Record<Stage, string> = {
+  brd: 'BRD', design: 'Technical design', estimate: 'Estimate', plan: 'Delivery plan', development: 'Development',
+};
+
 export function RequirementDetailPage() {
   const { id } = useParams();
   const queryClient = useQueryClient();
@@ -110,6 +117,8 @@ export function RequirementDetailPage() {
   const [reason, setReason] = useState('');
   const [viewedRevision, setViewedRevision] = useState<RequirementRevision | null>(null);
   const [busy, setBusy] = useState(false);
+  // The stage shown: the current one unless the user picked another (kept in the URL so reloads and links keep it).
+  const [search, setSearch] = useSearchParams();
 
   const requirement = useQuery({
     queryKey: ['requirement', id],
@@ -140,11 +149,43 @@ export function RequirementDetailPage() {
     queryFn: () => api.get<{ review: { stage: string } }>(`/api/v1/requirements/${id}/plan`),
     enabled: estimate.data?.review.stage === 'APPROVED',
   });
+  // GD-36: development is the current stage once a run exists (shared with the development panel's query); until
+  // then the plan stage stays current, since the plan is pushed from there.
+  const development = useQuery({
+    queryKey: ['development', id],
+    queryFn: () => api.get<{ run: unknown | null }>(`/api/v1/requirements/${id}/development`),
+    enabled: plan.data?.review.stage === 'APPROVED',
+  });
   const started = (stage: string | undefined) =>
     stage === undefined ? undefined : ['GENERATING', 'IN_REVIEW', 'APPROVED', 'FAILED'].includes(stage) ? stage : null;
   const designStage = design.data?.review.stage;
   const designStatus = designStage === undefined || designStage === 'NOT_STARTED' || designStage === 'BRD_NOT_APPROVED'
     ? null : designStage;
+
+  const designApproved = designStage === 'APPROVED';
+  const estimateApproved = estimate.data?.review.stage === 'APPROVED';
+  const planApproved = plan.data?.review.stage === 'APPROVED';
+  const developing = planApproved && !!development.data?.run;
+  const currentStage: Stage = developing ? 'development' : estimateApproved ? 'plan' : designApproved ? 'estimate'
+    : requirement.data?.state === 'SHARED_WITH_CLIENT' ? 'design' : 'brd';
+  const reachable: Record<Stage, boolean> = {
+    brd: true, design: requirement.data?.state === 'SHARED_WITH_CLIENT', estimate: designApproved,
+    plan: estimateApproved, development: planApproved,
+  };
+  const picked = search.get('stage') as Stage | null;
+  const stage: Stage = picked && STAGES.includes(picked) && reachable[picked] ? picked : currentStage;
+  const done: Record<Stage, boolean> = {
+    brd: reachable.design, design: designApproved, estimate: estimateApproved, plan: planApproved, development: false,
+  };
+  const pickStage = (next: Stage) => {
+    const params = new URLSearchParams(search);
+    if (next === currentStage) {
+      params.delete('stage');
+    } else {
+      params.set('stage', next);
+    }
+    setSearch(params, { replace: true });
+  };
 
   if (requirement.isPending) {
     return <Loading />;
@@ -299,31 +340,51 @@ export function RequirementDetailPage() {
       {detail.state === 'FAILED' && <AnalysisRetryPanel requirementId={detail.id} />}
       <div className="grid grid-main-side">
         <div>
-          <Card title="Requirement" foldKey={`fold:${detail.id}:requirement`} defaultOpen={EARLY_STATES.has(detail.state)}>
-            <ContentView content={detail.content} />
-          </Card>
-          <div className="card">
-            <BrdPanel requirementId={detail.id} requirementState={detail.state} />
-          </div>
-          {detail.state === 'SHARED_WITH_CLIENT' && (
+          {reachable.design && (
+            // Once the BRD is shared the stages follow one another: show one at a time, opening on the current one,
+            // instead of stacking every finished stage above it.
+            <Tabs<Stage>
+              label="Stages"
+              value={stage}
+              onChange={pickStage}
+              tabs={STAGES.filter((s) => reachable[s]).map((s) => ({
+                id: s,
+                label: `${done[s] ? '✓ ' : ''}${STAGE_LABELS[s]}${s === currentStage ? ' (current)' : ''}`,
+              }))}
+            />
+          )}
+          {stage === 'brd' && (
+            <div className="card">
+              <BrdPanel requirementId={detail.id} requirementState={detail.state} />
+            </div>
+          )}
+          {stage === 'design' && (
             // GD-26: an approved BRD moves on to the Technical design stage.
             <div className="card">
               <DesignPanel requirementId={detail.id} newProduct={detail.content.kind === 'NEW_PRODUCT'} />
             </div>
           )}
-          {detail.state === 'SHARED_WITH_CLIENT' && (
+          {stage === 'estimate' && (
             // GD-33: an approved design moves on to Estimation.
             <div className="card">
               <EstimatePanel requirementId={detail.id} />
             </div>
           )}
-          {detail.state === 'SHARED_WITH_CLIENT' && (
+          {stage === 'plan' && (
             // GD-34: an approved estimate moves on to the Delivery plan.
             <div className="card">
               <PlanPanel requirementId={detail.id} />
+            </div>
+          )}
+          {stage === 'development' && (
+            // GD-36: an approved, pushed plan is coded wave by wave.
+            <div className="card">
               <DevelopmentPanel requirementId={detail.id} />
             </div>
           )}
+          <Card title="Requirement" foldKey={`fold:${detail.id}:requirement`} defaultOpen={EARLY_STATES.has(detail.state)}>
+            <ContentView content={detail.content} />
+          </Card>
           {detail.content.repositoryUrl && (
             // Earlier requirements linked one repository by URL (C-18); new ones analyse a project environment (GD-23).
             <div className="card">
