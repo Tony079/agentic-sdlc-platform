@@ -146,6 +146,9 @@ services:
       # Spending caps in USD (empty = no cap): analysis stops with COST_CAP when reached.
       SDLC_MODEL_BUDGET_TENANT_MONTHLY_USD: ${SDLC_MODEL_BUDGET_TENANT_MONTHLY_USD:-}
       SDLC_MODEL_BUDGET_REQUIREMENT_USD: ${SDLC_MODEL_BUDGET_REQUIREMENT_USD:-}
+      # GD-36: reasoning setting sent with tool calls (the Developer agent). OpenAI reasoning models refuse function
+      # tools in chat completions unless it is "none"; set to low/medium/high only if your deployment accepts it.
+      SDLC_MODEL_TOOLS_REASONING_EFFORT: ${SDLC_MODEL_TOOLS_REASONING_EFFORT:-none}
       # GD-36: the Developer agent's sandbox (internal network only).
       SDLC_DEVBOX_URL: http://devbox:8090
       SDLC_DEVBOX_TOKEN: ${SDLC_DEVBOX_TOKEN:?set SDLC_DEVBOX_TOKEN in .env (any random string of 32+ characters)}

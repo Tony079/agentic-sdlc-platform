@@ -153,6 +153,13 @@ class HostedProviderAdaptersTest {
         assertThat(lastBody.get().path("response_format").path("json_schema").path("strict").asBoolean()).isTrue();
         assertThat(result.usage()).isEqualTo(new ModelProvider.Usage(70, 9, false));
         assertThat(provider.name()).isEqualTo("azure-openai");
+        assertThat(lastBody.get().has("reasoning_effort")).as("only with tools").isFalse();
+        // GD-36: with tools, reasoning is turned off (reasoning models refuse function tools otherwise), and the
+        // tools' arguments are declared.
+        provider.complete(call(true));
+        assertThat(lastBody.get().path("reasoning_effort").asString()).isEqualTo("none");
+        assertThat(lastBody.get().path("tools").path(0).path("function").path("parameters").path("properties")
+                .has("path")).isTrue();
         // Only Azure hosts, over HTTPS.
         assertThatThrownBy(() -> AzureOpenAiModelProvider.uri("https://example.com/openai/v1", false))
                 .isInstanceOf(IllegalStateException.class);

@@ -37,6 +37,13 @@ public class OpenAiModelProvider implements ModelProvider {
     private volatile boolean streamingPaused;
     static final java.time.Duration STREAMING_PAUSE = java.time.Duration.ofMinutes(15);
 
+    /**
+     * GD-36: sent as {@code reasoning_effort} on requests that carry tools. OpenAI reasoning models (and Azure OpenAI
+     * deployments of them) refuse function tools in chat completions unless reasoning is off ("none"). Empty: not sent.
+     */
+    @org.springframework.beans.factory.annotation.Value("${sdlc.model.tools-reasoning-effort:none}")
+    private String toolsReasoningEffort = "none";
+
     public OpenAiModelProvider(SecretsProvider secrets, JsonMapper json,
                         @Value("${sdlc.model.openai.base-url:https://api.openai.com}") String baseUrl,
                         @Value("${sdlc.model.allow-loopback-http:false}") boolean allowLoopbackHttp) {
@@ -92,6 +99,9 @@ public class OpenAiModelProvider implements ModelProvider {
         } else {
             body.put("tools", call.tools().stream().map(t -> Map.of("type", "function", "function", Map.of(
                     "name", t.name(), "description", t.description(), "parameters", t.schema()))).toList());
+            if (toolsReasoningEffort != null && !toolsReasoningEffort.isBlank()) {
+                body.put("reasoning_effort", toolsReasoningEffort.strip());
+            }
         }
         boolean paused = streamingPaused && System.nanoTime() - streamingPausedUntil < 0;
         if (call.progress() != null && call.tools().isEmpty() && !paused) {
