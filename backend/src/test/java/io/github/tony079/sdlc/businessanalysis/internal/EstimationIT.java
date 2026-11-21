@@ -537,7 +537,12 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(approved.status()).as(approved.body().toString()).isEqualTo(200);
 
         String dev = "/api/v1/requirements/" + id + "/development";
-        assertThat(eve.get(dev).body().path("run").isNull()).isTrue();
+        JsonNode before = eve.get(dev).body();
+        assertThat(before.path("run").isNull()).isTrue();
+        // The plan pushed so far was made for a human team: the card says so and offers no start.
+        assertThat(before.path("notStarted").asString()).contains("human team");
+        assertThat(before.path("canStart").asBoolean()).isFalse();
+        assertThat(eve.post(dev + "/start", Map.of()).errorCode()).isEqualTo("DEV_NOT_STARTABLE");
         // Wave 1 holds two stories: the first is refused for a missing permission, then retried.
         github.codePermission(false);
         fake.enqueue(writeAndDone("hello.py", "print('hello')\n"), done(), writeAndDone("theme.css", "body{}\n"),

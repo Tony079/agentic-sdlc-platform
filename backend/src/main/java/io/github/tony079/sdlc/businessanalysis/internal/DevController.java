@@ -28,6 +28,11 @@ class DevController {
         return devs.state(id);
     }
 
+    @PostMapping(BASE + "/start")
+    DevState start(@PathVariable UUID id) {
+        return devs.start(id);
+    }
+
     @PostMapping(BASE + "/pause")
     DevState pause(@PathVariable UUID id) {
         return devs.pause(id, true);

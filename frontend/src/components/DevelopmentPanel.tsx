@@ -19,7 +19,9 @@ interface DevRun {
   id: string; status: 'RUNNING' | 'PAUSED' | 'DELIVERED' | 'STOPPED'; repository: string; currentWave: number;
   agentSlots: number; startedAt: string; finishedAt: string | null; tasks: DevTask[]; counts: Record<string, number>;
 }
-interface DevState { requirementId: string; canControl: boolean; run: DevRun | null }
+interface DevState {
+  requirementId: string; canControl: boolean; run: DevRun | null; canStart?: boolean; notStarted?: string | null;
+}
 
 const TASK: Record<TaskStatus, { label: string; tone: Tone }> = {
   WAITING: { label: 'waiting', tone: 'neutral' },
@@ -45,10 +47,11 @@ const RUN: Record<DevRun['status'], { label: string; tone: Tone }> = {
  */
 export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
   const queryClient = useQueryClient();
+  const [starting, setStarting] = useState(false);
   const query = useQuery({
     queryKey: ['development', requirementId],
     queryFn: () => api.get<DevState>(`/api/v1/requirements/${requirementId}/development`),
-    refetchInterval: (q) => (q.state.data?.run?.status === 'RUNNING' ? 10000 : false),
+    refetchInterval: (q) => (q.state.data?.run?.status === 'RUNNING' ? 10000 : starting && !q.state.data?.run ? 3000 : false),
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
@@ -75,9 +78,18 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
       <FoldSection label="Development" title="Development" foldKey={`fold:${requirementId}:development`}
         actions={<Badge tone="neutral">Not started</Badge>}>
         <p className="small">
-          Development starts on its own when an approved delivery plan for coding agents is pushed to GitHub Issues: Garuda’s
-          Developer agent codes each story and opens a pull request for a person to review and merge.
+          {data.notStarted ?? 'Development starts on its own when an approved delivery plan for coding agents is pushed to GitHub Issues.'}
+          {' '}Garuda’s Developer agent codes each story and opens a pull request for a person to review and merge.
         </p>
+        {data.canStart && (
+          <div className="row">
+            <button type="button" className="btn-primary" disabled={busy || starting}
+              onClick={() => { setStarting(true); void act('start', 'Starting development. The first stories appear here in a moment.'); }}>
+              {starting ? 'Starting…' : 'Start development'}
+            </button>
+          </div>
+        )}
+        {message && <p className={message.tone === 'danger' ? 'error' : 'notice'} role="status">{message.text}</p>}
       </FoldSection>
     );
   }

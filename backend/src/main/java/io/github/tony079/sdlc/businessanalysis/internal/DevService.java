@@ -37,16 +37,25 @@ class DevService {
                 OffsetDateTime finishedAt, List<TaskV> tasks, Map<String, Long> counts) {
     }
 
-    record DevState(UUID requirementId, boolean canControl, RunV run) {
+    /**
+     * @param canStart  no run yet, an approved plan for coding agents was pushed, and the caller controls development
+     * @param notStarted why there is no run yet (null when there is one)
+     */
+    record DevState(UUID requirementId, boolean canControl, RunV run, boolean canStart, String notStarted) {
     }
 
     private final DevRepository devs;
+    private final PlanPushRepository pushes;
+    private final tools.jackson.databind.json.JsonMapper json;
     private final RequirementDirectory requirements;
     private final OutboxPublisher outbox;
     private final AuditWriter audit;
 
-    DevService(DevRepository devs, RequirementDirectory requirements, OutboxPublisher outbox, AuditWriter audit) {
+    DevService(DevRepository devs, PlanPushRepository pushes, tools.jackson.databind.json.JsonMapper json,
+               RequirementDirectory requirements, OutboxPublisher outbox, AuditWriter audit) {
         this.devs = devs;
+        this.pushes = pushes;
+        this.json = json;
         this.requirements = requirements;
         this.outbox = outbox;
         this.audit = audit;
@@ -65,7 +74,21 @@ class DevService {
         var v = visible(requirementId);
         DevRepository.RunRow run = devs.latest(requirementId).orElse(null);
         if (run == null) {
-            return new DevState(requirementId, controls(v), null);
+            PlanPushRepository.PushRow push = pushes.latestPushedAny(requirementId).orElse(null);
+            String why;
+            boolean startable = false;
+            if (push == null) {
+                why = "Development starts on its own when an approved delivery plan for coding agents is pushed to "
+                        + "GitHub Issues.";
+            } else if (!forAgents(push)) {
+                why = "The pushed plan was made for a human team (sprints), so the Developer agent does not code it. "
+                        + "To use the Developer agent, start a new estimate for coding agents, re-plan, approve and push.";
+            } else {
+                startable = true;
+                why = "The plan was pushed to " + push.repository() + " but development has not started yet (it was "
+                        + "pushed before the Developer agent was available, or development was stopped).";
+            }
+            return new DevState(requirementId, controls(v), null, startable && controls(v), why);
         }
         List<TaskV> tasks = devs.tasks(run.id()).stream().map(t -> new TaskV(t.id(), t.storyKey(), t.title(), t.wave(),
                 t.external(), t.issueNumber(), t.status(), t.attempts(), t.branch(), t.prNumber(), t.prUrl(),
@@ -74,7 +97,29 @@ class DevService {
         Map<String, Long> counts = new java.util.TreeMap<>();
         tasks.stream().filter(t -> !t.external()).forEach(t -> counts.merge(t.status(), 1L, Long::sum));
         return new DevState(requirementId, controls(v), new RunV(run.id(), run.status(), run.repository(),
-                run.currentWave(), run.agentSlots(), run.startedAt(), run.finishedAt(), tasks, counts));
+                run.currentWave(), run.agentSlots(), run.startedAt(), run.finishedAt(), tasks, counts), false, null);
+    }
+
+    private boolean forAgents(PlanPushRepository.PushRow push) {
+        PlanIssues.Payload payload = json.readValue(push.payloadJson(), PlanIssues.Payload.class);
+        return payload.issues().stream().anyMatch(i -> i.agent() != null);
+    }
+
+    /** Starts development for the newest pushed plan, when it was made for coding agents and none is running. */
+    @Transactional
+    public DevState start(UUID requirementId) {
+        var v = visible(requirementId);
+        require(v);
+        if (devs.latest(requirementId).isPresent()) {
+            throw ApiException.conflict("DEV_RUNNING", "Development has already started for this requirement.");
+        }
+        PlanPushRepository.PushRow push = pushes.latestPushedAny(requirementId).filter(this::forAgents)
+                .orElseThrow(() -> ApiException.conflict("DEV_NOT_STARTABLE",
+                        "Push an approved delivery plan made for coding agents to GitHub first."));
+        outbox.publish("REQUIREMENT", requirementId, EventTypes.DEVELOPMENT_CHANGED,
+                Map.of("startPlanPushId", push.id().toString()));
+        audit.record(AuditAction.DEV_CONTROLLED, "PLAN_PUSH", push.id(), AuditResult.SUCCESS);
+        return state(requirementId);
     }
 
     @Transactional

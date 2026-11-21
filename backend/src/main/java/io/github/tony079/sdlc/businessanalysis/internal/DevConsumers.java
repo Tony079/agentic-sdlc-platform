@@ -24,8 +24,14 @@ class DevConsumers implements EventConsumer {
     private final DevRepository devs;
     private final ActivityLog activity;
     private final JdbcClient jdbc;
+    private final org.springframework.beans.factory.ObjectProvider<DevOrchestrator> orchestrator;
+    private final PlanPushRepository pushes;
 
-    DevConsumers(JobQueue jobs, DevRepository devs, ActivityLog activity, JdbcClient jdbc) {
+    DevConsumers(JobQueue jobs, DevRepository devs, ActivityLog activity, JdbcClient jdbc,
+                 org.springframework.beans.factory.ObjectProvider<DevOrchestrator> orchestrator,
+                 PlanPushRepository pushes) {
+        this.orchestrator = orchestrator;
+        this.pushes = pushes;
         this.jobs = jobs;
         this.devs = devs;
         this.activity = activity;
@@ -44,6 +50,14 @@ class DevConsumers implements EventConsumer {
 
     @Override
     public void handle(DomainEvent event) {
+        if (EventTypes.DEVELOPMENT_CHANGED.equals(event.eventType()) && event.payload().get("startPlanPushId") != null) {
+            // A person started development for a plan pushed before the Developer agent existed.
+            DevOrchestrator o = orchestrator.getIfAvailable();
+            if (o != null) {
+                pushes.find(event.uuid("startPlanPushId"), false).ifPresent(o::start);
+            }
+            return;
+        }
         if (EventTypes.DEVELOPMENT_CHANGED.equals(event.eventType())) {
             UUID run = event.uuid("devRunId");
             jobs.enqueue(DevOrchestrator.tick(run, event.aggregateId(), "e" + event.id()));

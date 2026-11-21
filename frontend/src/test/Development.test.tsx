@@ -46,4 +46,14 @@ describe('DevelopmentPanel (GD-36)', () => {
     expect(calls.some((c) => c.url.endsWith('/development/tasks/t2/retry'))).toBe(true);
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
   });
+
+  it('offers to start development for a plan pushed before the Developer agent existed', async () => {
+    document.cookie = 'XSRF-TOKEN=d1; path=/';
+    const calls = mockFetch(() => ({ status: 200, body: { requirementId: 'x', canControl: true, run: null, canStart: true,
+      notStarted: 'The plan was pushed to acme/site but development has not started yet.' } }));
+    renderWithProviders(<DevelopmentPanel requirementId="x" />);
+    expect(await screen.findByText(/pushed to acme\/site but development has not started/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Start development' }));
+    expect(calls.some((c) => c.url.endsWith('/development/start'))).toBe(true);
+  });
 });
