@@ -166,6 +166,15 @@ class NotificationMailer {
                     "The estimate could not be written", "The Estimation agent could not produce the estimate for %s. "
                             + "You can try again from the requirement page.", "Try again", null}),
             // GD-34: delivery plan.
+            // GD-36: development by the Developer agent.
+            Map.entry("DEV_PR_OPEN", new String[] {"Pull request to review: %s", "The Developer agent opened a pull "
+                    + "request", "The Developer agent finished a story of %s and opened a pull request. Review it in "
+                    + "GitHub and merge it when it is right.", "Open development", null}),
+            Map.entry("DEV_STORY_FAILED", new String[] {"A story needs attention: %s", "A story could not be coded",
+                    "The Developer agent could not finish a story of %s. Retry it or skip it.", "Open development",
+                    null}),
+            Map.entry("DEV_DELIVERED", new String[] {"Development complete: %s", "Every story is merged",
+                    "Every story of %s is merged or skipped.", "Open the requirement", null}),
             Map.entry("PLAN_PUSHED", new String[] {"Delivery plan pushed to GitHub: %s",
                     "The delivery plan is in GitHub Issues", "The delivery plan for %s was pushed to GitHub Issues: "
                             + "one issue per story and one milestone per sprint.", "Open the plan", null}),

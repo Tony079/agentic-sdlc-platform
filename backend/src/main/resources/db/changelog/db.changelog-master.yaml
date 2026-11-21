@@ -110,3 +110,5 @@ databaseChangeLog:
   - include: { file: changes/0058-plan-settings-change.sql, relativeToChangelogFile: true }
   # GD-35 (2026-11-21): agent delivery mode for estimates and delivery plans.
   - include: { file: changes/0059-agent-delivery.sql, relativeToChangelogFile: true }
+  # GD-36 (2026-11-21): Garuda's Developer agent (development stage).
+  - include: { file: changes/0060-development.sql, relativeToChangelogFile: true }

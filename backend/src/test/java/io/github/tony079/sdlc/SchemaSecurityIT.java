@@ -34,7 +34,7 @@ class SchemaSecurityIT {
                 """, String.class);
         assertThat(tenantTables).containsExactly("admin_retry_request", "ai_cost_daily", "analysis_activity", "analysis_input_set", "app_user", "approval", "approved_scope_version", "audit_event",
                 "ba_result_pending", "brd", "brd_client_decision", "brd_flag_ack", "brd_item", "brd_item_evidence", "brd_quote", "brd_revision_charge", "brd_version",
-                "build_dependency", "change_request", "change_request_diff", "clarification", "clarification_message", "client_change_request", "code_symbol",
+                "build_dependency", "change_request", "change_request_diff", "clarification", "clarification_message", "client_change_request", "code_symbol", "dev_run", "dev_task",
                 "document", "document_chunk", "document_decision",
                 "document_extraction", "document_version", "environment", "environment_branch",
                 "environment_change_request",
@@ -52,7 +52,7 @@ class SchemaSecurityIT {
                 "notification", "project", "project_member", "release_approval", "repository_link_request",
                 "requirement", "requirement_closure", "requirement_repository", "requirement_repository_link",
                 "requirement_revision", "tdd_decision", "tdd_version", "workflow_instance",
-                "estimate_version", "plan_version", "plan_push_item");
+                "estimate_version", "plan_version", "plan_push_item", "dev_run", "dev_task");
         // GD-33: estimate content is restricted further, to the project's Estimators and BRD Approvers.
         java.util.Set<String> estimateScoped = java.util.Set.of("estimate_item", "estimate_adjustment",
                 "estimate_decision", "project_estimate_defaults", "project_plan_defaults");

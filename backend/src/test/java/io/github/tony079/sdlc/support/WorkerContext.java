@@ -51,6 +51,9 @@ public final class WorkerContext {
                             "--sdlc.github.allowed-hosts=localhost,127.0.0.1",
                             "--sdlc.github.allow-loopback-http=true",
                             "--sdlc.github.issue-write-pause=0s",
+                            // GD-36: the real devbox server (python3), started for the test run.
+                            "--sdlc.devbox.url=" + TestDevbox.get().url(),
+                            "--sdlc.devbox.token=" + TestDevbox.get().token(),
                             "--logging.structured.format.console=");
         }
         return context;

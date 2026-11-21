@@ -91,6 +91,14 @@ class PlanPushRepository {
                 .param("r", requirementId).param("limit", limit).query(PlanPushRepository::push).list();
     }
 
+    /** GD-36: the newest push of the requirement to the repository that pushed something. */
+    Optional<PushRow> latestPushed(UUID requirementId, UUID repositoryId) {
+        return jdbc.sql(PUSH_SELECT + """
+                WHERE p.requirement_id = :r AND p.repository_id = :repo AND p.status IN ('DONE', 'PARTIAL')
+                ORDER BY p.requested_at DESC LIMIT 1
+                """).param("r", requirementId).param("repo", repositoryId).query(PlanPushRepository::push).optional();
+    }
+
     /** What Garuda created in the repository for the requirement. */
     List<ItemRow> items(UUID requirementId, UUID repositoryId) {
         return jdbc.sql("""

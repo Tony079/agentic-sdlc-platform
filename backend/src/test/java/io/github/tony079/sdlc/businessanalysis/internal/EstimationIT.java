@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -342,8 +343,12 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(new String(planCsv.body(), StandardCharsets.UTF_8)).contains("2026-12-07").contains("Platform");
         assertThat(aaron.download(plan + "/export?format=pdf").status()).isEqualTo(200);
 
-        pushToGitHubIssues(tenant, projectId, plan, eve, aaron, victor);
+        Pushed pushed = pushToGitHubIssues(tenant, projectId, plan, eve, aaron, victor);
         agentDelivery(tenant, estimate, plan, eve, aaron);
+        development(tenant, id, plan, eve, aaron, tina, victor, pushed);
+    }
+
+    record Pushed(UUID repositoryId, String name) {
     }
 
     /** GD-35: a new estimate in agent delivery mode, and a plan in waves from it. */
@@ -415,8 +420,8 @@ class EstimationIT extends ApiIntegrationTest {
     }
 
     /** GD-34 phase 2: the approved plan pushed to GitHub Issues of a verified project repository. */
-    private void pushToGitHubIssues(UUID tenant, String projectId, String plan, ApiClient eve, ApiClient aaron,
-                                    ApiClient victor) {
+    private Pushed pushToGitHubIssues(UUID tenant, String projectId, String plan, ApiClient eve, ApiClient aaron,
+                                      ApiClient victor) {
         FakeGitHub github = FakeGitHub.get();
         github.reset();
         String name = "portfolio-" + UUID.randomUUID().toString().substring(0, 8);
@@ -498,5 +503,119 @@ class EstimationIT extends ApiIntegrationTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> admin.update("DELETE FROM app.plan_push_item"))
                 .hasMessageContaining("not deleted");
         github.reset();
+        return new Pushed(repositoryId, name);
+    }
+
+    /**
+     * GD-36: the approved agent-delivery plan, pushed, starts development on its own. The (fake) model codes each story
+     * in the real devbox; Garuda opens a pull request per story on a garuda/ branch; merging wave 1 starts wave 2; when
+     * everything is merged the requirement is delivered. A missing GitHub permission fails the story with a reason, and
+     * a Technical Approver retries it.
+     */
+    private void development(UUID tenant, String id, String plan, ApiClient eve, ApiClient aaron, ApiClient tina,
+                             ApiClient victor, Pushed pushed) {
+        FakeGitHub github = FakeGitHub.get();
+        github.put(new FakeGitHub.Repo("acme-org", pushed.name(), 900_000_001L + Math.abs(pushed.name().hashCode() % 1000),
+                "main", "c".repeat(40), FakeGitHub.tarball("c".repeat(40), "acme-org-site-ccccccc", Map.of(
+                        "README.md", "# Portfolio\n".getBytes(StandardCharsets.UTF_8),
+                        "app.py", "print('portfolio')\n".getBytes(StandardCharsets.UTF_8))), true));
+        // Approve the agent plan (its flag and the outside-work gap decided), then push it.
+        JsonNode p = eve.get(plan).body();
+        assertThat(eve.post(plan + "/flags/accept-all", Map.of("flag", "NO_ESTIMATE")).status()).isIn(200, 422);
+        for (JsonNode gap : p.path("version").path("gaps")) {
+            eve.post(plan + "/gaps/" + gap.path("key").asString() + "/accept", Map.of());
+        }
+        p = aaron.get(plan).body();
+        for (JsonNode story : p.path("version").path("stories")) {
+            if (story.path("flags").size() > 0 && !story.path("accepted").asBoolean()) {
+                eve.post(plan + "/flags/" + story.path("storyKey").asString() + "/accept", Map.of());
+            }
+        }
+        p = aaron.get(plan).body();
+        Response approved = aaron.post(plan + "/approve", Map.of("expectedReviewHash",
+                p.path("version").path("reviewHash").asString(), "confirmApproveAlone", true));
+        assertThat(approved.status()).as(approved.body().toString()).isEqualTo(200);
+
+        String dev = "/api/v1/requirements/" + id + "/development";
+        assertThat(eve.get(dev).body().path("run").isNull()).isTrue();
+        // Wave 1 holds two stories: the first is refused for a missing permission, then retried.
+        github.codePermission(false);
+        fake.enqueue(writeAndDone("hello.py", "print('hello')\n"), done(), writeAndDone("theme.css", "body{}\n"),
+                done());
+        assertThat(eve.post(plan + "/push", Map.of("repositoryId", pushed.repositoryId().toString())).status())
+                .isEqualTo(200);
+        drive(tenant);
+        JsonNode state = victor.get(dev).body();
+        assertThat(state.path("run").path("status").asString()).as(state.toString()).isEqualTo("RUNNING");
+        assertThat(state.path("canControl").asBoolean()).isFalse();
+        JsonNode tasks = state.path("run").path("tasks");
+        assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 1)
+                .allMatch(t -> "FAILED".equals(t.path("status").asString()))).as(tasks.toString()).isTrue();
+        assertThat(tasks.get(0).path("reason").asString()).contains("Contents and Pull requests");
+        assertThat(victor.post(dev + "/tasks/" + tasks.get(0).path("id").asString() + "/retry", Map.of()).errorCode())
+                .isEqualTo("DEV_CONTROL_NOT_ALLOWED");
+
+        github.codePermission(true);
+        fake.reset();
+        fake.enqueue(writeAndDone("hello.py", "print('hello')\n"), done(), writeAndDone("theme.css", "body{}\n"),
+                done(), writeAndDone("pages.py", "PAGES = ['about']\n"), done());
+        for (JsonNode t : tasks) {
+            if (t.path("wave").asInt() == 1) {
+                assertThat(tina.post(dev + "/tasks/" + t.path("id").asString() + "/retry", Map.of()).status())
+                        .isEqualTo(200);
+            }
+        }
+        drive(tenant);
+        state = tina.get(dev).body();
+        tasks = state.path("run").path("tasks");
+        List<JsonNode> wave1 = tasks.valueStream().filter(t -> t.path("wave").asInt() == 1).toList();
+        assertThat(wave1).allMatch(t -> "PR_OPEN".equals(t.path("status").asString()));
+        assertThat(wave1.get(0).path("branch").asString()).startsWith("garuda/req-");
+        assertThat(github.pulls("acme-org", pushed.name())).hasSize(wave1.size());
+        Map<String, Object> pr = github.pulls("acme-org", pushed.name()).values().iterator().next();
+        assertThat(String.valueOf(pr.get("body"))).contains("Closes #").contains("Garuda never merges");
+        assertThat(github.committedFiles(String.valueOf(((Map<?, ?>) pr.get("head")).get("sha"))).keySet())
+                .containsAnyOf("hello.py", "theme.css");
+        // Wave 2 waits until wave 1 is merged in GitHub.
+        assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 2)
+                .allMatch(t -> "WAITING".equals(t.path("status").asString()))).isTrue();
+        github.pulls("acme-org", pushed.name()).keySet().forEach(n -> github.merge("acme-org", pushed.name(), n));
+        assertThat(tina.post(dev + "/pause", Map.of()).status()).isEqualTo(200);
+        assertThat(tina.post(dev + "/resume", Map.of()).status()).isEqualTo(200);
+        drive(tenant);
+        tasks = tina.get(dev).body().path("run").path("tasks");
+        assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 1)
+                .allMatch(t -> "MERGED".equals(t.path("status").asString()))).isTrue();
+        assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 2)
+                .allMatch(t -> "PR_OPEN".equals(t.path("status").asString()))).as(tasks.toString()).isTrue();
+        // Wave 2 merged: development is complete.
+        github.pulls("acme-org", pushed.name()).forEach((n, x) -> {
+            if (!Boolean.TRUE.equals(x.get("merged"))) {
+                github.merge("acme-org", pushed.name(), n);
+            }
+        });
+        tina.post(dev + "/pause", Map.of());
+        tina.post(dev + "/resume", Map.of());
+        drive(tenant);
+        assertThat(tina.get(dev).body().path("run").path("status").asString()).isEqualTo("DELIVERED");
+        assertThat(github.branches("acme-org", pushed.name())).allMatch(b -> b.startsWith("garuda/"));
+        // People can only pause, resume, retry and skip: the database refuses anything else.
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> admin.update("DELETE FROM app.dev_task"))
+                .hasMessageContaining("not deleted");
+        fake.reset();
+    }
+
+    private static FakeModelProvider.CallTools writeAndDone(String path, String content) {
+        return new FakeModelProvider.CallTools(List.of(
+                new io.github.tony079.sdlc.modelgateway.api.ModelProvider.ToolCall("c1", "write_file",
+                        Map.of("path", path, "content", content)),
+                new io.github.tony079.sdlc.modelgateway.api.ModelProvider.ToolCall("c2", "run_command",
+                        Map.of("command", "python3 " + path))));
+    }
+
+    private static FakeModelProvider.Reply done() {
+        return new FakeModelProvider.Reply("""
+                {"status": "DONE", "summary": "Implemented the story with a test.", "testsRun": ["python3 -m pytest"],
+                 "testsPassed": true, "nextSteps": null}""");
     }
 }

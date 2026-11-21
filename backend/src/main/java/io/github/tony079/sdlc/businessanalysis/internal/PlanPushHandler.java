@@ -50,9 +50,12 @@ class PlanPushHandler implements JobHandler<PlanPushHandler.Outcome> {
     private final ActivityLog activity;
     private final JsonMapper json;
     private final TransactionTemplate tx;
+    private final DevOrchestrator development;
 
     PlanPushHandler(IssueTracker tracker, PlanPushRepository pushes, ReviewRepository reviews, AuditWriter audit,
-                    ActivityLog activity, JsonMapper json, PlatformTransactionManager transactionManager) {
+                    ActivityLog activity, JsonMapper json, PlatformTransactionManager transactionManager,
+                    DevOrchestrator development) {
+        this.development = development;
         this.tracker = tracker;
         this.pushes = pushes;
         this.reviews = reviews;
@@ -189,6 +192,10 @@ class PlanPushHandler implements JobHandler<PlanPushHandler.Outcome> {
         pushes.finish(push.id(), status, outcome.failed(), outcome.failureCode());
         String summary = "created " + push.created() + ", updated " + push.updated()
                 + (outcome.failed() > 0 ? ", " + outcome.failed() + " refused by GitHub" : "");
+        if (!"FAILED".equals(status)) {
+            // GD-36: an agent-delivery plan in GitHub starts development on its own.
+            development.start(pushes.find(push.id(), false).orElseThrow());
+        }
         switch (status) {
             case "DONE" -> {
                 audit.record(AuditAction.PLAN_PUSHED, "PLAN_PUSH", push.id(), AuditResult.SUCCESS);

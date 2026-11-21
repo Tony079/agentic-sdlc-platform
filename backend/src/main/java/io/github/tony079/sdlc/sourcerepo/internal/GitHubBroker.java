@@ -55,6 +55,9 @@ class GitHubBroker {
     private static final Map<String, String> TOKEN_PERMISSIONS = Map.of("contents", "read", "metadata", "read");
     /** GD-34 phase 2: pushing a delivery plan. No contents access: the token cannot read or change code. */
     static final Map<String, String> ISSUE_PERMISSIONS = Map.of("issues", "write", "metadata", "read");
+    /** GD-36: the Developer agent commits to garuda/... branches and opens pull requests; never merges. */
+    static final Map<String, String> CODE_PERMISSIONS = Map.of("contents", "write", "pull_requests", "write",
+            "issues", "read", "metadata", "read");
 
     /** A response whose status the caller handles itself; {@code body} is null unless the status was 2xx. */
     record Reply(int status, JsonNode body) {
@@ -173,6 +176,14 @@ class GitHubBroker {
         return guardedToken(installation, repositoryName, ISSUE_PERMISSIONS);
     }
 
+    /**
+     * GD-36: Contents and Pull requests: write, Issues and Metadata: read, on one repository. Without those
+     * permissions on the installation, fails ACCESS_DENIED / GITHUB_CODE_PERMISSION.
+     */
+    Token codeToken(Installation installation, String repositoryName) throws GitHubException {
+        return guardedToken(installation, repositoryName, CODE_PERMISSIONS);
+    }
+
     private Token guardedToken(Installation installation, String repositoryName, Map<String, String> wanted)
             throws GitHubException {
         try {
@@ -180,6 +191,7 @@ class GitHubBroker {
         } catch (GitHubException e) {
             // A missing Issues permission is a setup step, not a credential failure.
             if (securityEvents != null && !"GITHUB_ISSUES_PERMISSION".equals(e.code())
+                    && !"GITHUB_CODE_PERMISSION".equals(e.code())
                     && (e.kind() == Kind.ACCESS_DENIED || "GITHUB_TOKEN_SCOPE".equals(e.code()))) {
                 securityEvents.record(
                         io.github.tony079.sdlc.securitymonitoring.api.SecurityEventRecorder.SecurityEventType
@@ -207,10 +219,11 @@ class GitHubBroker {
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(request)))
                 .build();
         HttpResponse<InputStream> response = sendStream(post);
-        if (response.statusCode() == 422 && wanted.containsKey("issues")) {
+        if (response.statusCode() == 422 && wanted.containsValue("write")) {
             // The installation was not granted the permission asked for.
             closeQuietly(response.body());
-            throw new GitHubException(Kind.ACCESS_DENIED, "GITHUB_ISSUES_PERMISSION");
+            throw new GitHubException(Kind.ACCESS_DENIED, wanted.containsKey("contents") ? "GITHUB_CODE_PERMISSION"
+                    : "GITHUB_ISSUES_PERMISSION");
         }
         if (response.statusCode() / 100 != 2) {
             closeQuietly(response.body());

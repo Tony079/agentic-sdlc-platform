@@ -69,6 +69,11 @@ public final class FakeGitHub {
     private final Map<String, Map<Integer, Map<String, Object>>> milestones = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Map<String, Object>>> labels = new ConcurrentHashMap<>();
     private final AtomicInteger numbers = new AtomicInteger();
+    private volatile boolean codePermission = true;
+    /** GD-36: git objects (sha -> object), branch refs ("owner/name refs/heads/x" -> sha) and pull requests. */
+    private final Map<String, Map<String, Object>> gitObjects = new ConcurrentHashMap<>();
+    private final Map<String, String> refs = new ConcurrentHashMap<>();
+    private final Map<String, Map<Integer, Map<String, Object>>> pulls = new ConcurrentHashMap<>();
 
     private FakeGitHub() throws Exception {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
@@ -140,6 +145,49 @@ public final class FakeGitHub {
         grantedPermissions = permissions;
     }
 
+    /** GD-36: whether the installation has Contents and Pull requests: write (default true). */
+    public void codePermission(boolean granted) {
+        codePermission = granted;
+    }
+
+    /** GD-36: the repository's pull requests by number (copies). */
+    public Map<Integer, Map<String, Object>> pulls(String owner, String name) {
+        return Map.copyOf(pulls.getOrDefault(key(owner, name), Map.of()));
+    }
+
+    /** GD-36: merges a pull request (as a person would in GitHub); the default branch head moves to its commit. */
+    public void merge(String owner, String name, int number) {
+        Map<String, Object> pr = pulls.get(key(owner, name)).get(number);
+        pr.put("merged", true);
+        pr.put("merged_at", "2026-11-21T12:00:00Z");
+        pr.put("state", "closed");
+        Repo repo = repos.get(key(owner, name));
+        put(new Repo(repo.owner(), repo.name(), repo.id(), repo.defaultBranch(),
+                String.valueOf(((Map<?, ?>) pr.get("head")).get("sha")), repo.tarball(), repo.installed()));
+    }
+
+    /** GD-36: the files a commit wrote (path -> content, null for a deletion), from its tree's own entries. */
+    @SuppressWarnings("unchecked")
+    public Map<String, String> committedFiles(String commitSha) {
+        Map<String, Object> commit = gitObjects.get(commitSha);
+        Map<String, Object> tree = gitObjects.get(String.valueOf(commit.get("tree")));
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map<String, Object> e : (List<Map<String, Object>>) tree.get("tree")) {
+            Object sha = e.get("sha");
+            out.put(String.valueOf(e.get("path")), sha == null ? null : new String(java.util.Base64.getDecoder()
+                    .decode(String.valueOf(gitObjects.get(String.valueOf(sha)).get("content"))),
+                    StandardCharsets.UTF_8));
+        }
+        return out;
+    }
+
+    /** GD-36: branch names Garuda created in the repository. */
+    public List<String> branches(String owner, String name) {
+        String prefix = key(owner, name) + " refs/heads/";
+        return refs.keySet().stream().filter(k -> k.startsWith(prefix)).map(k -> k.substring(prefix.length())).sorted()
+                .toList();
+    }
+
     /** Whether the App installation has been granted Issues: Read and write (default true). */
     public void issuesPermission(boolean granted) {
         issuesPermission = granted;
@@ -163,6 +211,11 @@ public final class FakeGitHub {
         return Map.copyOf(labels.getOrDefault(key(owner, name), Map.of()));
     }
 
+    /** GD-36: a person closes an issue on GitHub (for example outside work that is done). */
+    public void closeIssue(String owner, String name, int number) {
+        issues.get(key(owner, name)).get(number).put("state", "closed");
+    }
+
     /** Simulates a person ticking or editing an issue's description on GitHub. */
     public void editIssueBody(String owner, String name, int number, String body) {
         issues.get(key(owner, name)).get(number).put("body", body);
@@ -170,6 +223,7 @@ public final class FakeGitHub {
 
     public void reset() {
         issuesPermission = true;
+        codePermission = true;
         rejectIssueNext.set(0);
         rateLimitNext.set(0);
         serverErrorNext.set(0);
@@ -205,6 +259,11 @@ public final class FakeGitHub {
                 }
                 JsonNode body = JSON.readTree(exchange.getRequestBody().readAllBytes());
                 tokenRequests.add(body.toString());
+                if (body.path("permissions").has("contents") && "write".equals(body.path("permissions").path("contents")
+                        .asString("")) && !codePermission) {
+                    send(exchange, 422, Map.of("message", "The permissions requested are not granted to this installation."));
+                    return;
+                }
                 if (body.path("permissions").has("issues") && !issuesPermission) {
                     send(exchange, 422, Map.of("message", "The permissions requested are not granted to this installation."));
                     return;
@@ -238,6 +297,8 @@ public final class FakeGitHub {
                 if (parts.length == 4) {
                     send(exchange, 200, Map.of("id", repo.id(), "full_name", repo.owner() + "/" + repo.name(),
                             "default_branch", repo.defaultBranch(), "private", true));
+                } else if (parts.length >= 5 && List.of("git", "pulls").contains(parts[4])) {
+                    handleCode(exchange, repo, method, parts);
                 } else if (parts.length >= 5 && List.of("issues", "milestones", "labels").contains(parts[4])) {
                     handleIssues(exchange, repo, method, parts);
                 } else if (parts.length == 6 && parts[4].equals("branches")) {
@@ -308,6 +369,71 @@ public final class FakeGitHub {
         } else if (method.equals("PATCH")) {
             item.putAll(body);
             send(exchange, 200, item);
+        } else {
+            send(exchange, 404, Map.of("message", "Not Found"));
+        }
+    }
+
+    private static String newSha() {
+        return (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "").substring(0, 40);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleCode(HttpExchange exchange, Repo repo, String method, String[] parts) throws IOException {
+        String repoKey = key(repo.owner(), repo.name());
+        Map<String, Object> body = method.equals("GET") ? Map.of()
+                : JSON.readValue(exchange.getRequestBody().readAllBytes(), Map.class);
+        String html = "https://github.com/" + repo.owner() + "/" + repo.name();
+        if (parts[4].equals("git")) {
+            String kind = parts.length > 5 ? parts[5] : "";
+            if (method.equals("GET") && kind.equals("commits") && parts.length == 7) {
+                // Any commit the fake knows of, or the repository head: its tree is synthetic.
+                send(exchange, 200, Map.of("sha", parts[6], "tree", Map.of("sha", "b".repeat(40))));
+            } else if (method.equals("POST") && List.of("blobs", "trees", "commits").contains(kind)) {
+                String sha = newSha();
+                gitObjects.put(sha, new LinkedHashMap<>(body));
+                send(exchange, 201, Map.of("sha", sha));
+            } else if (method.equals("POST") && kind.equals("refs")) {
+                String ref = String.valueOf(body.get("ref"));
+                if (refs.putIfAbsent(repoKey + " " + ref, String.valueOf(body.get("sha"))) != null) {
+                    send(exchange, 422, Map.of("message", "Reference already exists"));
+                } else {
+                    send(exchange, 201, Map.of("ref", ref, "object", Map.of("sha", body.get("sha"))));
+                }
+            } else if (method.equals("PATCH") && kind.equals("refs")) {
+                String ref = String.join("/", java.util.Arrays.copyOfRange(parts, 6, parts.length));
+                refs.put(repoKey + " refs/" + ref, String.valueOf(body.get("sha")));
+                send(exchange, 200, Map.of("ref", "refs/" + ref));
+            } else {
+                send(exchange, 404, Map.of("message", "Not Found"));
+            }
+            return;
+        }
+        Map<Integer, Map<String, Object>> all = pulls.computeIfAbsent(repoKey, k -> new ConcurrentHashMap<>());
+        if (parts.length == 5 && method.equals("POST")) {
+            String head = String.valueOf(body.get("head"));
+            boolean open = all.values().stream().anyMatch(p -> "open".equals(p.get("state"))
+                    && head.equals(((Map<?, ?>) p.get("head")).get("ref")));
+            if (open) {
+                send(exchange, 422, Map.of("message", "A pull request already exists"));
+                return;
+            }
+            int number = numbers.incrementAndGet();
+            Map<String, Object> pr = new LinkedHashMap<>(body);
+            pr.put("number", number);
+            pr.put("state", "open");
+            pr.put("merged", false);
+            pr.put("html_url", html + "/pull/" + number);
+            pr.put("head", Map.of("ref", head, "sha", refs.getOrDefault(repoKey + " refs/heads/" + head, "")));
+            all.put(number, pr);
+            send(exchange, 201, pr);
+        } else if (parts.length == 5 && method.equals("GET")) {
+            String query = exchange.getRequestURI().getRawQuery() == null ? "" : exchange.getRequestURI().getRawQuery();
+            String head = query.replaceAll(".*head=[^:]*:([^&]*).*", "$1");
+            send(exchange, 200, all.values().stream().filter(p -> "open".equals(p.get("state"))
+                    && head.equals(((Map<?, ?>) p.get("head")).get("ref"))).toList());
+        } else if (parts.length == 6 && method.equals("GET") && all.containsKey(Integer.parseInt(parts[5]))) {
+            send(exchange, 200, all.get(Integer.parseInt(parts[5])));
         } else {
             send(exchange, 404, Map.of("message", "Not Found"));
         }
