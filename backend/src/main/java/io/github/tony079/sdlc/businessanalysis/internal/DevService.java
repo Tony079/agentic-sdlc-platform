@@ -195,6 +195,11 @@ class DevService {
             case "GITHUB_CODE_PERMISSION" -> "the Garuda GitHub App has not been granted Contents and Pull requests: "
                     + "Read and write on this repository";
             case "REPO_ACCESS" -> "the Garuda GitHub App cannot reach this repository";
+            case "MODEL_PROVIDER_ERROR" -> "the AI provider refused the request; the worker log line \"Model provider "
+                    + "refused\" says why";
+            case "MODEL_INVALID_OUTPUT", "MODEL_EMPTY_OUTPUT" -> "the AI model's answers could not be used";
+            case "MODEL_UNAVAILABLE", "MODEL_RATE_LIMITED" -> "the AI provider was unavailable or busy";
+            case "MODEL_NOT_CONFIGURED" -> "no AI model is configured";
             case "DEVBOX_NOT_CONFIGURED", "DEVBOX_UNREACHABLE" -> "the sandbox (devbox) is not running";
             case "DEVBOX_ARCHIVE_TOO_LARGE", "DEVBOX_ARCHIVE_INVALID" -> "the repository is too large or unreadable "
                     + "for the sandbox";
