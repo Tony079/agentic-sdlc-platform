@@ -119,6 +119,8 @@ class NewProductIT extends ApiIntegrationTest {
         String id = created.body().path("id").asString();
         assertThat(alice.upload("/api/v1/requirements/" + id + "/documents", "brief.txt", "text/plain",
                 Samples.text("The portfolio site lists experience, projects and skills.")).status()).isEqualTo(201);
+        // Earlier tests may leave queued work in this tenant; finish it first so it cannot take the scripted answer.
+        drive(tenant);
         // The first BRD answer breaks a rule (no feasibility reasons); the gateway asks for a repair, which passes.
         fake.enqueue(new FakeModelProvider.Reply("""
                 {"feasibility": {"verdict": "FEASIBLE", "reasons": []}, "items": [], "unsupported": [], "clarifications": []}"""));
