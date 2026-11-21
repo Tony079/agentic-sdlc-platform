@@ -130,13 +130,17 @@ function exportUrl(requirementId: string, format: 'pdf' | 'docx' | 'csv'): strin
   return `/api/v1/requirements/${requirementId}/plan/export?format=${format}&tz=${encodeURIComponent(tz)}`;
 }
 
-function SettingsForm({ initial, busy, onStart }: { initial: Settings; busy: boolean; onStart: (s: Settings) => void }) {
+const isMonday = (iso: string) => new Date(`${iso}T00:00:00`).getDay() === 1;
+
+function SettingsForm({ initial, busy, onStart, submitLabel = 'Start delivery plan', intro, onCancel }: {
+  initial: Settings; busy: boolean; onStart: (s: Settings) => void; submitLabel?: string; intro?: string; onCancel?: () => void;
+}) {
   const [s, setS] = useState<Settings>(initial);
   return (
     <form className="stack" onSubmit={(e) => { e.preventDefault(); onStart(s); }}>
       <p className="small">
-        The Planning agent writes epics and user stories; Garuda gives each story its effort from the approved estimate and
-        lays the stories out in sprints for this team. These settings are remembered for the project.
+        {intro ?? 'The Planning agent writes epics and user stories; Garuda gives each story its effort from the approved '
+          + 'estimate and lays the stories out in sprints for this team. These settings are remembered for the project.'}
       </p>
       <div className="row" style={{ gap: '1rem', flexWrap: 'wrap' }}>
         <label>Sprint length (weeks)
@@ -157,7 +161,15 @@ function SettingsForm({ initial, busy, onStart }: { initial: Settings; busy: boo
           </label>
         ))}
       </div>
-      <div className="row"><button type="submit" className="btn-primary" disabled={busy}>Start delivery plan</button></div>
+      <p className="small">
+        Each role can take {s.daysPerWeek} × {s.sprintWeeks} = {s.daysPerWeek * s.sprintWeeks} days per person per sprint;
+        a story bigger than that is flagged for splitting.
+        {s.startDate && !isMonday(s.startDate) && ' The first sprint does not start on a Monday.'}
+      </p>
+      <div className="row">
+        <button type="submit" className="btn-primary" disabled={busy}>{submitLabel}</button>
+        {onCancel && <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>}
+      </div>
     </form>
   );
 }
@@ -218,6 +230,7 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
   const [text, setText] = useState('');
   const [approving, setApproving] = useState(false);
   const [aloneConfirmed, setAloneConfirmed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   async function act(path: string, body: unknown, done: string) {
     setBusy(true);
@@ -228,6 +241,7 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
       setMessage({ tone: 'info', text: done });
       setEditing(null);
       setChangesOpen(false);
+      setSettingsOpen(false);
       setText('');
       await queryClient.invalidateQueries({ queryKey: ['notifications'] });
     } catch (e) {
@@ -245,6 +259,10 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
   const showContent = data.canSee && version && version.status !== 'GENERATING' && version.status !== 'FAILED';
   const epicTitle = (key: string) => version?.epics.find((e) => e.epicKey === key)?.title ?? '';
   const openGaps = version?.gaps.filter((g) => !g.accepted) ?? [];
+  // Undecided flags by kind, so an Estimator can keep every story with the same flag in one go.
+  const undecided: Record<string, number> = {};
+  version?.stories.filter((st) => st.flags.length > 0 && !st.accepted && st.edits.length === 0)
+    .forEach((st) => st.flags.forEach((f) => { undecided[f] = (undecided[f] ?? 0) + 1; }));
 
   return (
     <FoldSection
@@ -310,6 +328,35 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
               <div className="small">{version.estimateEffortDays != null ? `estimate: ${one(version.estimateEffortDays)}` : 'from the approved estimate'}</div></div>
           </div>
           {version.notes.map((n) => <p key={n} className="small">{n}</p>)}
+          {review.canEdit && !settingsOpen && (
+            <div className="row">
+              <button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => setSettingsOpen(true)}>
+                Change sprint settings
+              </button>
+              <span className="small">
+                {version.settings.sprintWeeks}-week sprints from {day(version.settings.startDate)},{' '}
+                {Object.entries(version.settings.team).filter(([, n]) => (n ?? 0) > 0).map(([r, n]) => `${n} ${ROLE_LABEL[r] ?? r}`).join(', ')}
+              </span>
+            </div>
+          )}
+          {review.canEdit && settingsOpen && (
+            <SettingsForm initial={version.settings} busy={busy} submitLabel="Apply new sprint settings"
+              intro="Garuda makes a new version with the same stories and your edits, and lays out the sprints again. No new writing by the agent; decisions on flags are made again because the flags change with the sprints."
+              onCancel={() => setSettingsOpen(false)}
+              onStart={(settings) => void act('settings', { settings }, 'Laying out the sprints again with the same stories.')} />
+          )}
+          {review.canEdit && Object.entries(undecided).some(([, n]) => n > 1) && (
+            <Callout tone="warning" title="Decide flags in bulk">
+              <div className="row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+                {Object.entries(undecided).filter(([, n]) => n > 1).map(([flag, n]) => (
+                  <button key={flag} type="button" className="btn-secondary btn-sm" disabled={busy}
+                    onClick={() => void act('flags/accept-all', { flag }, `${n} stories kept as proposed.`)}>
+                    Keep all {n} as proposed: {FLAG_LABEL[flag] ?? flag}
+                  </button>
+                ))}
+              </div>
+            </Callout>
+          )}
 
           {data.insider && version.gaps.length > 0 && (
             <Callout tone={openGaps.length === 0 ? 'success' : 'warning'} title={`${version.gaps.length} planning gap(s)`}>

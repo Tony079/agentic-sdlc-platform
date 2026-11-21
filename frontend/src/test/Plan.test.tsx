@@ -90,4 +90,24 @@ describe('PlanPanel (GD-34)', () => {
     expect(await screen.findByText(/no verified GitHub repository/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Push/ })).not.toBeInTheDocument();
   });
+
+  it('lets an Estimator change sprint settings and keep all stories with the same flag at once', async () => {
+    document.cookie = 'XSRF-TOKEN=p1; path=/';
+    const flagged = (key: string, ordinal: number) => story({ storyKey: key, ordinal, title: `Story ${key}`, effortDays: 6, flags: ['OVERSIZED'] });
+    const body = { requirementId: 'r1', canSee: true, insider: true, review: review({ unacceptedFlags: ['s1', 's2'] }),
+      version: { ...version, stories: [flagged('s1', 1), flagged('s2', 2)], sprints: [{ ...version.sprints[0], number: 1 }] },
+      history: [], defaults: null, push: null };
+    const calls = mockFetch((url, init) => ({ status: 200, body: url.endsWith('/plan') || init.method === 'POST' ? body : [] }));
+    renderWithProviders(<PlanPanel requirementId="r1" />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /Keep all 2 as proposed/ }));
+    expect(JSON.parse(String(calls.find((c) => c.url.endsWith('/plan/flags/accept-all'))?.init.body))).toEqual({ flag: 'OVERSIZED' });
+    await user.click(screen.getByRole('button', { name: 'Change sprint settings' }));
+    const weeks = screen.getByLabelText(/Sprint length/);
+    await user.clear(weeks);
+    await user.type(weeks, '2');
+    await user.click(screen.getByRole('button', { name: 'Apply new sprint settings' }));
+    const post = calls.find((c) => c.url.endsWith('/plan/settings'));
+    expect(JSON.parse(String(post?.init.body)).settings).toMatchObject({ sprintWeeks: 2, startDate: '2026-12-07', team: { BACKEND: 1 } });
+  });
 });

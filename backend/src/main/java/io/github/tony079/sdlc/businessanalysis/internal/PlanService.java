@@ -499,6 +499,59 @@ class PlanService {
         return state(requirementId);
     }
 
+    /** Flags an Estimator may accept for every story at once (a story's own problems, not its sprint pin). */
+    static final Set<String> BULK_FLAGS = Set.of("OVERSIZED", "NO_ESTIMATE", "NO_CRITERIA", "NO_EPIC", "CYCLE",
+            "BEFORE_DEPENDENCY");
+
+    /** Keeps every undecided story that carries {@code flag} as proposed, in one decision per story. */
+    @Transactional
+    public PlanState acceptAllFlags(UUID requirementId, String flag) {
+        Access a = access(requirementId);
+        requireEstimator(a, "An Estimator decides flagged stories.");
+        if (flag == null || !BULK_FLAGS.contains(flag)) {
+            throw ApiException.validation(List.of(new FieldError("flag", "UNKNOWN")));
+        }
+        VersionRow v = inReview(requirementId);
+        VersionV view = versionView(v, plans.decisions(v.id()), true);
+        for (StoryV story : view.stories()) {
+            if (story.flags().contains(flag) && !story.accepted() && story.edits().isEmpty()) {
+                decideOnce(a, requirementId, v, "FLAG_ACCEPTED", story.storyKey());
+            }
+        }
+        return state(requirementId);
+    }
+
+    /**
+     * New sprint settings for a plan in review: the version is replaced by one with the same epics and stories (edits
+     * applied), laid out again for the new sprint length, start date and team. No model call; decisions on the old
+     * version are not carried over, because the flags they answered change with the sprints.
+     */
+    @Transactional
+    public PlanState changeSettings(UUID requirementId, Map<String, Object> settingsInput) {
+        Access a = access(requirementId);
+        requireEstimator(a, "An Estimator of the project changes the sprint settings.");
+        if (settingsInput == null) {
+            throw ApiException.validation(List.of(new FieldError("settings", "REQUIRED")));
+        }
+        VersionRow v = inReview(requirementId);
+        String settings = validSettings(settingsInput, v.settingsJson());
+        if (json.readTree(settings).equals(json.readTree(v.settingsJson()))) {
+            throw ApiException.conflict("PLAN_SETTINGS_UNCHANGED", "These are the plan's current sprint settings.");
+        }
+        PlanCalculator.Settings s = settings(settings);
+        String summary = "New sprint settings: " + s.sprintWeeks() + "-week sprints from " + s.startDate() + ", "
+                + s.daysPerWeek() + " working days a week, team " + s.team().entrySet().stream()
+                .map(e -> e.getValue() + " " + EstimateService.ROLE_LABELS.getOrDefault(e.getKey(), e.getKey()))
+                .reduce((x, y) -> x + ", " + y).orElse("none") + ". Stories kept as they were.";
+        plans.saveDefaults(TenantContext.requireTenant(), a.projectId(), settings, a.me());
+        plans.setStatus(v.id(), "SUPERSEDED");
+        UUID next = plans.insert(TenantContext.requireTenant(), a.projectId(), requirementId, v.estimateVersionId(),
+                settings, summary.length() > 5000 ? summary.substring(0, 5000) : summary, a.me(), v.id());
+        audit.record(AuditAction.PLAN_DECIDED, "PLAN_VERSION", v.id(), AuditResult.SUCCESS);
+        request(requirementId, next, 1);
+        return state(requirementId);
+    }
+
     private void decideOnce(Access a, UUID requirementId, VersionRow v, String kind, String key) {
         if (plans.decisions(v.id()).stream().noneMatch(d -> kind.equals(d.kind()) && key.equals(d.itemKey()))) {
             plans.insertDecision(TenantContext.requireTenant(), a.projectId(), requirementId, v.id(), kind, key, null,

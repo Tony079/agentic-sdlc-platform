@@ -20,7 +20,7 @@ class PlanRepository {
     record VersionRow(UUID id, UUID tenantId, UUID projectId, UUID requirementId, int versionNo, UUID estimateVersionId,
                       String status, String settingsJson, String risksJson, String contentHash, String modelProvider,
                       String modelId, String changeRequest, UUID requestedBy, String failureCode, int attempts,
-                      OffsetDateTime createdAt) {
+                      OffsetDateTime createdAt, UUID copiedFrom) {
     }
 
     record EpicRow(int ordinal, String epicKey, String title, String goal, String designRefsJson) {
@@ -41,7 +41,7 @@ class PlanRepository {
     private static final String VERSION_SELECT = """
             SELECT id, tenant_id, project_id, requirement_id, version_no, estimate_version_id, status, settings::text,
                    risks::text, content_hash, model_provider, model_id, change_request, requested_by, failure_code,
-                   attempts, created_at
+                   attempts, created_at, copied_from
             FROM app.plan_version
             """;
 
@@ -56,7 +56,7 @@ class PlanRepository {
                 rs.getObject(4, UUID.class), rs.getInt(5), rs.getObject(6, UUID.class), rs.getString(7),
                 rs.getString(8), rs.getString(9), rs.getString(10), rs.getString(11), rs.getString(12),
                 rs.getString(13), rs.getObject(14, UUID.class), rs.getString(15), rs.getInt(16),
-                rs.getObject(17, OffsetDateTime.class));
+                rs.getObject(17, OffsetDateTime.class), rs.getObject(18, UUID.class));
     }
 
     Optional<VersionRow> find(UUID id, boolean lock) {
@@ -77,14 +77,22 @@ class PlanRepository {
 
     UUID insert(UUID tenantId, UUID projectId, UUID requirementId, UUID estimateVersionId, String settingsJson,
                 String changeRequest, UUID requestedBy) {
+        return insert(tenantId, projectId, requirementId, estimateVersionId, settingsJson, changeRequest, requestedBy,
+                null);
+    }
+
+    /** A new version; {@code copiedFrom} set: the worker keeps that version's stories instead of asking the model. */
+    UUID insert(UUID tenantId, UUID projectId, UUID requirementId, UUID estimateVersionId, String settingsJson,
+                String changeRequest, UUID requestedBy, UUID copiedFrom) {
         return jdbc.sql("""
                 INSERT INTO app.plan_version (tenant_id, project_id, requirement_id, version_no, estimate_version_id, status,
-                                              settings, change_request, requested_by)
+                                              settings, change_request, requested_by, copied_from)
                 VALUES (:t, :p, :r, (SELECT coalesce(max(version_no), 0) + 1 FROM app.plan_version WHERE requirement_id = :r),
-                        :e, 'GENERATING', :s::jsonb, :c, :u)
+                        :e, 'GENERATING', :s::jsonb, :c, :u, CAST(:from AS uuid))
                 RETURNING id
                 """).param("t", tenantId).param("p", projectId).param("r", requirementId).param("e", estimateVersionId)
-                .param("s", settingsJson).param("c", changeRequest).param("u", requestedBy).query(UUID.class).single();
+                .param("s", settingsJson).param("c", changeRequest).param("u", requestedBy).param("from", copiedFrom)
+                .query(UUID.class).single();
     }
 
     void setStatus(UUID id, String status) {
@@ -170,6 +178,13 @@ class PlanRepository {
                 WHERE e.plan_version_id = :v ORDER BY e.edited_at, e.id
                 """).param("v", versionId).query((rs, n) -> new EditRow(rs.getString(1), rs.getString(2),
                         rs.getString(3), rs.getString(4), rs.getObject(5, OffsetDateTime.class))).list();
+    }
+
+    /** Story key and changes of each edit, oldest first, without who made it (the worker may not read names). */
+    List<String[]> editChanges(UUID versionId) {
+        return jdbc.sql("""
+                SELECT story_key, changes::text FROM app.plan_edit WHERE plan_version_id = :v ORDER BY edited_at, id
+                """).param("v", versionId).query((rs, n) -> new String[] {rs.getString(1), rs.getString(2)}).list();
     }
 
     void insertDecision(UUID tenantId, UUID projectId, UUID requirementId, UUID versionId, String kind, String itemKey,

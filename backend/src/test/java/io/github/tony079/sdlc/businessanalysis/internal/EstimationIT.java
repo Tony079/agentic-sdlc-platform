@@ -288,6 +288,39 @@ class EstimationIT extends ApiIntegrationTest {
                 .filter(x -> x.path("storyKey").asString().equals(themeKey)).findFirst().orElseThrow();
         assertThat(edited.path("sprint").asInt()).isEqualTo(3);
         assertThat(edited.path("priority").asString()).isEqualTo("COULD");
+
+        // New sprint settings: a new version with the same stories (the edit kept), sprints laid out again, no model call.
+        Map<String, Object> sameSettings = Map.of("sprintWeeks", 1, "startDate", "2026-12-07", "daysPerWeek", 5,
+                "team", Map.of("BACKEND", 1, "FRONTEND", 1));
+        assertThat(eve.post(plan + "/settings", Map.of("settings", sameSettings)).errorCode())
+                .isEqualTo("PLAN_SETTINGS_UNCHANGED");
+        Map<String, Object> twoWeeks = Map.of("sprintWeeks", 2, "startDate", "2026-12-07", "daysPerWeek", 5,
+                "team", Map.of("BACKEND", 1, "FRONTEND", 1));
+        assertThat(aaron.post(plan + "/settings", Map.of("settings", twoWeeks)).errorCode())
+                .isEqualTo("PLAN_DECISION_NOT_ALLOWED");
+        int modelCalls = fake.calls().size();
+        Response resettled = eve.post(plan + "/settings", Map.of("settings", twoWeeks));
+        assertThat(resettled.status()).as(resettled.body().toString()).isEqualTo(200);
+        drive(tenant);
+        assertThat(fake.calls()).as("no model call for new sprint settings").hasSize(modelCalls);
+        p = eve.get(plan).body();
+        assertThat(p.path("review").path("stage").asString()).isEqualTo("IN_REVIEW");
+        assertThat(p.path("version").path("versionNo").asInt()).isEqualTo(2);
+        assertThat(p.path("version").path("settings").path("sprintWeeks").asInt()).isEqualTo(2);
+        assertThat(p.path("version").path("stories").size()).isEqualTo(3);
+        JsonNode kept = p.path("version").path("stories").valueStream()
+                .filter(x -> x.path("storyKey").asString().equals(themeKey)).findFirst().orElseThrow();
+        assertThat(kept.path("priority").asString()).as("the edit is kept").isEqualTo("COULD");
+        assertThat(p.path("version").path("stories").valueStream()
+                .filter(x -> x.path("title").asString().contains("pages built")).findFirst().orElseThrow()
+                .path("sprint").asInt()).as("two-week sprints hold both backend stories").isEqualTo(1);
+        // Every story still flagged the same way is kept as proposed in one go.
+        assertThat(p.path("review").path("unacceptedFlags").size()).isEqualTo(1);
+        assertThat(eve.post(plan + "/flags/accept-all", Map.of("flag", "NOPE")).status()).isEqualTo(422);
+        assertThat(eve.post(plan + "/flags/accept-all", Map.of("flag", "NO_ESTIMATE")).status()).isEqualTo(200);
+        p = aaron.get(plan).body();
+        assertThat(p.path("review").path("unacceptedFlags").size()).isZero();
+        assertThat(p.path("review").path("canApprove").asBoolean()).isTrue();
         Response planApproved = aaron.post(plan + "/approve", Map.of("expectedReviewHash",
                 p.path("version").path("reviewHash").asString(), "confirmApproveAlone", true));
         assertThat(planApproved.status()).as(planApproved.body().toString()).isEqualTo(200);

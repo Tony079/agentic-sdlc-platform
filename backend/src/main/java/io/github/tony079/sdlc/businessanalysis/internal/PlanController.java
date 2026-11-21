@@ -88,6 +88,19 @@ class PlanController {
         return plans.requestChanges(id, body.text());
     }
 
+    record FlagBody(String flag) {
+    }
+
+    @PostMapping(BASE + "/flags/accept-all")
+    PlanState acceptAllFlags(@PathVariable UUID id, @RequestBody FlagBody body) {
+        return plans.acceptAllFlags(id, body == null ? null : body.flag());
+    }
+
+    @PostMapping(BASE + "/settings")
+    PlanState changeSettings(@PathVariable UUID id, @RequestBody StartBody body) {
+        return plans.changeSettings(id, body == null ? null : body.settings());
+    }
+
     record PushBody(UUID repositoryId) {
     }
 

@@ -97,6 +97,18 @@ status). Row-level security and guards as for estimates. Job `PLAN_GENERATION`, 
 - Visibility: before approval, only Estimators and BRD Approvers see the plan and its timeline; once approved, every
   project member sees epics, stories, sprints and risks (not the estimate's work items, gaps or edit history).
 
+### 8.1 Changing sprint settings and bulk flag decisions (2026-11-21)
+
+- An Estimator can **change the sprint settings** (sprint length, start date, working days, team) of a plan in review.
+  Garuda supersedes the version and makes the next one with the same epics and stories (edits applied; a renamed
+  story's dependants follow it; pinned sprints are dropped because sprint numbers change), without a model call
+  (`plan_version.copied_from`, migration `0058`). Decisions on flags are made again, because the flags change with
+  the sprints. `POST /api/v1/requirements/{id}/plan/settings {settings}`.
+- **Keep all as proposed**: every undecided story carrying the same flag (for example "larger than one sprint") is
+  accepted in one action, one recorded decision per story. `POST .../plan/flags/accept-all {flag}`.
+- Why: with one person per role and one-week sprints each role has 5 days per sprint, so most stories were flagged
+  as oversized and the settings could not be changed without starting over.
+
 ## 9. GitHub Issues push (phase 2, 2026-11-21)
 
 - **Who:** an Estimator, on the approved plan, to a **verified repository of the project** (Environments tab). For a

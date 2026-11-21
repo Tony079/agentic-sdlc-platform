@@ -100,6 +100,14 @@ class PlanGenerationHandler implements JobHandler<PlanGenerationHandler.Outcome>
         }
         UUID requirementId = inputs.version().requirementId();
         ActivityLog.Stage stage = ActivityLog.Stage.PLAN;
+        if (inputs.version().copiedFrom() != null) {
+            Outcome copied = readOnly.execute(s -> copy(inputs.version()));
+            activity.done(requirementId, stage, versionId, "New sprint settings: kept the "
+                    + ActivityLog.count(copied.epics().size(), "epic") + " and "
+                    + ActivityLog.count(copied.stories().size(), "story") + " of the previous version (edits applied) "
+                    + "and laid out the sprints again. No model call.");
+            return copied;
+        }
         activity.step(requirementId, stage, versionId, "Started the delivery plan" + (job.attemptNo() > 1
                 ? " (attempt " + job.attemptNo() + ")" : "") + ": reading the approved estimate version "
                 + inputs.estimateVersionNo() + " (" + ActivityLog.count(inputs.estimate().size(), "work item") + ").");
@@ -167,6 +175,54 @@ class PlanGenerationHandler implements JobHandler<PlanGenerationHandler.Outcome>
             activity.add(requirementId, stage, versionId, ActivityLog.Kind.FAIL, BaAnalysisHandler.describe(e));
             throw BaAnalysisHandler.failure(e);
         }
+    }
+
+    /**
+     * New sprint settings for a plan in review: the previous version's epics and stories, with its edits applied (a
+     * renamed story keeps the stories that depend on it pointing at it); pinned sprints are dropped because sprint
+     * numbers change. Effort, references and Garuda's flags are kept.
+     */
+    private Outcome copy(VersionRow version) {
+        VersionRow from = plans.find(version.copiedFrom(), false).orElseThrow();
+        Map<String, String> titles = new HashMap<>();
+        Map<String, String> criteria = new HashMap<>();
+        Map<String, String> priorities = new HashMap<>();
+        for (String[] edit : plans.editChanges(from.id())) {
+            tools.jackson.databind.JsonNode c = json.readTree(edit[1]);
+            if (c.path("title").isString()) {
+                titles.put(edit[0], c.path("title").asString());
+            }
+            if (c.path("acceptanceCriteria").isArray()) {
+                criteria.put(edit[0], c.path("acceptanceCriteria").toString());
+            }
+            if (c.path("priority").isString()) {
+                priorities.put(edit[0], c.path("priority").asString());
+            }
+        }
+        List<StoryRow> before = plans.stories(from.id());
+        Map<String, String> renamed = new HashMap<>();
+        for (StoryRow s : before) {
+            if (titles.containsKey(s.storyKey())) {
+                renamed.put(s.title(), titles.get(s.storyKey()));
+            }
+        }
+        List<StoryRow> stories = new ArrayList<>();
+        for (StoryRow s : before) {
+            List<String> deps = new ArrayList<>();
+            json.readTree(s.dependsOnJson()).forEach(d -> deps.add(renamed.getOrDefault(d.asString(), d.asString())));
+            stories.add(new StoryRow(s.ordinal(), s.storyKey(), s.epicKey(), titles.getOrDefault(s.storyKey(), s.title()),
+                    criteria.getOrDefault(s.storyKey(), s.acceptanceCriteriaJson()), s.estimateRefsJson(),
+                    s.brdRefsJson(), s.role(), priorities.getOrDefault(s.storyKey(), s.priority()),
+                    json.writeValueAsString(deps), s.effortDays(), s.flagsJson()));
+        }
+        List<EpicRow> epics = plans.epics(from.id());
+        Map<String, Object> canonical = new LinkedHashMap<>();
+        canonical.put("epics", epics);
+        canonical.put("stories", stories);
+        canonical.put("risks", from.risksJson());
+        canonical.put("settings", version.settingsJson());
+        return new Outcome(version.id(), from.risksJson(), epics, stories,
+                InputSets.sha256(json.writeValueAsString(canonical)), from.modelProvider(), from.modelId());
     }
 
     static DataBlock estimateBlock(List<EstimateRepository.ItemRow> items, Map<String, double[]> effective, int versionNo) {

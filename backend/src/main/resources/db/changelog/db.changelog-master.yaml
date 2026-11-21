@@ -106,3 +106,5 @@ databaseChangeLog:
   - include: { file: changes/0056-delivery-plan.sql, relativeToChangelogFile: true }
   # GD-34 phase 2 (2026-11-21): push the approved plan to GitHub Issues.
   - include: { file: changes/0057-plan-push.sql, relativeToChangelogFile: true }
+  # GD-34 (2026-11-21): change the sprint settings of a plan in review without rewriting it.
+  - include: { file: changes/0058-plan-settings-change.sql, relativeToChangelogFile: true }
