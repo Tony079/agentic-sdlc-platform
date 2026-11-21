@@ -321,6 +321,29 @@ class GitHubBroker {
     }
 
     /**
+     * GD-36: a GraphQL mutation with an installation token, for what the REST API cannot do (taking a pull request out
+     * of draft). An answer with {@code errors} is refused like a 422. Bodies are never logged.
+     */
+    JsonNode graphql(String query, Map<String, Object> variables, Token token) throws GitHubException {
+        HttpRequest request = HttpRequest.newBuilder(api("/graphql"))
+                .timeout(Duration.ofSeconds(30))
+                .header("Authorization", "Bearer " + token.value())
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of("query", query,
+                        "variables", variables)))).build();
+        HttpResponse<InputStream> response = sendStream(request);
+        if (response.statusCode() != 200) {
+            closeQuietly(response.body());
+            throw classify(response);
+        }
+        JsonNode body = readNode(response);
+        if (body == null || body.has("errors")) {
+            throw new GitHubException(Kind.INVALID_RESPONSE, "GITHUB_GRAPHQL_REFUSED");
+        }
+        return body;
+    }
+
+    /**
      * GD-34 phase 2: a JSON request to the repository API ({@code path} after /repos/owner/name). A 2xx answer is
      * parsed (object or array); a status in {@code handled} is returned without reading the body; anything else is
      * classified. Bodies are never logged.

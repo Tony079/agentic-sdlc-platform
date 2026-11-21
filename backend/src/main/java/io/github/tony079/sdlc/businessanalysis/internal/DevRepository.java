@@ -22,7 +22,7 @@ class DevRepository {
     record TaskRow(UUID id, UUID devRunId, String storyKey, String title, int wave, boolean external,
                    Integer issueNumber, String status, int attempts, String branch, String baseSha, String headSha,
                    Integer prNumber, String prUrl, String summary, Boolean testsPassed, Integer filesChanged,
-                   String failureCode, OffsetDateTime updatedAt) {
+                   String failureCode, OffsetDateTime updatedAt, String workLog, boolean draft) {
     }
 
     private static final String RUN_SELECT = """
@@ -32,7 +32,8 @@ class DevRepository {
             """;
     private static final String TASK_SELECT = """
             SELECT id, dev_run_id, story_key, title, wave, external, issue_number, status, attempts, branch, base_sha,
-                   head_sha, pr_number, pr_url, summary, tests_passed, files_changed, failure_code, updated_at
+                   head_sha, pr_number, pr_url, summary, tests_passed, files_changed, failure_code, updated_at,
+                   work_log, draft
             FROM app.dev_task
             """;
 
@@ -54,7 +55,7 @@ class DevRepository {
                 rs.getInt(5), rs.getBoolean(6), (Integer) rs.getObject(7), rs.getString(8), rs.getInt(9),
                 rs.getString(10), rs.getString(11), rs.getString(12), (Integer) rs.getObject(13), rs.getString(14),
                 rs.getString(15), (Boolean) rs.getObject(16), (Integer) rs.getObject(17), rs.getString(18),
-                rs.getObject(19, OffsetDateTime.class));
+                rs.getObject(19, OffsetDateTime.class), rs.getString(20), rs.getBoolean(21));
     }
 
     Optional<RunRow> run(UUID id, boolean lock) {
@@ -149,7 +150,7 @@ class DevRepository {
         jdbc.sql("""
                 UPDATE app.dev_task SET status = 'PR_OPEN', branch = :branch, base_sha = :base, head_sha = :head,
                        pr_number = :n, pr_url = :url, summary = :summary, tests_passed = :tests,
-                       files_changed = :files, failure_code = NULL
+                       files_changed = :files, failure_code = NULL, draft = false
                 WHERE id = :id
                 """).param("branch", branch).param("base", baseSha).param("head", headSha).param("n", prNumber)
                 .param("url", prUrl).param("summary", summary).param("tests", testsPassed).param("files", filesChanged)
@@ -159,5 +160,27 @@ class DevRepository {
     void failed(UUID id, String code, String summary) {
         jdbc.sql("UPDATE app.dev_task SET status = 'FAILED', failure_code = :code, summary = coalesce(:summary, summary) "
                 + "WHERE id = :id").param("code", code).param("summary", summary).param("id", id).update();
+    }
+
+    /** The agent stopped before finishing: its work log is kept for the next attempt. */
+    void failed(UUID id, String code, String summary, String workLog) {
+        jdbc.sql("""
+                UPDATE app.dev_task SET status = 'FAILED', failure_code = :code, summary = coalesce(:summary, summary),
+                       work_log = coalesce(:log, work_log)
+                WHERE id = :id
+                """).param("code", code).param("summary", summary).param("log", workLog).param("id", id).update();
+    }
+
+    /** Unfinished work committed to the story's branch as a draft pull request; a retry carries on from it. */
+    void unfinished(UUID id, String code, String summary, String workLog, String branch, String baseSha,
+                    String headSha, int prNumber, String prUrl, int filesChanged) {
+        jdbc.sql("""
+                UPDATE app.dev_task SET status = 'FAILED', failure_code = :code, summary = coalesce(:summary, summary),
+                       work_log = :log, branch = :branch, base_sha = coalesce(base_sha, :base), head_sha = :head,
+                       pr_number = :n, pr_url = :url, files_changed = :files, draft = true
+                WHERE id = :id
+                """).param("code", code).param("summary", summary).param("log", workLog).param("branch", branch)
+                .param("base", baseSha).param("head", headSha).param("n", prNumber).param("url", prUrl)
+                .param("files", filesChanged).param("id", id).update();
     }
 }

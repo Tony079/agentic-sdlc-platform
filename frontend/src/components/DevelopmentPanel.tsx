@@ -14,6 +14,8 @@ interface DevTask {
   status: TaskStatus; attempts: number; branch: string | null; prNumber: number | null; prUrl: string | null;
   summary: string | null; testsPassed: boolean | null; filesChanged: number | null; failureCode: string | null;
   reason: string | null; updatedAt: string;
+  /** Unfinished work kept on a draft pull request; Retry carries on from it. */
+  draft?: boolean;
 }
 interface DevRun {
   id: string; status: 'RUNNING' | 'PAUSED' | 'DELIVERED' | 'STOPPED'; repository: string; currentWave: number;
@@ -103,7 +105,7 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
   const renderTask = (t: DevTask) => (
     <li key={t.id} className={t.status === 'FAILED' ? 'support-flagged' : ''}>
       <Badge tone={TASK[t.status].tone}>{TASK[t.status].label}</Badge> <strong>{t.title}</strong>
-      {t.prUrl && <> <a href={t.prUrl} target="_blank" rel="noopener noreferrer" className="small">pull request #{t.prNumber}</a></>}
+      {t.prUrl && <> <a href={t.prUrl} target="_blank" rel="noopener noreferrer" className="small">{t.draft ? 'draft ' : ''}pull request #{t.prNumber}</a></>}
       {!t.prUrl && t.issueNumber != null && <span className="small"> · issue #{t.issueNumber}</span>}
       {t.summary && <div className="small">{t.summary}</div>}
       {(t.testsPassed != null || t.filesChanged != null) && (
@@ -113,12 +115,17 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
           {t.attempts > 1 && ` · attempt ${t.attempts}`}
         </div>
       )}
-      {t.reason && <div className="small error">Not coded: {t.reason}.</div>}
+      {t.reason && <div className="small error">{t.draft ? 'Not finished' : 'Not coded'}: {t.reason}.</div>}
+      {t.draft && t.status === 'FAILED' && (
+        <div className="small">The work so far is on the draft pull request. Retry carries on from it; commits pushed to
+          its branch are kept.</div>
+      )}
       {controls && (t.status === 'FAILED' || t.status === 'WAITING' || t.status === 'QUEUED') && (
         <div className="row" style={{ marginTop: '0.3rem' }}>
           {t.status === 'FAILED' && (
             <button type="button" className="btn-ghost btn-sm" disabled={busy}
-              onClick={() => void act(`tasks/${t.id}/retry`, 'The Developer agent will try this story again.')}>Retry</button>
+              onClick={() => void act(`tasks/${t.id}/retry`, t.draft ? 'The Developer agent will carry on from its draft.'
+                : 'The Developer agent will try this story again.')}>{t.draft ? 'Retry from draft' : 'Retry'}</button>
           )}
           {!t.external && (
             <button type="button" className="btn-ghost btn-sm" disabled={busy}

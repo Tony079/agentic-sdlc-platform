@@ -52,8 +52,16 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
     static final List<String> FORBIDDEN_PREFIXES = List.of(".github/workflows/", ".github/actions/", ".git/");
 
     record Outcome(UUID taskId, boolean ok, String failureCode, String summary, String branch, String baseSha,
-                   String headSha, int prNumber, String prUrl, Boolean testsPassed, int files) {
+                   String headSha, int prNumber, String prUrl, Boolean testsPassed, int files, String workLog,
+                   boolean draft) {
+
+        static Outcome failed(UUID taskId, String code, String summary) {
+            return new Outcome(taskId, false, code, summary, null, null, null, 0, null, null, 0, null, false);
+        }
     }
+
+    /** The longest work log kept between attempts (the newest part). */
+    static final int MAX_WORK_LOG = 20_000;
 
     private record Inputs(DevRepository.TaskRow task, DevRepository.RunRow run, String requirementKey,
                           PlanIssues.Issue story, Integer issueNumber, String design) {
@@ -123,10 +131,23 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
                 }
             });
             String baseSha = session.head();
-            try (InputStream tarball = session.tarball(baseSha)) {
+            String branch = branch(in.requirementKey(), in.task().storyKey());
+            // Unfinished work from an earlier attempt is on the story's branch (with anything a person pushed there):
+            // carry on from its head and its work log.
+            String resumeFrom = in.task().draft() ? session.branchHead(branch) : null;
+            String startSha = resumeFrom != null ? resumeFrom : baseSha;
+            try (InputStream tarball = session.tarball(startSha)) {
                 workspace = devbox.create(tarball);
             }
             List<String> log = new ArrayList<>();
+            if (resumeFrom != null) {
+                log.add("Earlier attempt (its changes are already in this workspace; the list of changed files below "
+                        + "shows only this attempt's): " + (in.task().workLog() == null ? "(no notes kept)"
+                        : in.task().workLog()));
+                activity.step(requirementId, stage, in.run().id(), "\"" + in.task().title() + "\": carrying on from "
+                        + "the unfinished work on " + branch + (in.task().prNumber() == null ? ""
+                        : " (draft pull request #" + in.task().prNumber() + ")") + ".");
+            }
             DevContracts.Step last = null;
             String previousChanged = null;
             int idle = 0;
@@ -190,32 +211,29 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
                 previousChanged = nowChanged;
                 idle = progressed ? 0 : idle + 1;
                 if (idle >= 2) {
-                    return new Outcome(taskId, false, "AGENT_STALLED", last == null ? null : last.summary(), null, null,
-                            null, 0, null, null, 0);
+                    return unfinished(in, session, workspace, branch, baseSha, startSha, "AGENT_STALLED", last, log);
                 }
             }
             if (last == null || last.status() == DevContracts.Status.GIVE_UP) {
                 return new Outcome(taskId, false, last == null ? "AGENT_NO_ANSWER" : "AGENT_GAVE_UP",
                         last == null ? null : last.summary() + (last.nextSteps() == null ? "" : " " + last.nextSteps()),
-                        null, null, null, 0, null, null, 0);
+                        null, null, null, 0, null, null, 0, logText(log), false);
             }
             if (last.status() == DevContracts.Status.CONTINUE) {
-                return new Outcome(taskId, false, "AGENT_OUT_OF_SESSIONS", last.summary(), null, null, null, 0, null,
-                        null, 0);
+                return unfinished(in, session, workspace, branch, baseSha, startSha, "AGENT_OUT_OF_SESSIONS", last, log);
             }
             List<Devbox.ChangedFile> changes = devbox.changes(workspace);
-            String problem = check(changes);
+            // Carrying on from earlier work, "done" with nothing new is fine: the branch already holds the change.
+            String problem = resumeFrom != null && changes.isEmpty() ? null : check(changes);
             if (problem != null) {
-                return new Outcome(taskId, false, problem, last.summary(), null, null, null, 0, null, null, 0);
+                return new Outcome(taskId, false, problem, last.summary(), null, null, null, 0, null, null, 0,
+                        logText(log), false);
             }
-            List<CodeHost.FileChange> files = changes.stream().map(c -> new CodeHost.FileChange(c.path(),
-                    "deleted".equals(c.status()) ? null : c.content(), c.executable())).toList();
-            String branch = branch(in.requirementKey(), in.task().storyKey());
             String title = in.requirementKey() + ": " + PlanIssues.text(in.task().title(), 200);
-            CodeHost.PullRequest pr = session.publish(branch, baseSha, files, title + "\n\nGenerated by the Garuda "
-                    + "Developer agent.", title, pullBody(in, last, changes.size()));
+            CodeHost.PullRequest pr = session.publish(branch, startSha, files(changes), title + "\n\nGenerated by the "
+                    + "Garuda Developer agent.", title, pullBody(in, last, changes.size()), false);
             return new Outcome(taskId, true, null, last.summary(), branch, baseSha, pr.headSha(), pr.number(), pr.url(),
-                    last.testsPassed(), changes.size());
+                    last.testsPassed(), changes.size(), null, false);
         } catch (Wrapped w) {
             return trackerFailure(taskId, w.cause);
         } catch (TrackerException e) {
@@ -224,7 +242,7 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
             if (e.retryable()) {
                 throw JobFailure.retryable(e.code(), null);
             }
-            return new Outcome(taskId, false, e.code(), null, null, null, null, 0, null, null, 0);
+            return Outcome.failed(taskId, e.code(), null);
         } catch (ModelException e) {
             activity.add(requirementId, stage, in.run().id(), ActivityLog.Kind.FAIL, BaAnalysisHandler.describe(e));
             throw BaAnalysisHandler.failure(e);
@@ -242,8 +260,67 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
             case RETRY -> throw e.delay() != null ? JobFailure.dependencyUnavailable(e.code(), e.delay())
                     : JobFailure.retryable(e.code(), null);
             case NOT_CONFIGURED -> throw JobFailure.dependencyUnavailable(e.code(), java.time.Duration.ofMinutes(10));
-            default -> new Outcome(taskId, false, e.code(), null, null, null, null, 0, null, null, 0);
+            default -> Outcome.failed(taskId, e.code(), null);
         };
+    }
+
+    /**
+     * The agent stopped before finishing: its changes (if Garuda's checks allow them) go to the story's branch as a
+     * draft pull request, and its work log is kept, so a retry carries on instead of starting again.
+     */
+    private Outcome unfinished(Inputs in, CodeHost.Session session, String workspace, String branch, String baseSha,
+                               String startSha, String code, DevContracts.Step last, List<String> log)
+            throws TrackerException, Devbox.DevboxException {
+        String summary = last == null ? null : last.summary();
+        String logText = logText(log);
+        List<Devbox.ChangedFile> changes = devbox.changes(workspace);
+        if (check(changes) != null) {
+            // Nothing new, or nothing Garuda may publish: any earlier draft stays as it is.
+            return new Outcome(in.task().id(), false, code, summary, null, null, null, 0, null, null, 0, logText, false);
+        }
+        String title = "[Not finished] " + in.requirementKey() + ": " + PlanIssues.text(in.task().title(), 180);
+        CodeHost.PullRequest pr = session.publish(branch, startSha, files(changes), title + "\n\nUnfinished work of "
+                + "the Garuda Developer agent.", title, draftBody(in, code, last, log), true);
+        return new Outcome(in.task().id(), false, code, summary, branch, baseSha, pr.headSha(), pr.number(), pr.url(),
+                null, changes.size(), logText, true);
+    }
+
+    private static List<CodeHost.FileChange> files(List<Devbox.ChangedFile> changes) {
+        return changes.stream().map(c -> new CodeHost.FileChange(c.path(),
+                "deleted".equals(c.status()) ? null : c.content(), c.executable())).toList();
+    }
+
+    /** The work log as kept between attempts: the newest {@link #MAX_WORK_LOG} characters. */
+    static String logText(List<String> log) {
+        String text = String.join("\n\n", log);
+        return text.length() <= MAX_WORK_LOG ? text : "…" + text.substring(text.length() - MAX_WORK_LOG + 1);
+    }
+
+    private String draftBody(Inputs in, String code, DevContracts.Step last, List<String> log) {
+        StringBuilder out = new StringBuilder();
+        if (in.issueNumber() != null) {
+            out.append("Closes #").append(in.issueNumber()).append("\n\n");
+        }
+        out.append("**Not finished:** ").append(DevService.reason(code)).append(". This draft holds the Developer "
+                + "agent's work so far. Press **Retry** on the story in Garuda to carry on from here (commits you push "
+                + "to this branch are kept), or finish it yourself and mark it ready for review.\n\n");
+        if (last != null) {
+            out.append("### Where it stopped\n\n").append(PlanIssues.text(last.summary(), 1500)).append("\n\n");
+            if (last.nextSteps() != null) {
+                out.append("**Next:** ").append(PlanIssues.text(last.nextSteps(), 1000)).append("\n\n");
+            }
+        }
+        out.append("### Work log\n\n");
+        String text = logText(log);
+        out.append(PlanIssues.text(text.length() > 6000 ? "…" + text.substring(text.length() - 5999) : text, 6000))
+                .append("\n\n");
+        out.append("### Acceptance criteria\n\n");
+        for (String c : in.story().criteria()) {
+            out.append("- [ ] ").append(PlanIssues.text(c, 1000)).append('\n');
+        }
+        out.append("\n---\n_Written by the Garuda Developer agent for ").append(in.requirementKey())
+                .append(". Garuda never merges._\n");
+        return out.toString();
     }
 
     private static final class Wrapped extends RuntimeException {
@@ -419,8 +496,19 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
             for (UUID user : new LinkedHashSet<>(estimates.membersWithRole(run.projectId(), "TECHNICAL_APPROVER"))) {
                 reviews.notify(run.tenantId(), user, "DEV_PR_OPEN", run.requirementId());
             }
+        } else if (outcome.draft()) {
+            devs.unfinished(task.id(), outcome.failureCode(), outcome.summary(), outcome.workLog(), outcome.branch(),
+                    outcome.baseSha(), outcome.headSha(), outcome.prNumber(), outcome.prUrl(), outcome.files());
+            audit.record(AuditAction.DEV_STORY_FAILED, "DEV_TASK", task.id(), AuditResult.FAILED);
+            activity.fail(run.requirementId(), ActivityLog.Stage.DEVELOPMENT, run.id(), "\"" + task.title()
+                    + "\" is not finished (" + DevService.reason(outcome.failureCode()) + "). Its work so far is on "
+                    + "draft pull request #" + outcome.prNumber() + ": a Technical Approver or Estimator can retry it "
+                    + "to carry on from there, or skip it.");
+            for (UUID user : new LinkedHashSet<>(estimates.membersWithRole(run.projectId(), "TECHNICAL_APPROVER"))) {
+                reviews.notify(run.tenantId(), user, "DEV_STORY_FAILED", run.requirementId());
+            }
         } else {
-            devs.failed(task.id(), outcome.failureCode(), outcome.summary());
+            devs.failed(task.id(), outcome.failureCode(), outcome.summary(), outcome.workLog());
             audit.record(AuditAction.DEV_STORY_FAILED, "DEV_TASK", task.id(), AuditResult.FAILED);
             activity.fail(run.requirementId(), ActivityLog.Stage.DEVELOPMENT, run.id(), "\"" + task.title()
                     + "\" was not coded (" + DevService.reason(outcome.failureCode()) + "). A Technical Approver or "

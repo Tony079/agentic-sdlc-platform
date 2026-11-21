@@ -103,14 +103,25 @@ class GitHubCodeHost implements CodeHost {
 
         @Override
         public PullRequest publish(String branch, String baseSha, List<FileChange> files, String message, String title,
-                                   String body) throws TrackerException {
+                                   String body, boolean draft) throws TrackerException {
             if (!CodeHost.garudaBranch(branch) || branch.equals(defaultBranch)) {
                 throw new IllegalArgumentException("Garuda writes only garuda/... branches");
             }
-            if (!baseSha.matches("^[0-9a-f]{40}$") || files.isEmpty() || files.size() > MAX_FILES) {
+            if (!baseSha.matches("^[0-9a-f]{40}$") || files.size() > MAX_FILES) {
                 throw new TrackerException(TrackerException.Kind.ITEM_REJECTED, "CHANGE_INVALID", null);
             }
             try {
+                // No files: the branch already holds the change (carried on from an earlier attempt).
+                String commitSha = files.isEmpty() ? baseSha : commit(branch, baseSha, files, message);
+                return pull(branch, title, body, draft, commitSha);
+            } catch (GitHubException e) {
+                throw GitHubIssueTracker.translate(e);
+            }
+        }
+
+        private String commit(String branch, String baseSha, List<FileChange> files, String message)
+                throws GitHubException, TrackerException {
+            {
                 JsonNode base = get("/git/commits/" + baseSha);
                 String baseTree = base.path("tree").path("sha").asString("");
                 if (!baseTree.matches("^[0-9a-f]{40}$")) {
@@ -144,8 +155,15 @@ class GitHubCodeHost implements CodeHost {
                     // The branch exists from an earlier attempt: move it to the new commit.
                     write("PATCH", "/git/refs/heads/" + branch, Map.of("sha", commitSha, "force", true), Set.of());
                 }
+                return commitSha;
+            }
+        }
+
+        private PullRequest pull(String branch, String title, String body, boolean draft, String commitSha)
+                throws GitHubException, TrackerException {
+            {
                 Reply pull = write("POST", "/pulls", Map.of("title", title, "head", branch, "base", defaultBranch,
-                        "body", body), Set.of(422));
+                        "body", body, "draft", draft), Set.of(422));
                 JsonNode pr = pull.body();
                 if (pr == null) {
                     Reply open = broker.call("GET", owner, name, "/pulls?state=open&head=" + owner + ":" + branch, null,
@@ -154,6 +172,18 @@ class GitHubCodeHost implements CodeHost {
                         throw new TrackerException(TrackerException.Kind.ITEM_REJECTED, "GITHUB_PULL_REJECTED", null);
                     }
                     pr = open.body().get(0);
+                    int existing = pr.path("number").asInt(0);
+                    // The open one is from an earlier attempt: bring its title and notes up to date.
+                    write("PATCH", "/pulls/" + existing, Map.of("title", title, "body", body), Set.of());
+                    if (!draft && pr.path("draft").asBoolean(false)) {
+                        // REST cannot take a pull request out of draft; GraphQL can, with the same token.
+                        String node = pr.path("node_id").asString("");
+                        if (node.isBlank() || node.length() > 200) {
+                            throw new TrackerException(TrackerException.Kind.FAILED, "GITHUB_INVALID_RESPONSE", null);
+                        }
+                        broker.graphql("mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) "
+                                + "{ pullRequest { isDraft } } }", Map.of("id", node), token);
+                    }
                 }
                 int number = pr.path("number").asInt(0);
                 String url = pr.path("html_url").asString("");
@@ -161,6 +191,24 @@ class GitHubCodeHost implements CodeHost {
                     throw new TrackerException(TrackerException.Kind.FAILED, "GITHUB_INVALID_RESPONSE", null);
                 }
                 return new PullRequest(number, url, commitSha);
+            }
+        }
+
+        @Override
+        public String branchHead(String branch) throws TrackerException {
+            if (!CodeHost.garudaBranch(branch)) {
+                throw new IllegalArgumentException("Garuda reads back only garuda/... branches");
+            }
+            try {
+                Reply reply = broker.call("GET", owner, name, "/git/ref/heads/" + branch, null, token, Set.of(404));
+                if (reply.body() == null) {
+                    return null;
+                }
+                String sha = reply.body().path("object").path("sha").asString("");
+                if (!sha.matches("^[0-9a-f]{40}$")) {
+                    throw new TrackerException(TrackerException.Kind.FAILED, "GITHUB_INVALID_RESPONSE", null);
+                }
+                return sha;
             } catch (GitHubException e) {
                 throw GitHubIssueTracker.translate(e);
             }

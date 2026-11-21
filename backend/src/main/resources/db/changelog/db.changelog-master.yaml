@@ -114,3 +114,5 @@ databaseChangeLog:
   - include: { file: changes/0060-development.sql, relativeToChangelogFile: true }
   # GD-36 follow-up (2026-11-21): Developer agent prompt v2.
   - include: { file: changes/0061-dev-story-v2.sql, relativeToChangelogFile: true }
+  # GD-36 follow-up (2026-11-21): unfinished stories keep their work on a draft pull request.
+  - include: { file: changes/0062-dev-unfinished-work.sql, relativeToChangelogFile: true }

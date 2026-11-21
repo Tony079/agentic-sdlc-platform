@@ -58,6 +58,7 @@ public final class FakeGitHub {
     private final Map<String, String> tokens = new ConcurrentHashMap<>();
     private final List<String> tokenRequests = Collections.synchronizedList(new ArrayList<>());
     private final List<String> codeloadAuthorization = Collections.synchronizedList(new ArrayList<>());
+    private final List<String> tarballShas = Collections.synchronizedList(new ArrayList<>());
     private final AtomicInteger rateLimitNext = new AtomicInteger();
     private final AtomicInteger serverErrorNext = new AtomicInteger();
     private volatile String redirectOverride;
@@ -148,6 +149,16 @@ public final class FakeGitHub {
     /** GD-36: whether the installation has Contents and Pull requests: write (default true). */
     public void codePermission(boolean granted) {
         codePermission = granted;
+    }
+
+    /** GD-36: the commits whose tarballs were downloaded, in order. */
+    public List<String> tarballShas() {
+        return List.copyOf(tarballShas);
+    }
+
+    /** GD-36: the commit a branch points at, or null. */
+    public String branchHead(String owner, String name, String branch) {
+        return refs.get(key(owner, name) + " refs/heads/" + branch);
     }
 
     /** GD-36: the repository's pull requests by number (copies). */
@@ -278,6 +289,23 @@ public final class FakeGitHub {
                 send(exchange, 201, response);
                 return;
             }
+            if (method.equals("POST") && path.equals("/graphql")) {
+                // GD-36: only markPullRequestReadyForReview, by a pull request's node id.
+                String header = exchange.getRequestHeaders().getFirst("Authorization");
+                JsonNode body = JSON.readTree(exchange.getRequestBody().readAllBytes());
+                String node = body.path("variables").path("id").asString("");
+                Map<String, Object> pr = pulls.values().stream().flatMap(m -> m.values().stream())
+                        .filter(p -> node.equals(p.get("node_id"))).findFirst().orElse(null);
+                if (header == null || !tokens.containsKey(header.replace("Bearer ", ""))
+                        || !body.path("query").asString("").contains("markPullRequestReadyForReview") || pr == null) {
+                    send(exchange, 200, Map.of("errors", List.of(Map.of("message", "refused"))));
+                } else {
+                    pr.put("draft", false);
+                    send(exchange, 200, Map.of("data", Map.of("markPullRequestReadyForReview",
+                            Map.of("pullRequest", Map.of("isDraft", false)))));
+                }
+                return;
+            }
             if (parts.length >= 4 && parts[1].equals("repos")) {
                 Repo repo = repos.get(key(parts[2], parts[3]));
                 if (parts.length == 5 && parts[4].equals("installation")) {
@@ -304,6 +332,7 @@ public final class FakeGitHub {
                 } else if (parts.length == 6 && parts[4].equals("branches")) {
                     send(exchange, 200, Map.of("name", repo.defaultBranch(), "commit", Map.of("sha", repo.headSha())));
                 } else if (parts.length == 6 && parts[4].equals("tarball")) {
+                    tarballShas.add(parts[5]);
                     String location = redirectOverride != null ? redirectOverride
                             : "http://127.0.0.1:" + codeload.getAddress().getPort() + "/dl/" + repo.owner() + "/"
                             + repo.name() + "/" + parts[5] + "?signed=" + UUID.randomUUID();
@@ -386,7 +415,15 @@ public final class FakeGitHub {
         String html = "https://github.com/" + repo.owner() + "/" + repo.name();
         if (parts[4].equals("git")) {
             String kind = parts.length > 5 ? parts[5] : "";
-            if (method.equals("GET") && kind.equals("commits") && parts.length == 7) {
+            if (method.equals("GET") && kind.equals("ref") && parts.length >= 8) {
+                String ref = "refs/" + String.join("/", java.util.Arrays.copyOfRange(parts, 6, parts.length));
+                String sha = refs.get(repoKey + " " + ref);
+                if (sha == null) {
+                    send(exchange, 404, Map.of("message", "Not Found"));
+                } else {
+                    send(exchange, 200, Map.of("ref", ref, "object", Map.of("sha", sha)));
+                }
+            } else if (method.equals("GET") && kind.equals("commits") && parts.length == 7) {
                 // Any commit the fake knows of, or the repository head: its tree is synthetic.
                 send(exchange, 200, Map.of("sha", parts[6], "tree", Map.of("sha", "b".repeat(40))));
             } else if (method.equals("POST") && List.of("blobs", "trees", "commits").contains(kind)) {
@@ -424,6 +461,8 @@ public final class FakeGitHub {
             pr.put("state", "open");
             pr.put("merged", false);
             pr.put("html_url", html + "/pull/" + number);
+            pr.put("node_id", "PR_node" + number);
+            pr.put("draft", Boolean.TRUE.equals(body.get("draft")));
             pr.put("head", Map.of("ref", head, "sha", refs.getOrDefault(repoKey + " refs/heads/" + head, "")));
             all.put(number, pr);
             send(exchange, 201, pr);
@@ -434,6 +473,18 @@ public final class FakeGitHub {
                     && head.equals(((Map<?, ?>) p.get("head")).get("ref"))).toList());
         } else if (parts.length == 6 && method.equals("GET") && all.containsKey(Integer.parseInt(parts[5]))) {
             send(exchange, 200, all.get(Integer.parseInt(parts[5])));
+        } else if (parts.length == 6 && method.equals("PATCH") && all.containsKey(Integer.parseInt(parts[5]))) {
+            Map<String, Object> pr = all.get(Integer.parseInt(parts[5]));
+            body.forEach((k, v) -> {
+                if (List.of("title", "body").contains(k)) {
+                    pr.put(k, v);
+                }
+            });
+            // The pull request follows its branch.
+            Map<?, ?> head = (Map<?, ?>) pr.get("head");
+            pr.put("head", Map.of("ref", head.get("ref"), "sha", refs.getOrDefault(repoKey + " refs/heads/"
+                    + head.get("ref"), "")));
+            send(exchange, 200, pr);
         } else {
             send(exchange, 404, Map.of("message", "Not Found"));
         }

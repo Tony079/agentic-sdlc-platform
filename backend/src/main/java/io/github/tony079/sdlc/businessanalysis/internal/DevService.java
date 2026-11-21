@@ -30,7 +30,7 @@ class DevService {
 
     record TaskV(UUID id, String storyKey, String title, int wave, boolean external, Integer issueNumber, String status,
                  int attempts, String branch, Integer prNumber, String prUrl, String summary, Boolean testsPassed,
-                 Integer filesChanged, String failureCode, String reason, OffsetDateTime updatedAt) {
+                 Integer filesChanged, String failureCode, String reason, OffsetDateTime updatedAt, boolean draft) {
     }
 
     record RunV(UUID id, String status, String repository, int currentWave, int agentSlots, OffsetDateTime startedAt,
@@ -93,7 +93,7 @@ class DevService {
         List<TaskV> tasks = devs.tasks(run.id()).stream().map(t -> new TaskV(t.id(), t.storyKey(), t.title(), t.wave(),
                 t.external(), t.issueNumber(), t.status(), t.attempts(), t.branch(), t.prNumber(), t.prUrl(),
                 t.summary(), t.testsPassed(), t.filesChanged(), t.failureCode(),
-                t.failureCode() == null ? null : reason(t.failureCode()), t.updatedAt())).toList();
+                t.failureCode() == null ? null : reason(t.failureCode()), t.updatedAt(), t.draft())).toList();
         Map<String, Long> counts = new java.util.TreeMap<>();
         tasks.stream().filter(t -> !t.external()).forEach(t -> counts.merge(t.status(), 1L, Long::sum));
         return new DevState(requirementId, controls(v), new RunV(run.id(), run.status(), run.repository(),

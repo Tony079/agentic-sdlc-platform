@@ -167,7 +167,7 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
         }
         Map<UUID, String> pulls = new HashMap<>();
         Map<UUID, String> issues = new HashMap<>();
-        boolean needGitHub = snap.tasks().stream().anyMatch(t -> "PR_OPEN".equals(t.status())
+        boolean needGitHub = snap.tasks().stream().anyMatch(t -> "PR_OPEN".equals(t.status()) || unfinishedDraft(t)
                 || (t.external() && "WAITING".equals(t.status()) && t.issueNumber() != null));
         if (!needGitHub) {
             return new Observed(runId, pulls, issues);
@@ -181,7 +181,7 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
                 }
             });
             for (DevRepository.TaskRow t : snap.tasks()) {
-                if ("PR_OPEN".equals(t.status()) && t.prNumber() != null) {
+                if (("PR_OPEN".equals(t.status()) || unfinishedDraft(t)) && t.prNumber() != null) {
                     pulls.put(t.id(), session.pullState(t.prNumber()));
                 } else if (t.external() && "WAITING".equals(t.status()) && t.issueNumber() != null) {
                     String state = session.issueState(t.issueNumber());
@@ -197,6 +197,11 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
                     String.valueOf(e.getMessage()).matches("^[A-Z][A-Z0-9_]{1,63}$") ? e.getMessage() : "?");
         }
         return new Observed(runId, pulls, issues);
+    }
+
+    /** A story stopped unfinished with its work on a draft pull request, which a person may finish and merge. */
+    private static boolean unfinishedDraft(DevRepository.TaskRow t) {
+        return "FAILED".equals(t.status()) && t.draft();
     }
 
     @Override
@@ -217,6 +222,12 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
                 audit.record(AuditAction.DEV_STORY_MERGED, "DEV_TASK", t.id(), AuditResult.SUCCESS);
                 activity.done(requirementId, stage, run.id(), "\"" + t.title() + "\": pull request #" + t.prNumber()
                         + " merged.");
+            } else if ("MERGED".equals(pull) && unfinishedDraft(t)) {
+                // A person finished the draft on its branch and merged it in GitHub.
+                devs.setTask(t.id(), "MERGED", null);
+                audit.record(AuditAction.DEV_STORY_MERGED, "DEV_TASK", t.id(), AuditResult.SUCCESS);
+                activity.done(requirementId, stage, run.id(), "\"" + t.title() + "\": pull request #" + t.prNumber()
+                        + " (finished in GitHub) merged.");
             } else if ("CLOSED".equals(pull) && "PR_OPEN".equals(t.status())) {
                 devs.failed(t.id(), "PR_CLOSED_UNMERGED", null);
                 activity.warn(requirementId, stage, run.id(), "\"" + t.title() + "\": pull request #" + t.prNumber()

@@ -30,10 +30,15 @@ public interface CodeHost {
 
         /**
          * Commits the files on top of {@code baseSha} to the branch (created, or moved when it exists from an
-         * earlier attempt) and opens a pull request against the default branch, or returns the open one.
+         * earlier attempt) and opens a pull request against the default branch, or updates the open one (title and
+         * body). A draft pull request holds unfinished work; publishing the same branch with {@code draft} false
+         * marks it ready for review.
          */
         PullRequest publish(String branch, String baseSha, List<FileChange> files, String message, String title,
-                            String body) throws TrackerException;
+                            String body, boolean draft) throws TrackerException;
+
+        /** The commit SHA at the head of a garuda/ branch; null when the branch does not exist. */
+        String branchHead(String branch) throws TrackerException;
 
         /** A pull request's state: OPEN, MERGED or CLOSED. */
         String pullState(int number) throws TrackerException;

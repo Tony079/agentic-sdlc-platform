@@ -563,7 +563,7 @@ class EstimationIT extends ApiIntegrationTest {
         github.codePermission(true);
         fake.reset();
         fake.enqueue(writeAndDone("hello.py", "print('hello')\n"), done(), writeAndDone("theme.css", "body{}\n"),
-                done(), idle(), idle());
+                done(), writeAndDone("pages.py", "PAGES = ['about']\n"), working(), idle(), idle());
         // One story is retried by a person; the other is left CODING with no job behind it (as when a job ends
         // without a result): the orchestrator queues it again on its next look.
         boolean first = true;
@@ -604,18 +604,35 @@ class EstimationIT extends ApiIntegrationTest {
         tasks = tina.get(dev).body().path("run").path("tasks");
         assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 1)
                 .allMatch(t -> "MERGED".equals(t.path("status").asString()))).isTrue();
-        // The wave 2 story answered CONTINUE twice without doing anything: it stops early instead of using all
-        // its sessions, and a person retries it.
+        // The wave 2 story wrote a file, then answered CONTINUE twice without doing anything: it stops early
+        // instead of using all its sessions, and its work so far goes to a draft pull request on its branch.
         List<JsonNode> wave2 = tasks.valueStream().filter(t -> t.path("wave").asInt() == 2).toList();
-        assertThat(wave2).as(tasks.toString()).allMatch(t -> "FAILED".equals(t.path("status").asString()));
-        assertThat(wave2.get(0).path("reason").asString()).contains("no progress in two sessions");
-        fake.enqueue(writeAndDone("pages.py", "PAGES = ['about']\n"), done());
-        for (JsonNode t : wave2) {
-            assertThat(tina.post(dev + "/tasks/" + t.path("id").asString() + "/retry", Map.of()).status())
-                    .isEqualTo(200);
-        }
+        assertThat(wave2).as(tasks.toString()).singleElement().satisfies(t -> {
+            assertThat(t.path("status").asString()).isEqualTo("FAILED");
+            assertThat(t.path("reason").asString()).contains("no progress in two sessions");
+            assertThat(t.path("draft").asBoolean()).isTrue();
+        });
+        int draftNumber = wave2.get(0).path("prNumber").asInt();
+        Map<String, Object> draft = github.pulls("acme-org", pushed.name()).get(draftNumber);
+        assertThat(draft.get("draft")).isEqualTo(true);
+        assertThat(String.valueOf(draft.get("title"))).startsWith("[Not finished]");
+        assertThat(String.valueOf(draft.get("body"))).contains("Not finished").contains("Retry").contains("Work log");
+        String draftBranch = wave2.get(0).path("branch").asString();
+        String draftHead = github.branchHead("acme-org", pushed.name(), draftBranch);
+        assertThat(github.committedFiles(draftHead)).containsKey("pages.py");
+        // Retry carries on from the branch head with the work log; finishing turns the same pull request ready.
+        int downloads = github.tarballShas().size();
+        fake.enqueue(done());
+        assertThat(tina.post(dev + "/tasks/" + wave2.get(0).path("id").asString() + "/retry", Map.of()).status())
+                .isEqualTo(200);
         drive(tenant);
+        assertThat(github.tarballShas().subList(downloads, github.tarballShas().size())).containsExactly(draftHead);
         tasks = tina.get(dev).body().path("run").path("tasks");
+        Map<String, Object> ready = github.pulls("acme-org", pushed.name()).get(draftNumber);
+        assertThat(ready.get("draft")).isEqualTo(false);
+        assertThat(String.valueOf(ready.get("title"))).doesNotStartWith("[Not finished]");
+        assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 2).findFirst().orElseThrow()
+                .path("prNumber").asInt()).isEqualTo(draftNumber);
         assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 2)
                 .allMatch(t -> "PR_OPEN".equals(t.path("status").asString()))).as(tasks.toString()).isTrue();
         // Wave 2 merged: development is complete.
@@ -641,6 +658,12 @@ class EstimationIT extends ApiIntegrationTest {
                         Map.of("path", path, "content", content)),
                 new io.github.tony079.sdlc.modelgateway.api.ModelProvider.ToolCall("c2", "run_command",
                         Map.of("command", "python3 " + path))));
+    }
+
+    private static FakeModelProvider.Reply working() {
+        return new FakeModelProvider.Reply("""
+                {"status": "CONTINUE", "summary": "Wrote the pages list.", "testsRun": [], "testsPassed": false,
+                 "nextSteps": "Add the page renderer."}""");
     }
 
     private static FakeModelProvider.Reply idle() {
