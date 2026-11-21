@@ -68,8 +68,17 @@ interface PlanPush {
   itemsTotal: number; created: number; updated: number; failed: number; failureCode: string | null; message: string;
   requestedAt: string; finishedAt: string | null;
 }
+export interface BranchOption { branch: string; environment: string | null; production: boolean }
+
+/** "releases/qc (QC)", "main (PROD)", "main (default branch)". */
+export function branchLabel(o: BranchOption) {
+  return `${o.branch} (${o.environment ? `${o.environment}${o.production ? ', PROD' : ''}` : 'default branch'})`;
+}
+
 interface PushInfo {
-  canPush: boolean; unavailableReason: string | null; repositories: { id: string; fullName: string }[];
+  canPush: boolean; unavailableReason: string | null;
+  /** branches: where development may work from (an environment's branch, or the default with environment null). */
+  repositories: { id: string; fullName: string; branches?: BranchOption[] }[];
   pushes: PlanPush[]; issueUrls: Record<string, string>;
 }
 interface PlanState {
@@ -84,8 +93,14 @@ const pushing = (p: PushInfo | null | undefined) => p?.pushes.some((x) => x.stat
 const issueNumber = (url: string) => url.split('/').pop();
 
 /** GD-34 phase 2: push the approved plan to GitHub Issues (Estimators), and the status of recent pushes (everyone). */
-function PushSection({ push, busy, onPush }: { push: PushInfo; busy: boolean; onPush: (repositoryId: string) => void }) {
+function PushSection({ push, busy, onPush }: {
+  push: PushInfo; busy: boolean; onPush: (repositoryId: string, baseBranch: string | null) => void;
+}) {
   const [repositoryId, setRepositoryId] = useState(push.repositories[0]?.id ?? '');
+  const branches = push.repositories.find((r) => r.id === repositoryId)?.branches ?? [];
+  const [picked, setPicked] = useState<string | null>(null);
+  // The suggested branch (the server lists it first) until someone picks another.
+  const baseBranch = picked !== null && branches.some((b) => b.branch === picked) ? picked : branches[0]?.branch ?? null;
   const running = pushing(push);
   return (
     <section aria-label="GitHub Issues" className="stack" style={{ marginTop: '1rem' }}>
@@ -95,16 +110,24 @@ function PushSection({ push, busy, onPush }: { push: PushInfo; busy: boolean; on
           <p className="small">
             Each story becomes an issue with its acceptance criteria as a checklist; each sprint becomes a milestone with its
             end date; epics, roles and priorities become labels. Pushing again updates the same issues, and criteria ticked
-            on GitHub stay ticked.
+            on GitHub stay ticked. For a plan made for coding agents, the Developer agent then starts from the branch you
+            choose and opens its pull requests into it.
           </p>
           <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <label>Repository
-              <select value={repositoryId} onChange={(e) => setRepositoryId(e.target.value)}>
+              <select value={repositoryId} onChange={(e) => { setRepositoryId(e.target.value); setPicked(null); }}>
                 {push.repositories.map((r) => <option key={r.id} value={r.id}>{r.fullName}</option>)}
               </select>
             </label>
+            {branches.length > 0 && (
+              <label>Developer agent works on
+                <select value={baseBranch ?? ''} onChange={(e) => setPicked(e.target.value)}>
+                  {branches.map((b) => <option key={`${b.environment ?? ""}:${b.branch}`} value={b.branch}>{branchLabel(b)}</option>)}
+                </select>
+              </label>
+            )}
             <button type="button" className="btn-primary" disabled={busy || running || !repositoryId}
-              onClick={() => onPush(repositoryId)}>{push.pushes.length > 0 ? 'Push again' : 'Push to GitHub Issues'}</button>
+              onClick={() => onPush(repositoryId, baseBranch)}>{push.pushes.length > 0 ? 'Push again' : 'Push to GitHub Issues'}</button>
           </div>
         </>
       )}
@@ -519,7 +542,7 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
           </div>
           {review.stage === 'APPROVED' && data.push && (
             <PushSection push={data.push} busy={busy}
-              onPush={(repositoryId) => void act('push', { repositoryId }, 'Pushing to GitHub. This page updates as issues are created.')} />
+              onPush={(repositoryId, baseBranch) => void act('push', { repositoryId, baseBranch }, 'Pushing to GitHub. This page updates as issues are created.')} />
           )}
           {data.insider && (
             <div style={{ marginTop: '1.25rem' }}>

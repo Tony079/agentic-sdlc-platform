@@ -19,10 +19,14 @@ class PlanPushRepository {
     record RepositoryOption(UUID id, String fullName) {
     }
 
+    /** A branch development may work from: an environment's branch of the repository, or its default branch. */
+    record BranchOption(String branch, String environment, boolean production) {
+    }
+
     record PushRow(UUID id, UUID tenantId, UUID projectId, UUID requirementId, UUID planVersionId, UUID repositoryId,
                    String repository, String status, String payloadJson, int itemsTotal, int created, int updated,
                    int failed, String failureCode, UUID requestedBy, OffsetDateTime requestedAt,
-                   OffsetDateTime finishedAt, int planVersionNo) {
+                   OffsetDateTime finishedAt, int planVersionNo, String baseBranch) {
     }
 
     record ItemRow(String kind, String itemKey, int number, String url, UUID lastPushId) {
@@ -32,7 +36,7 @@ class PlanPushRepository {
             SELECT p.id, p.tenant_id, p.project_id, p.requirement_id, p.plan_version_id, p.repository_id,
                    r.github_owner || '/' || r.github_name, p.status, p.payload::text, p.items_total, p.items_created,
                    p.items_updated, p.items_failed, p.failure_code, p.requested_by, p.requested_at, p.finished_at,
-                   v.version_no
+                   v.version_no, p.base_branch
             FROM app.plan_push p JOIN app.repository r ON r.id = p.repository_id
             JOIN app.plan_version v ON v.id = p.plan_version_id
             """;
@@ -48,7 +52,7 @@ class PlanPushRepository {
                 rs.getObject(4, UUID.class), rs.getObject(5, UUID.class), rs.getObject(6, UUID.class), rs.getString(7),
                 rs.getString(8), rs.getString(9), rs.getInt(10), rs.getInt(11), rs.getInt(12), rs.getInt(13),
                 rs.getString(14), rs.getObject(15, UUID.class), rs.getObject(16, OffsetDateTime.class),
-                rs.getObject(17, OffsetDateTime.class), rs.getInt(18));
+                rs.getObject(17, OffsetDateTime.class), rs.getInt(18), rs.getString(19));
     }
 
     /** The project's verified repositories, the targets a plan can be pushed to. */
@@ -63,14 +67,33 @@ class PlanPushRepository {
     }
 
     UUID insert(UUID tenantId, UUID projectId, UUID requirementId, UUID planVersionId, UUID repositoryId,
-                String payloadJson, int items, UUID requestedBy) {
+                String payloadJson, int items, UUID requestedBy, String baseBranch) {
         return jdbc.sql("""
                 INSERT INTO app.plan_push (tenant_id, project_id, requirement_id, plan_version_id, repository_id, payload,
-                                           items_total, requested_by)
-                VALUES (:t, :p, :r, :v, :repo, :payload::jsonb, :items, :by) RETURNING id
+                                           items_total, requested_by, base_branch)
+                VALUES (:t, :p, :r, :v, :repo, :payload::jsonb, :items, :by, :branch) RETURNING id
                 """).param("t", tenantId).param("p", projectId).param("r", requirementId).param("v", planVersionId)
                 .param("repo", repositoryId).param("payload", payloadJson).param("items", items)
-                .param("by", requestedBy).query(UUID.class).single();
+                .param("by", requestedBy).param("branch", baseBranch).query(UUID.class).single();
+    }
+
+    /**
+     * GD-36: the branches development may work from in a repository of the project: each environment's verified branch
+     * of it (PROD first), then the repository's default branch unless an environment already names it.
+     */
+    List<BranchOption> branchOptions(UUID projectId, UUID repositoryId) {
+        List<BranchOption> out = new java.util.ArrayList<>(jdbc.sql("""
+                SELECT eb.branch, e.name, e.is_production FROM app.environment_branch eb
+                JOIN app.environment e ON e.id = eb.environment_id
+                WHERE eb.project_id = :p AND eb.repository_id = :repo AND eb.status = 'VERIFIED'
+                ORDER BY e.is_production DESC, lower(e.name)
+                """).param("p", projectId).param("repo", repositoryId)
+                .query((rs, n) -> new BranchOption(rs.getString(1), rs.getString(2), rs.getBoolean(3))).list());
+        jdbc.sql("SELECT default_branch FROM app.repository WHERE id = :repo AND default_branch IS NOT NULL")
+                .param("repo", repositoryId).query(String.class).optional()
+                .filter(b -> out.stream().noneMatch(o -> o.branch().equals(b)))
+                .ifPresent(b -> out.add(new BranchOption(b, null, false)));
+        return out;
     }
 
     Optional<PushRow> find(UUID id, boolean lock) {

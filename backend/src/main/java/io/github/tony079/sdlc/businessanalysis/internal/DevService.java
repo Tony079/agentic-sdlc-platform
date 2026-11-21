@@ -34,7 +34,8 @@ class DevService {
     }
 
     record RunV(UUID id, String status, String repository, int currentWave, int agentSlots, OffsetDateTime startedAt,
-                OffsetDateTime finishedAt, List<TaskV> tasks, Map<String, Long> counts, String baseBranch) {
+                OffsetDateTime finishedAt, List<TaskV> tasks, Map<String, Long> counts, String baseBranch,
+                List<PlanPushRepository.BranchOption> branchOptions) {
     }
 
     /**
@@ -50,9 +51,11 @@ class DevService {
     private final RequirementDirectory requirements;
     private final OutboxPublisher outbox;
     private final AuditWriter audit;
+    private final ActivityLog activity;
 
     DevService(DevRepository devs, PlanPushRepository pushes, tools.jackson.databind.json.JsonMapper json,
-               RequirementDirectory requirements, OutboxPublisher outbox, AuditWriter audit) {
+               RequirementDirectory requirements, OutboxPublisher outbox, AuditWriter audit, ActivityLog activity) {
+        this.activity = activity;
         this.devs = devs;
         this.pushes = pushes;
         this.json = json;
@@ -98,7 +101,8 @@ class DevService {
         tasks.stream().filter(t -> !t.external()).forEach(t -> counts.merge(t.status(), 1L, Long::sum));
         return new DevState(requirementId, controls(v), new RunV(run.id(), run.status(), run.repository(),
                 run.currentWave(), run.agentSlots(), run.startedAt(), run.finishedAt(), tasks, counts,
-                devs.baseBranch(requirementId, run.repositoryId())), false, null);
+                devs.baseBranch(run), controls(v) ? pushes.branchOptions(run.projectId(), run.repositoryId())
+                        : List.of()), false, null);
     }
 
     private boolean forAgents(PlanPushRepository.PushRow push) {
@@ -135,6 +139,40 @@ class DevService {
             changed(requirementId, run.id());
         }
         return state(requirementId);
+    }
+
+    /**
+     * Changes the branch development works from and opens pull requests into. Stories not yet coded (and retries) use
+     * it; pull requests already open keep theirs until they are updated.
+     */
+    @Transactional
+    public DevState baseBranch(UUID requirementId, String branch) {
+        var v = visible(requirementId);
+        require(v);
+        DevRepository.RunRow run = devs.active(requirementId).orElseThrow(() ->
+                ApiException.conflict("DEV_NOT_RUNNING", "Development is not running for this requirement."));
+        String chosen = branch == null ? "" : branch.strip();
+        if (pushes.branchOptions(run.projectId(), run.repositoryId()).stream().noneMatch(o -> o.branch().equals(chosen))) {
+            throw ApiException.validation(List.of(new io.github.tony079.sdlc.common.api.ApiError.FieldError("branch",
+                    "NOT_AN_ENVIRONMENT_BRANCH")));
+        }
+        if (!chosen.equals(run.baseBranch())) {
+            devs.setBaseBranch(run.id(), chosen, TenantContext.currentActor().orElseThrow());
+            changed(requirementId, run.id());
+        }
+        return state(requirementId);
+    }
+
+    /** What the Developer agent did on one story, session by session (newest {@code 300} lines). */
+    @Transactional(readOnly = true)
+    public List<ActivityLog.Entry> log(UUID requirementId, UUID taskId) {
+        visible(requirementId);
+        DevRepository.TaskRow task = devs.task(taskId, false).orElseThrow(ApiException::notFound);
+        DevRepository.RunRow run = devs.run(task.devRunId(), false).orElseThrow(ApiException::notFound);
+        if (!run.requirementId().equals(requirementId)) {
+            throw ApiException.notFound();
+        }
+        return activity.forTask(requirementId, taskId, 300);
     }
 
     @Transactional

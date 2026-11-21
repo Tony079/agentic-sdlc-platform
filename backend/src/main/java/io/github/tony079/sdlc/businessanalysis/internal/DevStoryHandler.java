@@ -117,22 +117,20 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
         }
         tx.executeWithoutResult(s -> devs.startCoding(taskId));
         UUID requirementId = in.run().requirementId();
-        ActivityLog.Stage stage = ActivityLog.Stage.DEVELOPMENT;
-        activity.step(requirementId, stage, in.run().id(), "Coding \"" + in.task().title() + "\" (wave "
+        activity.story(requirementId, in.run().id(), taskId, ActivityLog.Kind.STEP, "Coding \"" + in.task().title() + "\" (wave "
                 + in.task().wave() + ")" + (in.task().attempts() > 0 ? ", attempt " + (in.task().attempts() + 1) : "")
                 + ": preparing a workspace from " + in.run().repository() + ".");
         String workspace = null;
         try {
             CodeHost.Session session = tx.execute(s -> {
                 try {
-                    return codeHost.open(in.run().repositoryId(), devs.baseBranch(requirementId,
-                            in.run().repositoryId()));
+                    return codeHost.open(in.run().repositoryId(), devs.baseBranch(in.run()));
                 } catch (TrackerException e) {
                     throw new Wrapped(e);
                 }
             });
             String baseSha = session.head();
-            activity.step(requirementId, stage, in.run().id(), "\"" + in.task().title() + "\": working from "
+            activity.story(requirementId, in.run().id(), taskId, ActivityLog.Kind.STEP, "\"" + in.task().title() + "\": working from "
                     + session.baseBranch() + "; its pull request goes into " + session.baseBranch() + ".");
             String branch = branch(in.requirementKey(), in.task().storyKey());
             // Unfinished work from an earlier attempt is on the story's branch (with anything a person pushed there):
@@ -147,7 +145,7 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
                 log.add("Earlier attempt (its changes are already in this workspace; the list of changed files below "
                         + "shows only this attempt's): " + (in.task().workLog() == null ? "(no notes kept)"
                         : in.task().workLog()));
-                activity.step(requirementId, stage, in.run().id(), "\"" + in.task().title() + "\": carrying on from "
+                activity.story(requirementId, in.run().id(), taskId, ActivityLog.Kind.STEP, "\"" + in.task().title() + "\": carrying on from "
                         + "the unfinished work on " + branch + (in.task().prNumber() == null ? ""
                         : " (draft pull request #" + in.task().prNumber() + ")") + ".");
             }
@@ -166,7 +164,7 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
                         ? "(this is your first session)" : String.join("\n\n", log)));
                 data.add(new DataBlock("files changed so far (git status --short, as JSON)", changed));
                 String title = "\"" + in.task().title() + "\"";
-                activity.step(requirementId, stage, in.run().id(), title + ": session " + n + " of at most "
+                activity.story(requirementId, in.run().id(), taskId, ActivityLog.Kind.STEP, title + ": session " + n + " of at most "
                         + MAX_SESSIONS + ".");
                 String outcome;
                 int toolCalls;
@@ -201,7 +199,7 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
                 String nowChanged = devbox.action(workspace, "exec", Map.of("argv", List.of("git", "status",
                         "--short"), "timeoutSeconds", 60));
                 int files = changedFiles(nowChanged);
-                activity.add(requirementId, stage, in.run().id(), ActivityLog.Kind.STEP, title + ", session " + n + ": "
+                activity.story(requirementId, in.run().id(), taskId, ActivityLog.Kind.STEP, title + ", session " + n + ": "
                         + outcome + " · " + files + " file(s) changed so far" + (last != null && last.summary() != null
                         && outcome.startsWith(last.status().name()) ? ". " + PlanIssues.text(last.summary(), 300) : "."));
                 if (last != null && last.status() != DevContracts.Status.CONTINUE
@@ -250,7 +248,7 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
             }
             return Outcome.failed(taskId, e.code(), null);
         } catch (ModelException e) {
-            activity.add(requirementId, stage, in.run().id(), ActivityLog.Kind.FAIL, BaAnalysisHandler.describe(e));
+            activity.story(requirementId, in.run().id(), taskId, ActivityLog.Kind.FAIL, BaAnalysisHandler.describe(e));
             throw BaAnalysisHandler.failure(e);
         } catch (java.io.IOException e) {
             throw JobFailure.retryable("REPOSITORY_DOWNLOAD_FAILED", null);
@@ -496,7 +494,7 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
             devs.pullRequestOpened(task.id(), outcome.branch(), outcome.baseSha(), outcome.headSha(), outcome.prNumber(),
                     outcome.prUrl(), outcome.summary(), outcome.testsPassed(), outcome.files());
             audit.record(AuditAction.DEV_STORY_CODED, "DEV_TASK", task.id(), AuditResult.SUCCESS);
-            activity.done(run.requirementId(), ActivityLog.Stage.DEVELOPMENT, run.id(), "\"" + task.title()
+            activity.story(run.requirementId(), run.id(), task.id(), ActivityLog.Kind.DONE, "\"" + task.title()
                     + "\": pull request #" + outcome.prNumber() + " opened (" + outcome.files() + " files, tests "
                     + (outcome.testsPassed() == null ? "not run" : outcome.testsPassed() ? "passing" : "not passing")
                     + "). Waiting for a review and merge in GitHub.");
@@ -507,7 +505,7 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
             devs.unfinished(task.id(), outcome.failureCode(), outcome.summary(), outcome.workLog(), outcome.branch(),
                     outcome.baseSha(), outcome.headSha(), outcome.prNumber(), outcome.prUrl(), outcome.files());
             audit.record(AuditAction.DEV_STORY_FAILED, "DEV_TASK", task.id(), AuditResult.FAILED);
-            activity.fail(run.requirementId(), ActivityLog.Stage.DEVELOPMENT, run.id(), "\"" + task.title()
+            activity.story(run.requirementId(), run.id(), task.id(), ActivityLog.Kind.FAIL, "\"" + task.title()
                     + "\" is not finished (" + DevService.reason(outcome.failureCode()) + "). Its work so far is on "
                     + "draft pull request #" + outcome.prNumber() + ": a Technical Approver or Estimator can retry it "
                     + "to carry on from there, or skip it.");
@@ -517,7 +515,7 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
         } else {
             devs.failed(task.id(), outcome.failureCode(), outcome.summary(), outcome.workLog());
             audit.record(AuditAction.DEV_STORY_FAILED, "DEV_TASK", task.id(), AuditResult.FAILED);
-            activity.fail(run.requirementId(), ActivityLog.Stage.DEVELOPMENT, run.id(), "\"" + task.title()
+            activity.story(run.requirementId(), run.id(), task.id(), ActivityLog.Kind.FAIL, "\"" + task.title()
                     + "\" was not coded (" + DevService.reason(outcome.failureCode()) + "). A Technical Approver or "
                     + "Estimator can retry it or skip it.");
             for (UUID user : new LinkedHashSet<>(estimates.membersWithRole(run.projectId(), "TECHNICAL_APPROVER"))) {

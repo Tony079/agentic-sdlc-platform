@@ -112,7 +112,7 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
         int slots = jdbc.sql("SELECT coalesce((settings->>'agentSlots')::int, 2) FROM app.plan_version WHERE id = :v")
                 .param("v", push.planVersionId()).query(Integer.class).optional().orElse(2);
         UUID runId = devs.insertRun(push.tenantId(), push.projectId(), push.requirementId(), push.planVersionId(),
-                push.repositoryId(), slots);
+                push.repositoryId(), slots, push.baseBranch());
         DevRepository.RunRow run = devs.run(runId, false).orElseThrow();
         for (PlanIssues.Issue issue : payload.issues()) {
             boolean external = issue.agent() != null && issue.agent().external();
@@ -220,22 +220,22 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
             if ("MERGED".equals(pull) && "PR_OPEN".equals(t.status())) {
                 devs.setTask(t.id(), "MERGED", null);
                 audit.record(AuditAction.DEV_STORY_MERGED, "DEV_TASK", t.id(), AuditResult.SUCCESS);
-                activity.done(requirementId, stage, run.id(), "\"" + t.title() + "\": pull request #" + t.prNumber()
+                activity.story(requirementId, run.id(), t.id(), ActivityLog.Kind.DONE, "\"" + t.title() + "\": pull request #" + t.prNumber()
                         + " merged.");
             } else if ("MERGED".equals(pull) && unfinishedDraft(t)) {
                 // A person finished the draft on its branch and merged it in GitHub.
                 devs.setTask(t.id(), "MERGED", null);
                 audit.record(AuditAction.DEV_STORY_MERGED, "DEV_TASK", t.id(), AuditResult.SUCCESS);
-                activity.done(requirementId, stage, run.id(), "\"" + t.title() + "\": pull request #" + t.prNumber()
+                activity.story(requirementId, run.id(), t.id(), ActivityLog.Kind.DONE, "\"" + t.title() + "\": pull request #" + t.prNumber()
                         + " (finished in GitHub) merged.");
             } else if ("CLOSED".equals(pull) && "PR_OPEN".equals(t.status())) {
                 devs.failed(t.id(), "PR_CLOSED_UNMERGED", null);
-                activity.warn(requirementId, stage, run.id(), "\"" + t.title() + "\": pull request #" + t.prNumber()
+                activity.story(requirementId, run.id(), t.id(), ActivityLog.Kind.WARN, "\"" + t.title() + "\": pull request #" + t.prNumber()
                         + " was closed without merging. Retry the story or skip it.");
             }
             if ("CLOSED".equals(observed.issues().get(t.id())) && "WAITING".equals(t.status())) {
                 devs.setTask(t.id(), "DONE", null);
-                activity.done(requirementId, stage, run.id(), "Outside work done: \"" + t.title() + "\".");
+                activity.story(requirementId, run.id(), t.id(), ActivityLog.Kind.DONE, "Outside work done: \"" + t.title() + "\".");
             }
         }
         List<DevRepository.TaskRow> tasks = devs.tasks(run.id());
@@ -267,7 +267,7 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
         for (DevRepository.TaskRow t : tasks) {
             if (t.wave() == wave && "CODING".equals(t.status()) && !devs.liveStoryJob(t.id())) {
                 devs.setTask(t.id(), "QUEUED", null);
-                activity.warn(requirementId, stage, run.id(), "\"" + t.title() + "\" stopped without a result; "
+                activity.story(requirementId, run.id(), t.id(), ActivityLog.Kind.WARN, "\"" + t.title() + "\" stopped without a result; "
                         + "the Developer agent starts it again.");
                 jobs.enqueue(story(t.id(), requirementId, t.attempts()));
             }

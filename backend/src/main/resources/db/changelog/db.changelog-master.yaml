@@ -120,3 +120,5 @@ databaseChangeLog:
   - include: { file: changes/0063-dev-base-branch.sql, relativeToChangelogFile: true }
   # GD-36 follow-up (2026-11-21): Developer agent prompt v3 (no Docker in the workspace).
   - include: { file: changes/0064-dev-story-v3.sql, relativeToChangelogFile: true }
+  # GD-36 follow-up (2026-11-21): chosen development branch; per-story activity.
+  - include: { file: changes/0065-dev-branch-and-story-log.sql, relativeToChangelogFile: true }

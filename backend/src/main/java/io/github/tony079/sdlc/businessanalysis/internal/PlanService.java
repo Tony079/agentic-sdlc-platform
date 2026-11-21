@@ -101,7 +101,8 @@ class PlanService {
                  OffsetDateTime finishedAt) {
     }
 
-    record RepositoryV(UUID id, String fullName) {
+    /** A repository to push to, with the branches development may work from (the suggested one first). */
+    record RepositoryV(UUID id, String fullName, List<PlanPushRepository.BranchOption> branches) {
     }
 
     /**
@@ -126,9 +127,12 @@ class PlanService {
     private final OutboxPublisher outbox;
     private final AuditWriter audit;
     private final JsonMapper json;
+    private final DevRepository devs;
 
     PlanService(PlanRepository plans, PlanPushRepository pushes, EstimateRepository estimates, ReviewRepository reviews,
-                RequirementDirectory requirements, OutboxPublisher outbox, AuditWriter audit, JsonMapper json) {
+                RequirementDirectory requirements, OutboxPublisher outbox, AuditWriter audit, JsonMapper json,
+                DevRepository devs) {
+        this.devs = devs;
         this.plans = plans;
         this.pushes = pushes;
         this.estimates = estimates;
@@ -753,7 +757,8 @@ class PlanService {
         List<PlanPushRepository.PushRow> rows = pushes.recent(requirementId, PUSH_HISTORY);
         List<PushV> recent = rows.stream().map(PlanService::pushView).toList();
         List<RepositoryV> repositories = a.estimator() ? pushes.verifiedRepositories(a.projectId()).stream()
-                .map(r -> new RepositoryV(r.id(), r.fullName())).toList() : List.of();
+                .map(r -> new RepositoryV(r.id(), r.fullName(), suggestedFirst(requirementId, a.projectId(), r.id())))
+                .toList() : List.of();
         String unavailable = !a.estimator() ? null : repositories.isEmpty()
                 ? "The project has no verified GitHub repository. Its Environment Manager connects one on the "
                         + "project's Environments tab (it can be a new, empty repository); the Garuda GitHub App must be "
@@ -761,6 +766,15 @@ class PlanService {
         Map<String, String> urls = rows.isEmpty() ? Map.of()
                 : pushes.issueUrls(requirementId, rows.getFirst().repositoryId());
         return new PushInfo(a.estimator() && !repositories.isEmpty(), unavailable, repositories, recent, urls);
+    }
+
+    /** The branch options with the requirement's own environment branch (when it has one) first. */
+    private List<PlanPushRepository.BranchOption> suggestedFirst(UUID requirementId, UUID projectId, UUID repositoryId) {
+        List<PlanPushRepository.BranchOption> options = new java.util.ArrayList<>(pushes.branchOptions(projectId,
+                repositoryId));
+        String own = devs.baseBranch(requirementId, repositoryId);
+        options.sort(java.util.Comparator.comparing(o -> !o.branch().equals(own)));
+        return options;
     }
 
     private static PushV pushView(PlanPushRepository.PushRow p) {
@@ -797,7 +811,7 @@ class PlanService {
 
     /** An Estimator pushes the approved plan to a verified repository of the project. */
     @Transactional
-    public PlanState push(UUID requirementId, UUID repositoryId) {
+    public PlanState push(UUID requirementId, UUID repositoryId, String baseBranch) {
         Access a = access(requirementId);
         requireEstimator(a, "An Estimator of the project pushes the delivery plan to GitHub.");
         if (repositoryId == null) {
@@ -809,6 +823,11 @@ class PlanService {
         PlanPushRepository.RepositoryOption repo = pushes.verifiedRepositories(a.projectId()).stream()
                 .filter(r -> r.id().equals(repositoryId)).findFirst()
                 .orElseThrow(() -> ApiException.validation(List.of(new FieldError("repositoryId", "NOT_VERIFIED"))));
+        String branch = baseBranch == null || baseBranch.isBlank() ? null : baseBranch.strip();
+        if (branch != null && pushes.branchOptions(a.projectId(), repositoryId).stream()
+                .noneMatch(o -> o.branch().equals(branch))) {
+            throw ApiException.validation(List.of(new FieldError("baseBranch", "NOT_AN_ENVIRONMENT_BRANCH")));
+        }
         if (pushes.running(requirementId, repositoryId)) {
             throw ApiException.conflict("PLAN_PUSH_RUNNING", "This plan is already being pushed to " + repo.fullName()
                     + ". Wait for it to finish.");
@@ -822,7 +841,7 @@ class PlanService {
             throw ApiException.conflict("PLAN_PUSH_TOO_LARGE", "A plan is pushed with 1 to 1000 milestones and issues.");
         }
         UUID pushId = pushes.insert(TenantContext.requireTenant(), a.projectId(), requirementId, v.id(), repositoryId,
-                json.writeValueAsString(payload), payload.items(), a.me());
+                json.writeValueAsString(payload), payload.items(), a.me(), branch);
         outbox.publish("REQUIREMENT", requirementId, EventTypes.PLAN_PUSH_REQUESTED,
                 Map.of("planPushId", pushId.toString()));
         audit.record(AuditAction.PLAN_PUSH_REQUESTED, "PLAN_PUSH", pushId, AuditResult.SUCCESS);

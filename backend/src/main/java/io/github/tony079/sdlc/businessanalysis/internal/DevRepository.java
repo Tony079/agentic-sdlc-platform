@@ -16,7 +16,7 @@ class DevRepository {
 
     record RunRow(UUID id, UUID tenantId, UUID projectId, UUID requirementId, UUID planVersionId, UUID repositoryId,
                   String status, int currentWave, int agentSlots, OffsetDateTime startedAt, OffsetDateTime finishedAt,
-                  String repository) {
+                  String repository, String baseBranch) {
     }
 
     record TaskRow(UUID id, UUID devRunId, String storyKey, String title, int wave, boolean external,
@@ -27,7 +27,8 @@ class DevRepository {
 
     private static final String RUN_SELECT = """
             SELECT d.id, d.tenant_id, d.project_id, d.requirement_id, d.plan_version_id, d.repository_id, d.status,
-                   d.current_wave, d.agent_slots, d.started_at, d.finished_at, r.github_owner || '/' || r.github_name
+                   d.current_wave, d.agent_slots, d.started_at, d.finished_at, r.github_owner || '/' || r.github_name,
+                   d.base_branch
             FROM app.dev_run d JOIN app.repository r ON r.id = d.repository_id
             """;
     private static final String TASK_SELECT = """
@@ -47,7 +48,7 @@ class DevRepository {
         return new RunRow(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getObject(3, UUID.class),
                 rs.getObject(4, UUID.class), rs.getObject(5, UUID.class), rs.getObject(6, UUID.class), rs.getString(7),
                 rs.getInt(8), rs.getInt(9), rs.getObject(10, OffsetDateTime.class),
-                rs.getObject(11, OffsetDateTime.class), rs.getString(12));
+                rs.getObject(11, OffsetDateTime.class), rs.getString(12), rs.getString(13));
     }
 
     private static TaskRow task(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
@@ -81,13 +82,28 @@ class DevRepository {
     }
 
     UUID insertRun(UUID tenantId, UUID projectId, UUID requirementId, UUID planVersionId, UUID repositoryId,
-                   int agentSlots) {
+                   int agentSlots, String baseBranch) {
         return jdbc.sql("""
-                INSERT INTO app.dev_run (tenant_id, project_id, requirement_id, plan_version_id, repository_id, agent_slots)
-                VALUES (:t, :p, :r, :v, :repo, :slots) RETURNING id
+                INSERT INTO app.dev_run (tenant_id, project_id, requirement_id, plan_version_id, repository_id, agent_slots,
+                                         base_branch)
+                VALUES (:t, :p, :r, :v, :repo, :slots, :branch) RETURNING id
                 """).param("t", tenantId).param("p", projectId).param("r", requirementId).param("v", planVersionId)
                 .param("repo", repositoryId).param("slots", Math.max(1, Math.min(50, agentSlots)))
-                .query(UUID.class).single();
+                .param("branch", baseBranch).query(UUID.class).single();
+    }
+
+    /** A person changes the branch a running development works from (stories not yet coded use it). */
+    void setBaseBranch(UUID runId, String branch, UUID member) {
+        jdbc.sql("UPDATE app.dev_run SET base_branch = :b, status_by = :m WHERE id = :id").param("b", branch)
+                .param("m", member).param("id", runId).update();
+    }
+
+    /**
+     * The branch a run works from: the one chosen for it, else the requirement's environment branch for the repository;
+     * null means the repository's default branch.
+     */
+    String baseBranch(RunRow run) {
+        return run.baseBranch() != null ? run.baseBranch() : baseBranch(run.requirementId(), run.repositoryId());
     }
 
     void insertTask(RunRow run, String storyKey, String title, int wave, boolean external, Integer issueNumber) {

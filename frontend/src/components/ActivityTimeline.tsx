@@ -11,6 +11,8 @@ export interface ActivityEntry {
   kind: 'STEP' | 'DONE' | 'WARN' | 'FAIL' | 'DRAFT';
   message: string;
   createdAt: string;
+  /** GD-36: the development story the line is about (its own log shows it). */
+  taskId?: string | null;
 }
 
 const ICON: Record<ActivityEntry['kind'], IconName> = {
@@ -51,6 +53,10 @@ function blocks(lines: ActivityEntry[]): Block[] {
     else out.push({ kind: 'line', line });
   }
   return out;
+}
+
+export function ActivityLines({ lines, live }: { lines: ActivityEntry[]; live: boolean }) {
+  return <Run lines={lines} live={live} />;
 }
 
 function Run({ lines, live }: { lines: ActivityEntry[]; live: boolean }) {
@@ -98,13 +104,15 @@ function Run({ lines, live }: { lines: ActivityEntry[]; live: boolean }) {
  * GD-29: what the BA or Architect agent is doing, step by step, written by Garuda as it happens (never the model's
  * text). Live while the agent works; afterwards it folds into "How this was produced".
  */
-export function ActivityTimeline({ requirementId, stage, live, title, expanded = false }: {
+export function ActivityTimeline({ requirementId, stage, live, title, expanded = false, milestonesOnly = false }: {
   requirementId: string;
   stage: ActivityEntry['stage'];
   live: boolean;
   title: string;
   /** Shown open without polling (for example after a failure). */
   expanded?: boolean;
+  /** GD-36: leave out a story's step-by-step lines (they show under the story); keep its outcomes. */
+  milestonesOnly?: boolean;
 }) {
   // After a minute with no line at all, say so: the job is queued but no worker has picked it up.
   const [slow, setSlow] = useState(false);
@@ -119,7 +127,7 @@ export function ActivityTimeline({ requirementId, stage, live, title, expanded =
     refetchInterval: live ? 2000 : false,
   });
   const lines = Array.isArray(activity.data) ? activity.data : [];
-  const all = runs(lines.filter((l) => l.stage === stage));
+  const all = runs(lines.filter((l) => l.stage === stage && !(milestonesOnly && l.taskId && l.kind === 'STEP')));
   const latest = all[all.length - 1];
   if (!latest) {
     return live ? (

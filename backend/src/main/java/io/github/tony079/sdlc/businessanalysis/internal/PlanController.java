@@ -101,13 +101,13 @@ class PlanController {
         return plans.changeSettings(id, body == null ? null : body.settings());
     }
 
-    record PushBody(UUID repositoryId) {
+    record PushBody(UUID repositoryId, String baseBranch) {
     }
 
     /** GD-34 phase 2: push the approved plan to GitHub Issues of a verified project repository. */
     @PostMapping(BASE + "/push")
     PlanState push(@PathVariable UUID id, @RequestBody PushBody body) {
-        return plans.push(id, body == null ? null : body.repositoryId());
+        return plans.push(id, body == null ? null : body.repositoryId(), body == null ? null : body.baseBranch());
     }
 
     @GetMapping(BASE + "/export")

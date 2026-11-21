@@ -536,8 +536,8 @@ class EstimationIT extends ApiIntegrationTest {
                 p.path("version").path("reviewHash").asString(), "confirmApproveAlone", true));
         assertThat(approved.status()).as(approved.body().toString()).isEqualTo(200);
 
-        // The requirement's environment names releases/qc for this repository: work starts there and pull requests go
-        // into it, not into the default branch. (Set directly: the environment is fixed once the quote is accepted.)
+        // A new-product requirement names no environment; the project's QC environment maps the repository to
+        // releases/qc. The Estimator picks that branch when pushing: work starts there and pull requests go into it.
         UUID requirementUuid = UUID.fromString(id);
         admin.update("""
                 DO $$ DECLARE e uuid; BEGIN
@@ -545,10 +545,15 @@ class EstimationIT extends ApiIntegrationTest {
                   INSERT INTO app.environment (tenant_id, project_id, name, created_by)
                     SELECT tenant_id, project_id, 'QC for development', created_by FROM app.requirement
                     WHERE id = '%s' RETURNING id INTO e;
-                  INSERT INTO app.environment_branch (tenant_id, project_id, environment_id, repository_id, branch, added_by)
-                    SELECT tenant_id, project_id, e, '%s', 'releases/qc', created_by FROM app.requirement WHERE id = '%s';
-                  UPDATE app.requirement SET target_environment_id = e WHERE id = '%s';
-                END $$""".formatted(requirementUuid, pushed.repositoryId(), requirementUuid, requirementUuid));
+                  INSERT INTO app.environment_branch (tenant_id, project_id, environment_id, repository_id, branch, added_by,
+                                                      status, head_sha, verified_at)
+                    SELECT tenant_id, project_id, e, '%s', 'releases/qc', created_by, 'VERIFIED', repeat('c', 40), now()
+                    FROM app.requirement WHERE id = '%s';
+                END $$""".formatted(requirementUuid, pushed.repositoryId(), requirementUuid));
+        JsonNode pushOptions = eve.get(plan).body().path("push").path("repositories");
+        assertThat(pushOptions.valueStream().filter(r -> r.path("id").asString().equals(
+                pushed.repositoryId().toString())).findFirst().orElseThrow().path("branches").valueStream()
+                .map(b -> b.path("branch").asString())).contains("releases/qc", "main");
         String dev = "/api/v1/requirements/" + id + "/development";
         JsonNode before = eve.get(dev).body();
         assertThat(before.path("run").isNull()).isTrue();
@@ -560,8 +565,10 @@ class EstimationIT extends ApiIntegrationTest {
         github.codePermission(false);
         fake.enqueue(writeAndDone("hello.py", "print('hello')\n"), done(), writeAndDone("theme.css", "body{}\n"),
                 done());
-        assertThat(eve.post(plan + "/push", Map.of("repositoryId", pushed.repositoryId().toString())).status())
-                .isEqualTo(200);
+        assertThat(eve.post(plan + "/push", Map.of("repositoryId", pushed.repositoryId().toString(),
+                "baseBranch", "releases/nope")).errorCode()).isEqualTo("VALIDATION_FAILED");
+        assertThat(eve.post(plan + "/push", Map.of("repositoryId", pushed.repositoryId().toString(),
+                "baseBranch", "releases/qc")).status()).isEqualTo(200);
         drive(tenant);
         JsonNode state = victor.get(dev).body();
         assertThat(state.path("run").path("status").asString()).as(state.toString()).isEqualTo("RUNNING");
@@ -607,6 +614,20 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(String.valueOf(pr.get("body"))).contains("Closes #").contains("Garuda never merges");
         assertThat(pr.get("base")).isEqualTo("releases/qc");
         assertThat(state.path("run").path("baseBranch").asString()).isEqualTo("releases/qc");
+        // The branch can be changed on a running development (to an option only), by those who control it.
+        assertThat(victor.post(dev + "/base-branch", Map.of("branch", "main")).errorCode())
+                .isEqualTo("DEV_CONTROL_NOT_ALLOWED");
+        assertThat(tina.post(dev + "/base-branch", Map.of("branch", "nope")).errorCode()).isEqualTo("VALIDATION_FAILED");
+        assertThat(tina.post(dev + "/base-branch", Map.of("branch", "main")).body().path("run").path("baseBranch")
+                .asString()).isEqualTo("main");
+        assertThat(tina.post(dev + "/base-branch", Map.of("branch", "releases/qc")).status()).isEqualTo(200);
+        // Each story has its own log, session by session.
+        JsonNode storyLog = tina.get(dev + "/tasks/" + wave1.get(0).path("id").asString() + "/log").body();
+        assertThat(storyLog.valueStream().map(l -> l.path("message").asString()))
+                .anyMatch(m -> m.contains("session 1: DONE"))
+                .anyMatch(m -> m.contains("pull request #"));
+        assertThat(storyLog.valueStream().map(l -> l.path("taskId").asString()))
+                .containsOnly(wave1.get(0).path("id").asString());
         assertThat(github.committedFiles(String.valueOf(((Map<?, ?>) pr.get("head")).get("sha"))).keySet())
                 .containsAnyOf("hello.py", "theme.css");
         // Wave 2 waits until wave 1 is merged in GitHub.

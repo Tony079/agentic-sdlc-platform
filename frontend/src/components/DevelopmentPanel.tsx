@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { Badge, Callout, formatDateTime, type Tone } from '../ui/components';
-import { ActivityTimeline } from './ActivityTimeline';
-import { FoldSection } from '../ui/Fold';
+import { ActivityLines, ActivityTimeline, type ActivityEntry } from './ActivityTimeline';
+import { FoldSection, FoldToggle, useFold } from '../ui/Fold';
+import { branchLabel, type BranchOption } from './PlanPanel';
 
 // GD-36: the Development stage. Garuda's Developer agent codes each story of the pushed plan, wave by wave, and opens a
 // pull request per story; people review and merge in GitHub.
@@ -20,8 +21,10 @@ interface DevTask {
 interface DevRun {
   id: string; status: 'RUNNING' | 'PAUSED' | 'DELIVERED' | 'STOPPED'; repository: string; currentWave: number;
   agentSlots: number; startedAt: string; finishedAt: string | null; tasks: DevTask[]; counts: Record<string, number>;
-  /** The environment's branch pull requests go into; null means the repository's default branch. */
+  /** The branch development works from and opens pull requests into; null means the repository's default branch. */
   baseBranch?: string | null;
+  /** Branches it may be changed to (for those who control development). */
+  branchOptions?: BranchOption[];
 }
 interface DevState {
   requirementId: string; canControl: boolean; run: DevRun | null; canStart?: boolean; notStarted?: string | null;
@@ -38,6 +41,68 @@ const TASK: Record<TaskStatus, { label: string; tone: Tone }> = {
   SKIPPED: { label: 'skipped', tone: 'neutral' },
   DONE: { label: 'done', tone: 'success' },
 };
+const FINISHED: TaskStatus[] = ['MERGED', 'SKIPPED', 'DONE'];
+const needsAttention = (t: DevTask) => t.status === 'FAILED' || t.status === 'CLOSED';
+
+/**
+ * One story's own log, session by session. Folded by default (open for a story that needs attention); loaded when
+ * opened, and followed live while the story is being coded, whose latest step shows even when folded.
+ */
+function StoryLog({ requirementId, task }: { requirementId: string; task: DevTask }) {
+  const coding = task.status === 'CODING' || task.status === 'QUEUED';
+  const [open, , setOpen] = useFold(`fold:${requirementId}:log:${task.id}`, needsAttention(task));
+  const log = useQuery({
+    queryKey: ['development', requirementId, 'log', task.id],
+    queryFn: () => api.get<ActivityEntry[]>(`/api/v1/requirements/${requirementId}/development/tasks/${task.id}/log`),
+    enabled: open || coding,
+    refetchInterval: coding ? 5000 : false,
+  });
+  const lines = Array.isArray(log.data) ? log.data : [];
+  const latest = lines[lines.length - 1];
+  return (
+    <div className="story-log">
+      {coding && latest && !open && <div className="small"><span className="spinner" aria-hidden="true" /> {latest.message}</div>}
+      <details open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+        <summary className="small">{open ? 'Hide log' : 'Show log'}{lines.length > 0 ? ` (${lines.length})` : ''}</summary>
+        {open && (log.isPending ? <p className="small">Loading…</p>
+          : lines.length === 0 ? <p className="small">Nothing recorded for this story yet.</p>
+          : <ActivityLines lines={lines} live={coding} />)}
+      </details>
+    </div>
+  );
+}
+
+/**
+ * A wave: open while it is current or something in it needs attention; a finished wave folds to one line
+ * ("✓ Wave 1 · 2 merged · #64, #65"). Each person's choice is remembered.
+ */
+function WaveSection({ requirementId, wave, tasks, current, children }: {
+  requirementId: string; wave: number; tasks: DevTask[]; current: boolean; children: ReactNode;
+}) {
+  const finished = tasks.every((t) => FINISHED.includes(t.status));
+  const attention = tasks.some(needsAttention);
+  const [open, toggle] = useFold(`fold:${requirementId}:wave:${wave}`, current || attention || !finished);
+  const merged = tasks.filter((t) => t.status === 'MERGED').length;
+  const skipped = tasks.filter((t) => t.status === 'SKIPPED').length;
+  const prs = tasks.filter((t) => t.prNumber != null).map((t) => `#${t.prNumber}`).join(', ');
+  const summary = finished
+    ? `${merged} merged${skipped ? `, ${skipped} skipped` : ''}${prs ? ` · ${prs}` : ''}`
+    : `${tasks.filter((t) => FINISHED.includes(t.status)).length} of ${tasks.length} done`;
+  return (
+    <section aria-label={`Wave ${wave}`} className={open ? 'fold open' : 'fold'}>
+      <div className="row fold-header" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+        <FoldToggle open={open} onToggle={toggle} level={3}>
+          {finished ? '✓ ' : ''}Wave {wave}
+        </FoldToggle>
+        {current && !finished && <Badge tone="info">current</Badge>}
+        {attention && <Badge tone="danger">needs attention</Badge>}
+        <span className="small">{summary}</span>
+      </div>
+      {open && children}
+    </section>
+  );
+}
+
 const RUN: Record<DevRun['status'], { label: string; tone: Tone }> = {
   RUNNING: { label: 'In development', tone: 'info' },
   PAUSED: { label: 'Paused', tone: 'warning' },
@@ -60,11 +125,11 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
 
-  async function act(path: string, done: string) {
+  async function act(path: string, done: string, body: Record<string, unknown> = {}) {
     setBusy(true);
     setMessage(null);
     try {
-      const next = await api.post<DevState>(`/api/v1/requirements/${requirementId}/development/${path}`, {});
+      const next = await api.post<DevState>(`/api/v1/requirements/${requirementId}/development/${path}`, body);
       queryClient.setQueryData(['development', requirementId], next);
       setMessage({ tone: 'info', text: done });
     } catch (e) {
@@ -122,6 +187,7 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
         <div className="small">The work so far is on the draft pull request. Retry carries on from it; commits pushed to
           its branch are kept.</div>
       )}
+      {!t.external && t.status !== 'WAITING' && <StoryLog requirementId={requirementId} task={t} />}
       {controls && (t.status === 'FAILED' || t.status === 'WAITING' || t.status === 'QUEUED') && (
         <div className="row" style={{ marginTop: '0.3rem' }}>
           {t.status === 'FAILED' && (
@@ -154,10 +220,20 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
       </p>
       {run.status === 'PAUSED' && <Callout tone="warning" title="Paused">No new story is started until development is resumed.</Callout>}
       {controls && (
-        <div className="row">
+        <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           {run.status === 'RUNNING'
             ? <button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => void act('pause', 'Development paused.')}>Pause</button>
             : <button type="button" className="btn-primary btn-sm" disabled={busy} onClick={() => void act('resume', 'Development resumed.')}>Resume</button>}
+          {(run.branchOptions?.length ?? 0) > 0 && (
+            <label className="small">Works on branch
+              <select value={run.baseBranch ?? ''} disabled={busy}
+                onChange={(e) => void act('base-branch', `Stories not yet coded (and retries) now use ${e.target.value}. `
+                  + 'Pull requests already open keep their target; change it in GitHub if needed.', { branch: e.target.value })}>
+                {!run.baseBranch && <option value="">default branch</option>}
+                {run.branchOptions!.map((b) => <option key={`${b.environment ?? ""}:${b.branch}`} value={b.branch}>{branchLabel(b)}</option>)}
+              </select>
+            </label>
+          )}
         </div>
       )}
       {outside.length > 0 && (
@@ -166,14 +242,18 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
           <ul className="brd-items">{outside.map(renderTask)}</ul>
         </section>
       )}
-      {waves.map((w) => (
-        <section key={w} aria-label={`Wave ${w}`}>
-          <h3>Wave {w}{w === run.currentWave && run.status !== 'DELIVERED' && <> <Badge tone="info">current</Badge></>}</h3>
-          <ul className="brd-items">{code.filter((t) => t.wave === w).map(renderTask)}</ul>
-        </section>
-      ))}
+      {waves.map((w) => {
+        const tasks = code.filter((t) => t.wave === w);
+        return (
+          <WaveSection key={w} requirementId={requirementId} wave={w} tasks={tasks}
+            current={w === run.currentWave && run.status !== 'DELIVERED'}>
+            <ul className="brd-items">{tasks.map(renderTask)}</ul>
+          </WaveSection>
+        );
+      })}
       <div style={{ marginTop: '1.25rem' }}>
-        <ActivityTimeline requirementId={requirementId} stage="DEVELOPMENT" live={run.status === 'RUNNING'} title="What the Developer agent is doing" />
+        <ActivityTimeline requirementId={requirementId} stage="DEVELOPMENT" live={run.status === 'RUNNING'} milestonesOnly
+          title="Milestones (each story's own log is under it)" />
       </div>
       {message && <p className={message.tone === 'danger' ? 'error' : 'notice'} role="status">{message.text}</p>}
     </FoldSection>
