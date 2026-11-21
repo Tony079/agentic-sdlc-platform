@@ -205,7 +205,11 @@ class RequirementRepository {
         StringBuilder sql = new StringBuilder("""
                 SELECT r.id, r.key, rev.title, wi.projected_state, r.project_id, r.current_revision_no, r.updated_at,
                        (SELECT t.status FROM app.tdd_version t WHERE t.requirement_id = r.id
-                        ORDER BY t.version_no DESC LIMIT 1) AS design_status
+                        ORDER BY t.version_no DESC LIMIT 1) AS design_status,
+                       (SELECT e.status FROM app.estimate_version e WHERE e.requirement_id = r.id
+                        ORDER BY e.version_no DESC LIMIT 1) AS estimate_status,
+                       (SELECT p.status FROM app.plan_version p WHERE p.requirement_id = r.id
+                        ORDER BY p.version_no DESC LIMIT 1) AS plan_status
                 FROM app.requirement r
                 JOIN app.requirement_revision rev ON rev.requirement_id = r.id AND rev.revision_no = r.current_revision_no
                 JOIN app.workflow_instance wi ON wi.requirement_id = r.id
@@ -234,7 +238,8 @@ class RequirementRepository {
         return spec.query((rs, n) -> new Summary(rs.getObject("id", UUID.class), rs.getString("key"),
                         rs.getString("title"), WorkflowState.valueOf(rs.getString("projected_state")),
                         rs.getObject("project_id", UUID.class), rs.getInt("current_revision_no"),
-                        rs.getObject("updated_at", OffsetDateTime.class), rs.getString("design_status")))
+                        rs.getObject("updated_at", OffsetDateTime.class), rs.getString("design_status"),
+                        rs.getString("estimate_status"), rs.getString("plan_status")))
                 .list();
     }
 

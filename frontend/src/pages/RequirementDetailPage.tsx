@@ -128,6 +128,19 @@ export function RequirementDetailPage() {
     queryFn: () => api.get<{ review: { stage: string } }>(`/api/v1/requirements/${id}/design`),
     enabled: requirement.data?.state === 'SHARED_WITH_CLIENT',
   });
+  // GD-33 / GD-34: the same for estimate and delivery plan (queries shared with their panels).
+  const estimate = useQuery({
+    queryKey: ['estimate', id],
+    queryFn: () => api.get<{ review: { stage: string } }>(`/api/v1/requirements/${id}/estimate`),
+    enabled: design.data?.review.stage === 'APPROVED',
+  });
+  const plan = useQuery({
+    queryKey: ['plan', id],
+    queryFn: () => api.get<{ review: { stage: string } }>(`/api/v1/requirements/${id}/plan`),
+    enabled: estimate.data?.review.stage === 'APPROVED',
+  });
+  const started = (stage: string | undefined) =>
+    stage === undefined ? undefined : ['GENERATING', 'IN_REVIEW', 'APPROVED', 'FAILED'].includes(stage) ? stage : null;
   const designStage = design.data?.review.stage;
   const designStatus = designStage === undefined || designStage === 'NOT_STARTED' || designStage === 'BRD_NOT_APPROVED'
     ? null : designStage;
@@ -215,7 +228,9 @@ export function RequirementDetailPage() {
         description={
           <span className="row">
             <span className="sr-only">State:</span>
-            <StatePill state={detail.state} designStatus={design.isSuccess ? designStatus : undefined} />
+            <StatePill state={detail.state} designStatus={design.isSuccess ? designStatus : undefined}
+              estimateStatus={estimate.isSuccess ? started(estimate.data.review.stage) : undefined}
+              planStatus={plan.isSuccess ? started(plan.data.review.stage) : undefined} />
             <span className="small">Revision {detail.currentRevisionNo}</span>
             {detail.restricted && (
               <Badge tone="warning">

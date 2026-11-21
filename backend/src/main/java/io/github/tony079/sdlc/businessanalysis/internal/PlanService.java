@@ -178,7 +178,10 @@ class PlanService {
                 .filter(s -> !s.flags().isEmpty() && !s.accepted() && s.edits().isEmpty()).map(StoryV::storyKey).toList();
         List<String> gaps = version.gaps().stream().filter(g -> !g.accepted()).map(GapV::key).toList();
         boolean outdated = approvedEstimate != null && !approvedEstimate.equals(shown.estimateVersionId());
-        String blocked = inReview && (!unaccepted.isEmpty() || !gaps.isEmpty())
+        String blocked = inReview && outdated
+                ? "This plan was made from an older estimate. Re-plan it from the approved estimate before it can be "
+                        + "approved."
+                : inReview && (!unaccepted.isEmpty() || !gaps.isEmpty())
                 ? (unaccepted.isEmpty() ? "" : unaccepted.size() + " flagged story(ies)")
                 + (!unaccepted.isEmpty() && !gaps.isEmpty() ? " and " : "")
                 + (gaps.isEmpty() ? "" : gaps.size() + " planning gap(s)")
@@ -186,7 +189,8 @@ class PlanService {
         ReviewV review = new ReviewV(stage, a.estimator(), a.approver(),
                 a.estimator() && approvedEstimate != null && !open,
                 a.estimator() && "FAILED".equals(shown.status()) && shown.attempts() < RETRIES,
-                inReview && a.estimator(), inReview && a.approver() && unaccepted.isEmpty() && gaps.isEmpty(),
+                inReview && a.estimator(),
+                inReview && a.approver() && unaccepted.isEmpty() && gaps.isEmpty() && !outdated,
                 inReview && a.insider(), unaccepted, gaps,
                 approved == null ? null : approved.decidedByName(), approved == null ? null : approved.decidedAt(),
                 approved == null ? null : approved.note(), outdated, blocked);
@@ -534,6 +538,10 @@ class PlanService {
             throw ApiException.validation(List.of(new FieldError("settings", "REQUIRED")));
         }
         VersionRow v = inReview(requirementId);
+        if (!plans.approvedEstimate(requirementId).map(v.estimateVersionId()::equals).orElse(false)) {
+            throw ApiException.conflict("PLAN_ESTIMATE_OUTDATED", "This plan was made from an older estimate. Re-plan "
+                    + "it from the approved estimate instead; the new sprint settings can be changed after that.");
+        }
         String settings = validSettings(settingsInput, v.settingsJson());
         if (json.readTree(settings).equals(json.readTree(v.settingsJson()))) {
             throw ApiException.conflict("PLAN_SETTINGS_UNCHANGED", "These are the plan's current sprint settings.");
@@ -628,6 +636,10 @@ class PlanService {
         PlanState current = state(requirementId);
         if (expectedReviewHash != null && !expectedReviewHash.equals(current.version().reviewHash())) {
             throw ApiException.conflict("VERSION_CHANGED", "The plan changed since you opened it. Reload it.");
+        }
+        if (current.review().estimateOutdated()) {
+            throw ApiException.conflict("PLAN_ESTIMATE_OUTDATED", "This plan was made from an older estimate. Re-plan "
+                    + "it from the approved estimate first.");
         }
         if (!current.review().unacceptedFlags().isEmpty() || !current.review().openGaps().isEmpty()) {
             throw ApiException.conflict("REVIEW_INCOMPLETE",

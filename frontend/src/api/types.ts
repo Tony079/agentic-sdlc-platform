@@ -301,6 +301,9 @@ export interface RequirementSummary {
   updatedAt: string;
   /** GD-27: status of the latest technical design version, or null when none was started. */
   designStatus?: 'GENERATING' | 'IN_REVIEW' | 'APPROVED' | 'FAILED' | 'SUPERSEDED' | null;
+  /** GD-33 / GD-34: status of the latest estimate and delivery plan versions, or null when none was started. */
+  estimateStatus?: 'GENERATING' | 'IN_REVIEW' | 'APPROVED' | 'FAILED' | 'SUPERSEDED' | null;
+  planStatus?: 'GENERATING' | 'IN_REVIEW' | 'APPROVED' | 'FAILED' | 'SUPERSEDED' | null;
 }
 
 export interface RequirementPage {

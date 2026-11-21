@@ -324,6 +324,12 @@ class EstimationIT extends ApiIntegrationTest {
         Response planApproved = aaron.post(plan + "/approve", Map.of("expectedReviewHash",
                 p.path("version").path("reviewHash").asString(), "confirmApproveAlone", true));
         assertThat(planApproved.status()).as(planApproved.body().toString()).isEqualTo(200);
+        // The requirements list shows how far design, estimate and plan have got.
+        JsonNode listed = alice.get("/api/v1/requirements").body().path("items").valueStream()
+                .filter(r -> r.path("id").asString().equals(id)).findFirst().orElseThrow();
+        assertThat(listed.path("designStatus").asString()).isEqualTo("APPROVED");
+        assertThat(listed.path("estimateStatus").asString()).isEqualTo("APPROVED");
+        assertThat(listed.path("planStatus").asString()).isEqualTo("APPROVED");
 
         // The approved plan is the project's: a Viewer sees the stories (not the estimate's work items) and exports.
         JsonNode seen = victor.get(plan).body();

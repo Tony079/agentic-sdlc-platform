@@ -306,7 +306,18 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
       )}
       {review.estimateOutdated && version && (
         <Callout tone="warning" title="Based on an older estimate">
-          This plan was made for estimate version {version.estimateVersionNo}. Start a new plan to include the approved changes.
+          This plan was made from estimate version {version.estimateVersionNo}; a later estimate has been approved since.
+          {review.stage === 'IN_REVIEW' ? ' It cannot be approved until it is re-planned.' : ''}
+          {review.canRequestChanges && (
+            <div className="row" style={{ marginTop: '0.5rem' }}>
+              <button type="button" className="btn-primary btn-sm" disabled={busy}
+                onClick={() => void act('request-changes', { text: 'Re-plan from the latest approved estimate. Keep the epics and stories that still fit; add, change or remove stories for the work that changed.' },
+                  'Re-planning from the approved estimate. You are notified when the new version is ready.')}>
+                Re-plan from the approved estimate
+              </button>
+            </div>
+          )}
+          {review.canStart && <span> Start a new plan below to include the approved changes.</span>}
         </Callout>
       )}
 
@@ -328,7 +339,7 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
               <div className="small">{version.estimateEffortDays != null ? `estimate: ${one(version.estimateEffortDays)}` : 'from the approved estimate'}</div></div>
           </div>
           {version.notes.map((n) => <p key={n} className="small">{n}</p>)}
-          {review.canEdit && !settingsOpen && (
+          {review.canEdit && !review.estimateOutdated && !settingsOpen && (
             <div className="row">
               <button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => setSettingsOpen(true)}>
                 Change sprint settings

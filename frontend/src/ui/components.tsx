@@ -197,13 +197,41 @@ const DESIGN_STATUS: Record<string, { label: string; cls: string }> = {
   SUPERSEDED: { label: 'Design in review', cls: 'internal_review' },
 };
 
+/** GD-33 / GD-34: estimate and delivery plan status, shown once the stage before them is approved. */
+type Status = { label: string; cls: string };
+function stageStatus(noun: string, status: string | null): Status {
+  const Noun = noun.charAt(0).toUpperCase() + noun.slice(1);
+  switch (status) {
+    case 'GENERATING': return { label: `${Noun} being written`, cls: 'analysing' };
+    case 'IN_REVIEW':
+    case 'SUPERSEDED': return { label: `${Noun} in review`, cls: 'internal_review' };
+    case 'APPROVED': return { label: `${Noun} approved`, cls: 'shared_with_client' };
+    case 'FAILED': return { label: `${Noun} failed`, cls: 'failed' };
+    default: return { label: `Waiting for ${noun}`, cls: 'internal_review' };
+  }
+}
+
+/**
+ * Where an approved BRD has got to: the first stage (design, estimate, delivery plan) that is not approved yet, or
+ * "Delivery plan approved" when all are. Null statuses mean the stage has not started; undefined means unknown.
+ */
+export function deliveryStatus(designStatus: string | null, estimateStatus?: string | null,
+  planStatus?: string | null): Status {
+  const design = DESIGN_STATUS[designStatus ?? 'NONE'] ?? { label: 'Waiting for technical design', cls: 'internal_review' };
+  if (designStatus !== 'APPROVED' || estimateStatus === undefined) return design;
+  if (estimateStatus !== 'APPROVED' || planStatus === undefined) return stageStatus('estimate', estimateStatus);
+  return stageStatus('delivery plan', planStatus);
+}
+
 /**
  * Workflow state of a requirement, coloured by meaning (waiting, in progress, done, failed). After BRD approval it
- * shows the technical design status when {@code designStatus} is given (null = not started yet).
+ * shows how far design, estimate and delivery plan have got when {@code designStatus} is given (null = not started).
  */
-export function StatePill({ state, designStatus }: { state: string; designStatus?: string | null }) {
+export function StatePill({ state, designStatus, estimateStatus, planStatus }: {
+  state: string; designStatus?: string | null; estimateStatus?: string | null; planStatus?: string | null;
+}) {
   if (state === 'SHARED_WITH_CLIENT' && designStatus !== undefined) {
-    const d = DESIGN_STATUS[designStatus ?? 'NONE'] ?? { label: 'Waiting for technical design', cls: 'internal_review' };
+    const d = deliveryStatus(designStatus, estimateStatus, planStatus);
     return (
       <span className={`state state-${d.cls}`} title={`BRD approved · ${d.label}`}>
         {d.label}
