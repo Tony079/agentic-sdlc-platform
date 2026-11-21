@@ -189,12 +189,12 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
                 }
             }
         } catch (TrackerException e) {
-            throw e.kind() == TrackerException.Kind.RETRY || e.kind() == TrackerException.Kind.NOT_CONFIGURED
-                    ? JobFailure.dependencyUnavailable(e.code(), java.time.Duration.ofMinutes(5))
-                    : JobFailure.fatal(e.code(), null);
+            // GitHub is not reachable right now: carry on with what is known (restarting stuck stories, queueing the
+            // wave); the next tick reads GitHub again.
+            log.warn("Development tick could not read GitHub ({}); continuing without it", e.code());
         } catch (IllegalStateException e) {
-            throw JobFailure.dependencyUnavailable(String.valueOf(e.getMessage()).matches("^[A-Z][A-Z0-9_]{1,63}$")
-                    ? e.getMessage() : "GITHUB_UNAVAILABLE", java.time.Duration.ofMinutes(5));
+            log.warn("Development tick could not open GitHub ({}); continuing without it",
+                    String.valueOf(e.getMessage()).matches("^[A-Z][A-Z0-9_]{1,63}$") ? e.getMessage() : "?");
         }
         return new Observed(runId, pulls, issues);
     }
