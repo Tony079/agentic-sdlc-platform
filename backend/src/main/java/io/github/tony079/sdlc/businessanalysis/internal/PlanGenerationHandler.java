@@ -137,7 +137,9 @@ class PlanGenerationHandler implements JobHandler<PlanGenerationHandler.Outcome>
             List<PlanCalculator.WorkItem> work = new ArrayList<>();
             for (EstimateRepository.ItemRow i : inputs.estimate()) {
                 double[] f = inputs.effective().get(i.itemKey());
-                work.add(new PlanCalculator.WorkItem(i.itemKey(), i.role(), (f[0] + 4 * f[1] + f[2]) / 6));
+                work.add(new PlanCalculator.WorkItem(i.itemKey(), i.role(), (f[0] + 4 * f[1] + f[2]) / 6,
+                        i.agentHours() == null ? 0 : i.agentHours().doubleValue(), i.external(),
+                        i.leadDays() == null ? 0 : i.leadDays().doubleValue()));
             }
             Set<String> designKeys = new LinkedHashSet<>();
             inputs.design().forEach(d -> designKeys.add(d.itemKey()));
@@ -155,7 +157,9 @@ class PlanGenerationHandler implements JobHandler<PlanGenerationHandler.Outcome>
                 stories.add(new StoryRow(++n, s.storyKey(), s.epicKey(), s.title(),
                         json.writeValueAsString(s.acceptanceCriteria()), json.writeValueAsString(s.estimateRefs()),
                         json.writeValueAsString(s.brdRefs()), s.role(), s.priority(), json.writeValueAsString(s.dependsOn()),
-                        BigDecimal.valueOf(s.effortDays()), json.writeValueAsString(s.flags())));
+                        BigDecimal.valueOf(s.effortDays()), json.writeValueAsString(s.flags()),
+                        BigDecimal.valueOf(s.agentHours()), s.external(),
+                        s.leadDays() == null ? null : BigDecimal.valueOf(s.leadDays())));
             }
             Set<String> planned = new LinkedHashSet<>();
             prepared.stories().forEach(s -> planned.addAll(s.estimateRefs()));
@@ -213,7 +217,8 @@ class PlanGenerationHandler implements JobHandler<PlanGenerationHandler.Outcome>
             stories.add(new StoryRow(s.ordinal(), s.storyKey(), s.epicKey(), titles.getOrDefault(s.storyKey(), s.title()),
                     criteria.getOrDefault(s.storyKey(), s.acceptanceCriteriaJson()), s.estimateRefsJson(),
                     s.brdRefsJson(), s.role(), priorities.getOrDefault(s.storyKey(), s.priority()),
-                    json.writeValueAsString(deps), s.effortDays(), s.flagsJson()));
+                    json.writeValueAsString(deps), s.effortDays(), s.flagsJson(), s.agentHours(), s.external(),
+                    s.leadDays()));
         }
         List<EpicRow> epics = plans.epics(from.id());
         Map<String, Object> canonical = new LinkedHashMap<>();
@@ -229,7 +234,9 @@ class PlanGenerationHandler implements JobHandler<PlanGenerationHandler.Outcome>
         StringBuilder text = new StringBuilder();
         for (EstimateRepository.ItemRow i : items) {
             double[] f = effective.get(i.itemKey());
-            text.append('[').append(i.itemKey()).append("] ").append(i.role()).append(" / ").append(i.phase()).append(": ")
+            text.append('[').append(i.itemKey()).append("] ").append(i.external()
+                    ? "OUTSIDE WORK (a person or supplier, not code; keep it in its own story) " : "")
+                    .append(i.role()).append(" / ").append(i.phase()).append(": ")
                     .append(i.title()).append(" — ").append(i.detail()).append(" (").append(f[0]).append(" / ")
                     .append(f[1]).append(" / ").append(f[2]).append(" days; after: ").append(i.dependsOnJson())
                     .append(")\n");

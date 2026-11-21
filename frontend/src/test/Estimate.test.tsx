@@ -84,4 +84,39 @@ describe('EstimatePanel (GD-33)', () => {
     const post = calls.find((c) => c.url.endsWith('/estimate/approve'));
     expect(JSON.parse(String(post?.init.body))).toEqual({ expectedReviewHash: 'h'.repeat(64), confirmApproveAlone: true });
   });
+
+  it('shows an agent-delivery estimate: agent hours, people’s review and outside work (GD-35)', async () => {
+    const agentVersion = {
+      ...version,
+      settings: { ...version.settings, deliveryMode: 'AGENT', agentSlots: 3, agentCostPerHour: 2, currency: 'USD' },
+      items: [item({ agentHours: 6, kind: 'WORK', low: 0.5, likely: 1, high: 2, flags: [] }),
+        item({ itemKey: 'est-x', ordinal: 2, title: 'Register OAuth apps', role: 'DEVOPS', kind: 'EXTERNAL', agentHours: 0,
+          leadDays: 5, low: 0.5, likely: 0.5, high: 1, flags: [] })],
+      summary: { ...version.summary, deliveryMode: 'AGENT', agentHours: 6, waves: 1, external: 1, longestLeadDays: 5,
+        aiCost: 12, currency: 'USD', costP50: 100, costP85: 120 },
+    };
+    mockFetch((url) => ({ status: 200, body: url.endsWith('/estimate')
+      ? { requirementId: 'r1', canSee: true, review: review({ unacceptedFlags: [] }), version: agentVersion, history: [], defaults: null }
+      : [] }));
+    renderWithProviders(<EstimatePanel requirementId="r1" />);
+    expect(await screen.findByText('Coding agents (hours)')).toBeInTheDocument();
+    expect(screen.getByText(/in 1 waves · 3 at once/)).toBeInTheDocument();
+    expect(screen.getByText(/People’s review/)).toBeInTheDocument();
+    expect(screen.getByText(/Outside work: a person or supplier, waits about 5 days/)).toBeInTheDocument();
+    expect(screen.getByText(/Coding agent · about 6 hours/)).toBeInTheDocument();
+    expect(screen.getByText(/incl. USD 12 AI cost/)).toBeInTheDocument();
+  });
+
+  it('starts a new estimate for coding agents by default, with reviewers and parallel agents (GD-35)', async () => {
+    document.cookie = 'XSRF-TOKEN=e1; path=/';
+    const body = { requirementId: 'r1', canSee: true, review: review({ stage: 'NOT_STARTED', canStart: true, canAdjust: false,
+      canRequestChanges: false, unacceptedFlags: [] }), version: null, history: [], defaults: null };
+    const calls = mockFetch(() => ({ status: 200, body }));
+    renderWithProviders(<EstimatePanel requirementId="r1" />);
+    expect(await screen.findByLabelText('Backend reviewers')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Start estimate' }));
+    const post = calls.find((c) => c.url.endsWith('/estimate/start'));
+    expect(JSON.parse(String(post?.init.body)).settings).toMatchObject({ deliveryMode: 'AGENT', agentSlots: 4 });
+  });
 });

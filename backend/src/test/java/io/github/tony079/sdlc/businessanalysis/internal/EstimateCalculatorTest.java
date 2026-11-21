@@ -75,6 +75,48 @@ class EstimateCalculatorTest {
     }
 
     @Test
+    void agentModeClipsReviewAndAgentFiguresAndFlagsBigAgentTasks() {
+        var items = List.of(
+                new EstimateContracts.AgentItem("API", "Detail.", EstimateContracts.Kind.WORK, Role.BACKEND, Phase.BUILD,
+                        List.of("d-1"), 6.0, 0.25, 0.5, 1.0, null, List.of(), null, List.of()),
+                new EstimateContracts.AgentItem("Huge", "Detail.", EstimateContracts.Kind.WORK, Role.BACKEND, Phase.BUILD,
+                        List.of(), 40.0, 0.01, 1.0, 2.0, 9.0, List.of(), null, List.of()),
+                new EstimateContracts.AgentItem("OAuth apps", "Register.", EstimateContracts.Kind.EXTERNAL, Role.DEVOPS,
+                        Phase.SETUP, List.of(), 5.0, 0.5, 0.5, 1.0, 400.0, List.of(), null, List.of()));
+        var prepared = EstimateCalculator.prepareAgent(items, Set.of("d-1"));
+        assertThat(prepared.get(0).flags()).isEmpty();
+        assertThat(prepared.get(0).agentHours()).isEqualTo(6.0);
+        assertThat(prepared.get(0).leadDays()).isNull();
+        assertThat(prepared.get(1).flags()).contains("LARGE", "CLIPPED", "UNCERTAIN");
+        assertThat(prepared.get(1).low()).isEqualTo(EstimateCalculator.MIN_REVIEW_DAYS);
+        assertThat(prepared.get(2).kind()).isEqualTo("EXTERNAL");
+        assertThat(prepared.get(2).agentHours()).as("outside work has no agent time").isZero();
+        assertThat(prepared.get(2).leadDays()).isEqualTo(EstimateCalculator.MAX_LEAD_DAYS);
+    }
+
+    @Test
+    void agentModeTimelineCountsAgentTimeReviewAndOutsideWaits() {
+        // Agents: API 8 h, then UI 16 h after it; people review 1 day each. An outside approval waits 10 days.
+        Figures api = new Figures("a", "BACKEND", "BUILD", 1, 1, 1, List.of(), "API", "WORK", 8, 0);
+        Figures ui = new Figures("b", "FRONTEND", "BUILD", 1, 1, 1, List.of("API"), "UI", "WORK", 16, 0);
+        Figures approval = new Figures("c", "OTHER", "SETUP", 0.5, 0.5, 0.5, List.of(), "Approval", "EXTERNAL", 0, 10);
+        Settings settings = new Settings(Map.of("BACKEND", 1, "FRONTEND", 1), 5, 0, "USD", null, "AGENT", 2,
+                new BigDecimal("3"));
+        var s = EstimateCalculator.summarise(List.of(api, ui, approval), settings);
+        assertThat(s.deliveryMode()).isEqualTo("AGENT");
+        assertThat(s.agentHours()).isEqualTo(24);
+        assertThat(s.waves()).isEqualTo(2);
+        assertThat(s.external()).isEqualTo(1);
+        assertThat(s.longestLeadDays()).isEqualTo(10);
+        // Review effort is the people's: 1 + 1 + 0.5 days.
+        assertThat(s.effort().p50()).isCloseTo(2.5, within(1e-9));
+        // The chain API (1 + 1 day) -> UI (2 + 1 days) is 5 days; the outside wait is 10: two weeks.
+        assertThat(s.weeks().p50()).isCloseTo(2.0, within(1e-9));
+        assertThat(s.aiCost()).isEqualByComparingTo("72");
+        assertThat(s.notes()).anyMatch(n -> n.contains("outside item"));
+    }
+
+    @Test
     void spreadsheetCellsCannotStartAFormula() {
         assertThat(EstimateService.cell("=HYPERLINK(\"x\")")).isEqualTo("\"'=HYPERLINK(\"\"x\"\")\"");
         assertThat(EstimateService.cell("+1")).startsWith("\"'+");

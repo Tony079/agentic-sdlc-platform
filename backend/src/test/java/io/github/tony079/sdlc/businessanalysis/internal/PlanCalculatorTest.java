@@ -68,4 +68,50 @@ class PlanCalculatorTest {
         assertThat(schedule.flags().values().stream().flatMap(List::stream)).contains("CYCLE");
         assertThat(PlanCalculator.capacity(settings, "BACKEND")).isCloseTo(20.0, within(1e-9));
     }
+
+    @Test
+    void aStoryStartsOnlyAfterWhatItDependsOnIsFinishedEvenWithABigTeam() {
+        // Ten backend people, but A -> B -> C must happen one after another (4 days each, one-week sprints).
+        Settings settings = new Settings(1, LocalDate.of(2026, 11, 23), 5, Map.of("BACKEND", 10));
+        var schedule = PlanCalculator.schedule(List.of(
+                new Schedulable("a", "A", "BACKEND", "MUST", 4, List.of(), null, 1),
+                new Schedulable("b", "B", "BACKEND", "MUST", 4, List.of("A"), null, 2),
+                new Schedulable("c", "C", "BACKEND", "MUST", 4, List.of("B"), null, 3),
+                new Schedulable("d", "D", "BACKEND", "MUST", 4, List.of(), null, 4)), settings);
+        assertThat(schedule.sprintOf()).containsEntry("a", 1).containsEntry("b", 2).containsEntry("c", 3)
+                .containsEntry("d", 1);
+        assertThat(schedule.flags()).isEmpty();
+        // Oversized is about one person's sprint, not the team's.
+        var big = PlanCalculator.schedule(List.of(new Schedulable("x", "X", "BACKEND", "MUST", 7, List.of(), null, 1)),
+                settings);
+        assertThat(big.flags().get("x")).containsExactly("OVERSIZED");
+    }
+
+    @Test
+    void agentDeliveryLaysStoriesOutInWavesWithOutsideWorkFirst() {
+        // Mon 23 Nov 2026, 5 working days a week, 2 coding agents at once, one backend reviewer.
+        Settings settings = new Settings(2, LocalDate.of(2026, 11, 23), 5, Map.of("BACKEND", 1), "AGENT", 2);
+        var schedule = PlanCalculator.schedule(List.of(
+                new Schedulable("o", "OAuth apps", "DEVOPS", "MUST", 0.5, List.of(), null, 1, 0, true, 6),
+                new Schedulable("a", "Records", "BACKEND", "MUST", 1, List.of(), null, 2, 8, false, 0),
+                new Schedulable("b", "Runtime", "BACKEND", "MUST", 1, List.of(), null, 3, 8, false, 0),
+                new Schedulable("c", "Sign-in", "BACKEND", "MUST", 0.5, List.of("Records", "OAuth apps"), null, 4, 20,
+                        false, 0)), settings);
+        assertThat(schedule.sprintOf()).containsEntry("o", 0).containsEntry("a", 1).containsEntry("b", 1)
+                .containsEntry("c", 2);
+        assertThat(schedule.sprints()).isEmpty();
+        var waves = schedule.waves();
+        assertThat(waves).extracting(PlanCalculator.WaveLoad::number).containsExactly(0, 1, 2);
+        // Wave 1: two 8-hour stories on two agents = 1 day, then 2 review days for the one reviewer.
+        assertThat(waves.get(1).buildDays()).isEqualTo(1.0);
+        assertThat(waves.get(1).reviewDays()).isEqualTo(2.0);
+        assertThat(waves.get(1).start()).isEqualTo(LocalDate.of(2026, 11, 23));
+        assertThat(waves.get(1).end()).isEqualTo(LocalDate.of(2026, 11, 25));
+        // Wave 2 waits for the OAuth apps (6 working days), then 20 agent hours (2.5 days) and half a day of review.
+        assertThat(waves.get(2).waitDays()).isEqualTo(3.0);
+        assertThat(waves.get(2).start()).isEqualTo(LocalDate.of(2026, 12, 1));
+        assertThat(waves.get(2).end()).isEqualTo(LocalDate.of(2026, 12, 3));
+        assertThat(schedule.flags().get("c")).containsExactly("AGENT_OVERSIZED");
+        assertThat(schedule.notes()).anyMatch(n -> n.contains("outside item"));
+    }
 }

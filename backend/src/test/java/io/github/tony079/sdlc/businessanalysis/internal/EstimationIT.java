@@ -343,6 +343,75 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(aaron.download(plan + "/export?format=pdf").status()).isEqualTo(200);
 
         pushToGitHubIssues(tenant, projectId, plan, eve, aaron, victor);
+        agentDelivery(tenant, estimate, plan, eve, aaron);
+    }
+
+    /** GD-35: a new estimate in agent delivery mode, and a plan in waves from it. */
+    private void agentDelivery(UUID tenant, String estimate, String plan, ApiClient eve, ApiClient aaron) {
+        fake.cannedReply("est.items", """
+                {"items": [
+                  {"title": "Set up the API skeleton", "detail": "Spring Boot project, health endpoint, CI.",
+                   "kind": "WORK", "role": "BACKEND", "phase": "SETUP", "designRefs": ["%s"], "agentHours": 6,
+                   "reviewLowDays": 0.5, "reviewLikelyDays": 1, "reviewHighDays": 2, "leadDays": null,
+                   "assumptions": [], "risk": null, "dependsOn": []},
+                  {"title": "Build the portfolio pages", "detail": "Pages for every section, with tests.",
+                   "kind": "WORK", "role": "QA", "phase": "TEST", "designRefs": ["%s", "%s"], "agentHours": 8,
+                   "reviewLowDays": 1, "reviewLikelyDays": 1.5, "reviewHighDays": 3, "leadDays": null,
+                   "assumptions": [], "risk": null, "dependsOn": ["Set up the API skeleton"]},
+                  {"title": "Register the OAuth applications", "detail": "Google, LinkedIn and GitHub apps.",
+                   "kind": "EXTERNAL", "role": "DEVOPS", "phase": "SETUP", "designRefs": [], "agentHours": 0,
+                   "reviewLowDays": 0.5, "reviewLikelyDays": 0.5, "reviewHighDays": 1, "leadDays": 5,
+                   "assumptions": [], "risk": null, "dependsOn": []}
+                 ], "assumptions": [], "excluded": []}""".formatted(DESIGN_ARCH, DESIGN_ARCH, DESIGN_TEST));
+        Map<String, Object> settings = Map.of("deliveryMode", "AGENT", "team", Map.of("BACKEND", 1, "QA", 1),
+                "daysPerWeek", 5, "contingencyPercent", 0, "agentSlots", 2, "currency", "USD", "agentCostPerHour", 2);
+        assertThat(eve.post(estimate + "/start", Map.of("settings", Map.of("deliveryMode", "ROBOTS"))).status())
+                .isEqualTo(422);
+        Response started = eve.post(estimate + "/start", Map.of("settings", settings));
+        assertThat(started.status()).as(started.body().toString()).isEqualTo(200);
+        drive(tenant);
+        assertThat(fake.calls().getLast().promptVersion()).as("the agent-delivery prompt").isEqualTo(2);
+        JsonNode est = eve.get(estimate).body();
+        assertThat(est.path("review").path("stage").asString()).as(est.toString()).isEqualTo("IN_REVIEW");
+        JsonNode summary = est.path("version").path("summary");
+        assertThat(summary.path("deliveryMode").asString()).isEqualTo("AGENT");
+        assertThat(summary.path("agentHours").asDouble()).isEqualTo(14.0);
+        assertThat(summary.path("waves").asInt()).isEqualTo(2);
+        assertThat(summary.path("external").asInt()).isEqualTo(1);
+        assertThat(summary.path("aiCost").asDouble()).isEqualTo(28.0);
+        JsonNode oauth = est.path("version").path("items").valueStream()
+                .filter(i -> "EXTERNAL".equals(i.path("kind").asString())).findFirst().orElseThrow();
+        assertThat(oauth.path("leadDays").asDouble()).isEqualTo(5.0);
+        assertThat(oauth.path("agentHours").asDouble()).isZero();
+        String hash = aaron.get(estimate).body().path("version").path("reviewHash").asString();
+        Response approved = aaron.post(estimate + "/approve", Map.of("expectedReviewHash", hash,
+                "confirmApproveAlone", true));
+        assertThat(approved.status()).as(approved.body().toString()).isEqualTo(200);
+        drive(tenant);
+
+        // The plan follows the estimate's delivery mode: waves, not sprints.
+        JsonNode before = eve.get(plan).body();
+        assertThat(before.path("review").path("estimateOutdated").asBoolean()).isTrue();
+        assertThat(before.path("defaults").path("deliveryMode").asString()).isEqualTo("AGENT");
+        Response planned = eve.post(plan + "/start", Map.of("settings", Map.of("startDate", "2026-11-23",
+                "daysPerWeek", 5, "team", Map.of("BACKEND", 1, "QA", 1), "sprintWeeks", 2)));
+        assertThat(planned.status()).as(planned.body().toString()).isEqualTo(200);
+        drive(tenant);
+        JsonNode v = eve.get(plan).body().path("version");
+        assertThat(v.path("deliveryMode").asString()).as(v.toString()).isEqualTo("AGENT");
+        assertThat(v.path("sprints").size()).isZero();
+        assertThat(v.path("waves").size()).isGreaterThanOrEqualTo(2);
+        assertThat(v.path("agentHours").asDouble()).isEqualTo(14.0);
+        JsonNode skeleton = v.path("stories").valueStream().filter(x -> x.path("title").asString().contains("skeleton"))
+                .findFirst().orElseThrow();
+        JsonNode pages = v.path("stories").valueStream().filter(x -> x.path("title").asString().contains("pages built"))
+                .findFirst().orElseThrow();
+        assertThat(skeleton.path("agentHours").asDouble()).isEqualTo(6.0);
+        assertThat(skeleton.path("sprint").asInt()).as("wave").isEqualTo(1);
+        assertThat(pages.path("sprint").asInt()).as("after the skeleton").isEqualTo(2);
+        assertThat(v.path("waves").get(0).path("start").asString()).isEqualTo("2026-11-23");
+        // The outside work the Planning agent left out is a gap for an Estimator to decide.
+        assertThat(eve.get(plan).body().path("review").path("openGaps").toString()).contains("est-");
     }
 
     /** GD-34 phase 2: the approved plan pushed to GitHub Issues of a verified project repository. */

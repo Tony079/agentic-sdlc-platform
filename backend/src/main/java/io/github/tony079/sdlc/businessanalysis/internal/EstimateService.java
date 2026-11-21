@@ -57,7 +57,8 @@ class EstimateService {
     record ItemV(String itemKey, int ordinal, String title, String detail, String role, String phase,
                  List<String> designRefs, double proposedLow, double proposedLikely, double proposedHigh, double low,
                  double likely, double high, double expected, List<String> assumptions, String risk,
-                 List<String> dependsOn, List<String> flags, boolean accepted, List<AdjustmentV> adjustments) {
+                 List<String> dependsOn, List<String> flags, boolean accepted, List<AdjustmentV> adjustments,
+                 String kind, Double agentHours, Double leadDays) {
     }
 
     record CoverageV(String designKey, String section, String title, boolean covered, boolean accepted,
@@ -218,12 +219,16 @@ class EstimateService {
             double high = last == null ? i.high().doubleValue() : last.high();
             List<String> deps = strings(i.dependsOnJson());
             EstimateCalculator.Figures f = new EstimateCalculator.Figures(i.itemKey(), i.role(), i.phase(), low, likely,
-                    high, deps, i.title());
+                    high, deps, i.title(), i.kind() == null ? "WORK" : i.kind(),
+                    i.agentHours() == null ? 0 : i.agentHours().doubleValue(),
+                    i.leadDays() == null ? 0 : i.leadDays().doubleValue());
             figures.add(f);
             items.add(new ItemV(i.itemKey(), i.ordinal(), i.title(), i.detail(), i.role(), i.phase(),
                     strings(i.designRefsJson()), i.low().doubleValue(), i.likely().doubleValue(), i.high().doubleValue(),
                     low, likely, high, EstimateCalculator.round(f.expected()), strings(i.assumptionsJson()), i.risk(),
-                    deps, strings(i.flagsJson()), acceptedFlags.contains(i.itemKey()), adj));
+                    deps, strings(i.flagsJson()), acceptedFlags.contains(i.itemKey()), adj,
+                    i.kind() == null ? "WORK" : i.kind(), i.agentHours() == null ? null : i.agentHours().doubleValue(),
+                    i.leadDays() == null ? null : i.leadDays().doubleValue()));
         }
         List<CoverageV> coverage = new ArrayList<>();
         int designNo = 0;
@@ -290,8 +295,12 @@ class EstimateService {
             }
         }
         String currency = node.path("currency").isString() ? node.path("currency").asString() : null;
+        BigDecimal agentCost = node.path("agentCostPerHour").isNumber() ? node.path("agentCostPerHour").decimalValue()
+                : null;
         return new EstimateCalculator.Settings(team, node.path("daysPerWeek").asInt(5),
-                node.path("contingencyPercent").asInt(0), currency, rates);
+                node.path("contingencyPercent").asInt(0), currency, rates,
+                EstimateCalculator.AGENT.equals(node.path("deliveryMode").asString("")) ? EstimateCalculator.AGENT
+                        : "HUMAN", node.path("agentSlots").asInt(1), agentCost);
     }
 
     /** Validates settings from the client and returns their canonical JSON. */
@@ -324,6 +333,20 @@ class EstimateService {
             errors.add(new FieldError("contingencyPercent", "RANGE"));
         }
         out.put("contingencyPercent", contingency);
+        // GD-35: who builds it. AGENT: coding agents build, the team reviews (team = reviewers per role).
+        Object mode = input.getOrDefault("deliveryMode", "HUMAN");
+        if (!"AGENT".equals(mode) && !"HUMAN".equals(mode)) {
+            errors.add(new FieldError("deliveryMode", "INVALID"));
+        }
+        boolean agent = "AGENT".equals(mode);
+        out.put("deliveryMode", agent ? "AGENT" : "HUMAN");
+        if (agent) {
+            int slots = input.get("agentSlots") instanceof Number n ? n.intValue() : 4;
+            if (slots < 1 || slots > 50) {
+                errors.add(new FieldError("agentSlots", "RANGE"));
+            }
+            out.put("agentSlots", slots);
+        }
         Object currency = input.get("currency");
         Map<String, BigDecimal> rates = new LinkedHashMap<>();
         if (input.get("dayRates") instanceof Map<?, ?> r) {
@@ -337,10 +360,24 @@ class EstimateService {
                 }
             }
         }
-        if (!rates.isEmpty() && (!(currency instanceof String c) || !c.matches("^[A-Z]{3}$"))) {
+        BigDecimal agentCost = null;
+        if (agent && input.get("agentCostPerHour") != null) {
+            agentCost = input.get("agentCostPerHour") instanceof Number num ? new BigDecimal(num.toString()) : null;
+            if (agentCost == null || agentCost.signum() < 0 || agentCost.compareTo(BigDecimal.valueOf(100_000)) > 0) {
+                errors.add(new FieldError("agentCostPerHour", "INVALID"));
+                agentCost = null;
+            } else if (agentCost.signum() == 0) {
+                agentCost = null;
+            }
+        }
+        boolean priced = !rates.isEmpty() || agentCost != null;
+        if (priced && (!(currency instanceof String c) || !c.matches("^[A-Z]{3}$"))) {
             errors.add(new FieldError("currency", "REQUIRED_WITH_RATES"));
         }
-        out.put("currency", rates.isEmpty() ? null : currency);
+        if (agent) {
+            out.put("agentCostPerHour", agentCost == null ? null : agentCost.setScale(2, RoundingMode.HALF_UP));
+        }
+        out.put("currency", priced ? currency : null);
         out.put("dayRates", rates.isEmpty() ? null : rates);
         if (!errors.isEmpty()) {
             throw ApiException.validation(errors);
@@ -495,6 +532,12 @@ class EstimateService {
     /** An Estimator or a BRD Approver requests a new version; it revises this one. */
     @Transactional
     public EstimateState requestChanges(UUID requirementId, String text) {
+        return requestChanges(requirementId, text, null);
+    }
+
+    /** As above; {@code settingsInput}, when given, replaces the settings (for example to switch the delivery mode). */
+    @Transactional
+    public EstimateState requestChanges(UUID requirementId, String text, Map<String, Object> settingsInput) {
         if (text == null || text.strip().length() < 10 || text.length() > 5000) {
             throw ApiException.validation(List.of(new FieldError("text", "LENGTH")));
         }
@@ -508,8 +551,9 @@ class EstimateService {
         estimates.setStatus(v.id(), "SUPERSEDED");
         UUID design = estimates.approvedDesign(requirementId).orElseThrow(() ->
                 ApiException.conflict("DESIGN_NOT_APPROVED", "The estimate starts from an approved technical design."));
+        String settings = settingsInput == null ? v.settingsJson() : validSettings(settingsInput);
         UUID next = estimates.insert(TenantContext.requireTenant(), a.projectId(), requirementId, design,
-                v.settingsJson(), text.strip(), a.me());
+                settings, text.strip(), a.me());
         audit.record(AuditAction.ESTIMATE_DECIDED, "ESTIMATE_VERSION", v.id(), AuditResult.SUCCESS);
         request(requirementId, next, 1);
         return state(requirementId);

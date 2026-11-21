@@ -28,7 +28,15 @@ class PlanRepository {
 
     record StoryRow(int ordinal, String storyKey, String epicKey, String title, String acceptanceCriteriaJson,
                     String estimateRefsJson, String brdRefsJson, String role, String priority, String dependsOnJson,
-                    BigDecimal effortDays, String flagsJson) {
+                    BigDecimal effortDays, String flagsJson, BigDecimal agentHours, boolean external,
+                    BigDecimal leadDays) {
+
+        StoryRow(int ordinal, String storyKey, String epicKey, String title, String acceptanceCriteriaJson,
+                 String estimateRefsJson, String brdRefsJson, String role, String priority, String dependsOnJson,
+                 BigDecimal effortDays, String flagsJson) {
+            this(ordinal, storyKey, epicKey, title, acceptanceCriteriaJson, estimateRefsJson, brdRefsJson, role, priority,
+                    dependsOnJson, effortDays, flagsJson, BigDecimal.ZERO, false, null);
+        }
     }
 
     record EditRow(String storyKey, String changesJson, String reason, String editedByName, OffsetDateTime editedAt) {
@@ -133,14 +141,16 @@ class PlanRepository {
         jdbc.sql("""
                 INSERT INTO app.plan_story (tenant_id, project_id, plan_version_id, ordinal, story_key, epic_key, title,
                                             acceptance_criteria, estimate_refs, brd_refs, role, priority, depends_on,
-                                            effort_days, flags)
+                                            effort_days, flags, agent_hours, external, lead_days)
                 VALUES (:t, :p, :v, :o, :k, :e, :title, :ac::jsonb, :est::jsonb, :brd::jsonb, :role, :priority,
-                        :deps::jsonb, :effort, :flags::jsonb)
+                        :deps::jsonb, :effort, :flags::jsonb, :agent, :external, CAST(:lead AS numeric))
                 """).param("t", tenantId).param("p", projectId).param("v", versionId).param("o", s.ordinal())
                 .param("k", s.storyKey()).param("e", s.epicKey()).param("title", s.title())
                 .param("ac", s.acceptanceCriteriaJson()).param("est", s.estimateRefsJson()).param("brd", s.brdRefsJson())
                 .param("role", s.role()).param("priority", s.priority()).param("deps", s.dependsOnJson())
-                .param("effort", s.effortDays()).param("flags", s.flagsJson()).update();
+                .param("effort", s.effortDays()).param("flags", s.flagsJson())
+                .param("agent", s.agentHours() == null ? BigDecimal.ZERO : s.agentHours()).param("external", s.external())
+                .param("lead", s.leadDays()).update();
     }
 
     List<EpicRow> epics(UUID versionId) {
@@ -154,11 +164,12 @@ class PlanRepository {
     List<StoryRow> stories(UUID versionId) {
         return jdbc.sql("""
                 SELECT ordinal, story_key, epic_key, title, acceptance_criteria::text, estimate_refs::text, brd_refs::text,
-                       role, priority, depends_on::text, effort_days, flags::text
+                       role, priority, depends_on::text, effort_days, flags::text, agent_hours, external, lead_days
                 FROM app.plan_story WHERE plan_version_id = :v ORDER BY ordinal
                 """).param("v", versionId).query((rs, n) -> new StoryRow(rs.getInt(1), rs.getString(2), rs.getString(3),
                         rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8),
-                        rs.getString(9), rs.getString(10), rs.getBigDecimal(11), rs.getString(12))).list();
+                        rs.getString(9), rs.getString(10), rs.getBigDecimal(11), rs.getString(12), rs.getBigDecimal(13),
+                        rs.getBoolean(14), rs.getBigDecimal(15))).list();
     }
 
     void insertEdit(UUID tenantId, UUID projectId, UUID versionId, String storyKey, String changesJson, String reason,

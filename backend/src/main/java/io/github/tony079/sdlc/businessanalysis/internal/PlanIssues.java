@@ -42,9 +42,16 @@ final class PlanIssues {
     record Dependency(String key, String title) {
     }
 
+    /**
+     * @param sprint GD-35: in agent delivery, the wave (0: outside work)
+     * @param agent  GD-35: built by a coding agent (agentHours) or outside work (leadDays); null for a human team
+     */
     record Issue(String key, String title, String epic, String epicGoal, Integer sprint, String sprintDates,
                  String role, String priority, double effortDays, List<String> criteria, List<Dependency> dependsOn,
-                 List<String> labels, String milestone) {
+                 List<String> labels, String milestone, Agent agent) {
+    }
+
+    record Agent(double agentHours, boolean external, Double leadDays) {
     }
 
     private PlanIssues() {
@@ -65,8 +72,19 @@ final class PlanIssues {
         }
         Map<String, Label> labels = new LinkedHashMap<>();
         labels.put(GARUDA_LABEL, new Label(GARUDA_LABEL, "0e8a16", "Created from a Garuda delivery plan"));
+        boolean agentMode = EstimateCalculator.AGENT.equals(view.deliveryMode());
         List<Milestone> milestones = new ArrayList<>();
         Map<Integer, String> sprintDates = new LinkedHashMap<>();
+        for (PlanService.WaveV w : view.waves()) {
+            String dates = DAY.format(w.start()) + " to " + DAY.format(w.end());
+            sprintDates.put(w.number(), dates);
+            String name = w.number() == 0 ? "Outside work" : "Wave " + w.number();
+            milestones.add(new Milestone("wave-" + w.number(), requirementKey + " " + name,
+                    dates + ". " + (w.number() == 0 ? "Work outside the code (people or suppliers): start it now."
+                            : "Built by coding agents in parallel, then reviewed by people.") + " Delivery plan version "
+                            + view.versionNo() + " for " + requirementKey + " (" + text(requirementTitle, 200) + "), "
+                            + stories(w.stories()) + ".", w.end().toString()));
+        }
         for (PlanService.SprintV sp : view.sprints()) {
             String dates = DAY.format(sp.start()) + " to " + DAY.format(sp.end());
             sprintDates.put(sp.number(), dates);
@@ -102,10 +120,18 @@ final class PlanIssues {
                 String key = keyByTitle.get(d);
                 deps.add(new Dependency(key, key != null && titleByKey.containsKey(key) ? titleByKey.get(key) : d));
             }
+            if (agentMode) {
+                String kindLabel = s.external() ? "outside-work" : "agent-ready";
+                labels.putIfAbsent(kindLabel, s.external()
+                        ? new Label(kindLabel, "d93f0b", "Waits on a person or supplier outside the code")
+                        : new Label(kindLabel, "0e8a16", "Ready for a coding agent; a person reviews the pull request"));
+                issueLabels.add(kindLabel);
+            }
             issues.add(new Issue(s.storyKey(), s.title(), epic == null ? null : epic.title(),
                     epic == null ? null : epic.goal(), s.sprint(), s.sprint() == null ? null : sprintDates.get(s.sprint()),
                     role, s.priority(), s.effortDays(), s.acceptanceCriteria(), deps, issueLabels,
-                    s.sprint() == null ? null : "sprint-" + s.sprint()));
+                    s.sprint() == null ? null : (agentMode ? "wave-" : "sprint-") + s.sprint(),
+                    agentMode ? new Agent(s.agentHours(), s.external(), s.leadDays()) : null));
         }
         return new Payload(requirementKey, requirementTitle, view.versionNo(), List.copyOf(labels.values()), milestones,
                 issues);
@@ -143,14 +169,31 @@ final class PlanIssues {
                     .append("\n");
         }
         if (issue.sprint() != null) {
-            out.append("**Sprint:** ").append(issue.sprint());
+            out.append(issue.agent() == null ? "**Sprint:** " + issue.sprint()
+                    : issue.sprint() == 0 ? "**Outside work**" : "**Wave:** " + issue.sprint());
             if (issue.sprintDates() != null) {
                 out.append(" (").append(issue.sprintDates()).append(')');
             }
             out.append("\n");
         }
-        out.append("**Role:** ").append(text(issue.role(), 40)).append(" · **Priority:** ").append(issue.priority())
-                .append(" · **Expected effort:** ").append(issue.effortDays()).append(" person-days\n\n");
+        if (issue.agent() == null) {
+            out.append("**Role:** ").append(text(issue.role(), 40)).append(" · **Priority:** ").append(issue.priority())
+                    .append(" · **Expected effort:** ").append(issue.effortDays()).append(" person-days\n\n");
+        } else if (issue.agent().external()) {
+            out.append("**Outside work:** a person or supplier, not a coding agent · **Expected wait:** ")
+                    .append(issue.agent().leadDays() == null ? 0 : issue.agent().leadDays())
+                    .append(" working days · **Owner effort:** ").append(issue.effortDays()).append(" person-days (")
+                    .append(text(issue.role(), 40)).append(") · **Priority:** ").append(issue.priority())
+                    .append("\n\n");
+        } else {
+            out.append("**Built by:** a coding agent (about ").append(issue.agent().agentHours())
+                    .append(" agent hours) · **Reviewed by:** ").append(text(issue.role(), 40)).append(" (")
+                    .append(issue.effortDays()).append(" person-days) · **Priority:** ").append(issue.priority())
+                    .append("\n\n")
+                    .append("**For the coding agent:** implement this story in one pull request that references this "
+                            + "issue. The acceptance criteria below are the definition of done: add tests that show each "
+                            + "one. A person reviews the pull request before it is merged.\n\n");
+        }
         out.append("### Acceptance criteria\n\n");
         for (String c : issue.criteria()) {
             String line = text(c, 1000);

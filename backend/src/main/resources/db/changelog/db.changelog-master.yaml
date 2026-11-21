@@ -108,3 +108,5 @@ databaseChangeLog:
   - include: { file: changes/0057-plan-push.sql, relativeToChangelogFile: true }
   # GD-34 (2026-11-21): change the sprint settings of a plan in review without rewriting it.
   - include: { file: changes/0058-plan-settings-change.sql, relativeToChangelogFile: true }
+  # GD-35 (2026-11-21): agent delivery mode for estimates and delivery plans.
+  - include: { file: changes/0059-agent-delivery.sql, relativeToChangelogFile: true }

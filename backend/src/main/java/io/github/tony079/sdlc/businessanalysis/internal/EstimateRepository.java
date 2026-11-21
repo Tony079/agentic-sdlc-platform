@@ -25,7 +25,13 @@ class EstimateRepository {
 
     record ItemRow(int ordinal, String itemKey, String title, String detail, String role, String phase,
                    String designRefsJson, BigDecimal low, BigDecimal likely, BigDecimal high, String assumptionsJson,
-                   String risk, String dependsOnJson, String flagsJson) {
+                   String risk, String dependsOnJson, String flagsJson, String kind, BigDecimal agentHours,
+                   BigDecimal leadDays) {
+
+        /** GD-35: work outside the code, waiting on a person or supplier. */
+        boolean external() {
+            return "EXTERNAL".equals(kind);
+        }
     }
 
     record AdjustmentRow(String itemKey, BigDecimal low, BigDecimal likely, BigDecimal high, String reason,
@@ -117,26 +123,29 @@ class EstimateRepository {
         jdbc.sql("""
                 INSERT INTO app.estimate_item (tenant_id, project_id, estimate_version_id, ordinal, item_key, title, detail,
                                                role, phase, design_refs, low_days, likely_days, high_days, assumptions,
-                                               risk, depends_on, flags)
+                                               risk, depends_on, flags, kind, agent_hours, lead_days)
                 VALUES (:t, :p, :v, :o, :k, :title, :detail, :role, :phase, :refs::jsonb, :low, :likely, :high,
-                        :assumptions::jsonb, :risk, :deps::jsonb, :flags::jsonb)
+                        :assumptions::jsonb, :risk, :deps::jsonb, :flags::jsonb, :kind, CAST(:agent AS numeric),
+                        CAST(:lead AS numeric))
                 """).param("t", tenantId).param("p", projectId).param("v", versionId).param("o", item.ordinal())
                 .param("k", item.itemKey()).param("title", item.title()).param("detail", item.detail())
                 .param("role", item.role()).param("phase", item.phase()).param("refs", item.designRefsJson())
                 .param("low", item.low()).param("likely", item.likely()).param("high", item.high())
                 .param("assumptions", item.assumptionsJson()).param("risk", item.risk())
-                .param("deps", item.dependsOnJson()).param("flags", item.flagsJson()).update();
+                .param("deps", item.dependsOnJson()).param("flags", item.flagsJson())
+                .param("kind", item.kind() == null ? "WORK" : item.kind()).param("agent", item.agentHours())
+                .param("lead", item.leadDays()).update();
     }
 
     List<ItemRow> items(UUID versionId) {
         return jdbc.sql("""
                 SELECT ordinal, item_key, title, detail, role, phase, design_refs::text, low_days, likely_days, high_days,
-                       assumptions::text, risk, depends_on::text, flags::text
+                       assumptions::text, risk, depends_on::text, flags::text, kind, agent_hours, lead_days
                 FROM app.estimate_item WHERE estimate_version_id = :v ORDER BY ordinal
                 """).param("v", versionId).query((rs, n) -> new ItemRow(rs.getInt(1), rs.getString(2), rs.getString(3),
                         rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7), rs.getBigDecimal(8),
                         rs.getBigDecimal(9), rs.getBigDecimal(10), rs.getString(11), rs.getString(12), rs.getString(13),
-                        rs.getString(14))).list();
+                        rs.getString(14), rs.getString(15), rs.getBigDecimal(16), rs.getBigDecimal(17))).list();
     }
 
     void insertAdjustment(UUID tenantId, UUID projectId, UUID versionId, String itemKey, BigDecimal low,

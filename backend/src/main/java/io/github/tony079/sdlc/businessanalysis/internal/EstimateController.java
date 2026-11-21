@@ -80,12 +80,12 @@ class EstimateController {
                 body != null && Boolean.TRUE.equals(body.get("confirmApproveAlone")));
     }
 
-    record ChangeText(@Size(max = 5000) String text) {
+    record ChangeText(@Size(max = 5000) String text, Map<String, Object> settings) {
     }
 
     @PostMapping(BASE + "/request-changes")
     EstimateState requestChanges(@PathVariable UUID id, @RequestBody ChangeText body) {
-        return estimates.requestChanges(id, body.text());
+        return estimates.requestChanges(id, body.text(), body.settings());
     }
 
     @GetMapping(BASE + "/export")

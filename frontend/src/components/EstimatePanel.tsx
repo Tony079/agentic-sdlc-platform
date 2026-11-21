@@ -21,6 +21,13 @@ const FLAG_LABEL: Record<string, string> = {
   UNCERTAIN: 'Wide range: the high figure is more than three times the low one',
   LARGE: 'Large item: consider splitting it',
 };
+// GD-35: agent delivery mode.
+const AGENT_FLAG_LABEL: Record<string, string> = {
+  CLIPPED: 'Figures were out of range and were corrected',
+  UNCERTAIN: 'Wide review range: the high figure is more than five times the low one',
+  LARGE: 'More than 16 agent hours: split it into smaller agent tasks',
+};
+type Mode = 'AGENT' | 'HUMAN';
 
 interface Settings {
   team: Partial<Record<Role, number>>;
@@ -28,6 +35,9 @@ interface Settings {
   contingencyPercent: number;
   currency: string | null;
   dayRates: Partial<Record<Role, number>> | null;
+  deliveryMode?: Mode;
+  agentSlots?: number;
+  agentCostPerHour?: number | null;
 }
 
 interface Adjustment { low: number; likely: number; high: number; reason: string; by: string; at: string }
@@ -53,6 +63,9 @@ interface EstimateItem {
   flags: string[];
   accepted: boolean;
   adjustments: Adjustment[];
+  kind?: 'WORK' | 'EXTERNAL';
+  agentHours?: number | null;
+  leadDays?: number | null;
 }
 
 interface Coverage { designKey: string; section: string; title: string; covered: boolean; accepted: boolean; coveredBy: string[] }
@@ -64,6 +77,8 @@ interface RoleLine {
 interface Summary {
   effort: Range; effortWithContingency: Range; byRole: RoleLine[]; weeks: Range; criticalPathWeeks: number;
   costP50: number | null; costP85: number | null; currency: string | null; contingencyPercent: number; notes: string[];
+  deliveryMode?: Mode; agentHours?: number; waves?: number; external?: number; longestLeadDays?: number;
+  aiCost?: number | null;
 }
 
 interface EstimateVersion {
@@ -111,28 +126,43 @@ const range = (r: Range) => `${one(r.p50)} – ${one(r.p85)}`;
 const money = (currency: string, n: number) => `${currency} ${Math.round(n).toLocaleString()}`;
 
 function SettingsForm({ initial, busy, onStart }: { initial: Settings; busy: boolean; onStart: (s: Settings) => void }) {
-  const [s, setS] = useState<Settings>(initial);
-  const [priced, setPriced] = useState(!!initial.dayRates && Object.keys(initial.dayRates).length > 0);
+  const [s, setS] = useState<Settings>({ ...initial, deliveryMode: initial.deliveryMode ?? 'AGENT', agentSlots: initial.agentSlots ?? 4 });
+  const [priced, setPriced] = useState((!!initial.dayRates && Object.keys(initial.dayRates).length > 0) || !!initial.agentCostPerHour);
+  const agent = s.deliveryMode === 'AGENT';
   const setTeam = (role: Role, n: number) => setS({ ...s, team: { ...s.team, [role]: n } });
   const setRate = (role: Role, n: number) => setS({ ...s, dayRates: { ...(s.dayRates ?? {}), [role]: n } });
   return (
     <form className="stack" onSubmit={(e) => {
       e.preventDefault();
-      onStart(priced ? s : { ...s, currency: null, dayRates: null });
+      const sent = agent ? s : { ...s, agentSlots: undefined, agentCostPerHour: undefined };
+      onStart(priced ? sent : { ...sent, currency: null, dayRates: null, agentCostPerHour: null });
     }}>
+      <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend className="label">Who builds it</legend>
+        <label className="check">
+          <input type="radio" name="deliveryMode" checked={agent} onChange={() => setS({ ...s, deliveryMode: 'AGENT' })} />
+          <span><strong>Coding agents, reviewed by people</strong> (recommended). Each work item is one agent task; the
+            estimate counts agent hours, people’s review time and outside work (approvals, accounts, suppliers).</span>
+        </label>
+        <label className="check">
+          <input type="radio" name="deliveryMode" checked={!agent} onChange={() => setS({ ...s, deliveryMode: 'HUMAN' })} />
+          <span><strong>A human team</strong>: person-days of development per role.</span>
+        </label>
+      </fieldset>
       <p className="small">
-        The Estimation agent proposes the work items and their effort; Garuda computes the totals, the timeline for this team
-        and, with day rates, the cost. These settings are remembered for the project.
+        The Estimation agent proposes the work items and their effort; Garuda computes the totals, the timeline for
+        {agent ? ' these reviewers and coding agents' : ' this team'} and, with rates, the cost. These settings are
+        remembered for the project.
       </p>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Role</th><th>People</th>{priced && <th>Day rate</th>}</tr></thead>
+          <thead><tr><th>Role</th><th>{agent ? 'Reviewers' : 'People'}</th>{priced && <th>Day rate</th>}</tr></thead>
           <tbody>
             {ROLES.map((role) => (
               <tr key={role}>
                 <td>{ROLE_LABEL[role]}</td>
                 <td>
-                  <input type="number" min={0} max={50} aria-label={`${ROLE_LABEL[role]} people`} value={s.team[role] ?? 0}
+                  <input type="number" min={0} max={50} aria-label={`${ROLE_LABEL[role]} ${agent ? 'reviewers' : 'people'}`} value={s.team[role] ?? 0}
                     onChange={(e) => setTeam(role, Number(e.target.value))} style={{ width: '5rem' }} />
                 </td>
                 {priced && (
@@ -152,6 +182,13 @@ function SettingsForm({ initial, busy, onStart }: { initial: Settings; busy: boo
           <input type="number" min={1} max={7} value={s.daysPerWeek}
             onChange={(e) => setS({ ...s, daysPerWeek: Number(e.target.value) })} style={{ width: '5rem' }} />
         </label>
+        {agent && (
+          <label>
+            Coding agents working at once
+            <input type="number" min={1} max={50} value={s.agentSlots ?? 4}
+              onChange={(e) => setS({ ...s, agentSlots: Number(e.target.value) })} style={{ width: '5rem' }} />
+          </label>
+        )}
         <label>
           Contingency %
           <input type="number" min={0} max={100} value={s.contingencyPercent}
@@ -160,13 +197,20 @@ function SettingsForm({ initial, busy, onStart }: { initial: Settings; busy: boo
       </div>
       <label className="check">
         <input type="checkbox" checked={priced} onChange={(e) => setPriced(e.target.checked)} />
-        <span>Include cost (day rate per role)</span>
+        <span>Include cost ({agent ? 'reviewers’ day rates and AI cost per agent hour' : 'day rate per role'})</span>
       </label>
       {priced && (
         <label>
           Currency (ISO code, for example INR or USD)
           <input value={s.currency ?? ''} maxLength={3} onChange={(e) => setS({ ...s, currency: e.target.value.toUpperCase() })}
             style={{ width: '6rem' }} />
+        </label>
+      )}
+      {priced && agent && (
+        <label>
+          AI cost per agent hour (in the currency above)
+          <input type="number" min={0} step="0.5" value={s.agentCostPerHour ?? 0}
+            onChange={(e) => setS({ ...s, agentCostPerHour: Number(e.target.value) })} style={{ width: '8rem' }} />
         </label>
       )}
       <div className="row">
@@ -176,10 +220,12 @@ function SettingsForm({ initial, busy, onStart }: { initial: Settings; busy: boo
   );
 }
 
-function AdjustForm({ item, busy, onSave, onCancel }: {
+function AdjustForm({ item, busy, onSave, onCancel, agent = false }: {
   item: EstimateItem; busy: boolean; onSave: (low: number, likely: number, high: number, reason: string) => void;
-  onCancel: () => void;
+  onCancel: () => void; agent?: boolean;
 }) {
+  const unit = agent ? 'review days' : 'days';
+  const min = agent ? 0.1 : 0.25;
   const [low, setLow] = useState(item.low);
   const [likely, setLikely] = useState(item.likely);
   const [high, setHigh] = useState(item.high);
@@ -191,9 +237,9 @@ function AdjustForm({ item, busy, onSave, onCancel }: {
       onSave(low, likely, high, reason.trim());
     }}>
       <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
-        <label>Low days<input type="number" step="0.25" min={0.25} value={low} onChange={(e) => setLow(Number(e.target.value))} style={{ width: '6rem' }} /></label>
-        <label>Likely days<input type="number" step="0.25" min={0.25} value={likely} onChange={(e) => setLikely(Number(e.target.value))} style={{ width: '6rem' }} /></label>
-        <label>High days<input type="number" step="0.25" min={0.25} value={high} onChange={(e) => setHigh(Number(e.target.value))} style={{ width: '6rem' }} /></label>
+        <label>Low {unit}<input type="number" step={min} min={min} value={low} onChange={(e) => setLow(Number(e.target.value))} style={{ width: '6rem' }} /></label>
+        <label>Likely {unit}<input type="number" step={min} min={min} value={likely} onChange={(e) => setLikely(Number(e.target.value))} style={{ width: '6rem' }} /></label>
+        <label>High {unit}<input type="number" step={min} min={min} value={high} onChange={(e) => setHigh(Number(e.target.value))} style={{ width: '6rem' }} /></label>
       </div>
       <label>
         Reason (10 to 1000 characters; shown with the estimate)
@@ -253,13 +299,15 @@ export function EstimatePanel({ requirementId }: { requirementId: string }) {
   const showContent = data.canSee && version && version.status !== 'GENERATING' && version.status !== 'FAILED';
   const s = version?.summary ?? null;
   const gaps = version?.coverage.filter((c) => !c.covered) ?? [];
+  const agent = version?.settings.deliveryMode === 'AGENT';
+  const flagLabel = agent ? AGENT_FLAG_LABEL : FLAG_LABEL;
 
   return (
     <FoldSection
       label="Estimate"
       title="Estimate"
       foldKey={`fold:${requirementId}:estimate`}
-      summary={showContent && s ? `Version ${version.versionNo} · ${range(s.effortWithContingency)} person-days` : undefined}
+      summary={showContent && s ? `Version ${version.versionNo} · ${agent ? `${one(s.agentHours ?? 0)} agent hours, ${range(s.effortWithContingency)} review days` : `${range(s.effortWithContingency)} person-days`}` : undefined}
       actions={
         <>
           {data.canSee && review.stage === 'APPROVED' && (
@@ -321,13 +369,21 @@ export function EstimatePanel({ requirementId }: { requirementId: string }) {
           {s && (
             <div className="stack">
               <div className="row" style={{ gap: '1.5rem', flexWrap: 'wrap' }}>
-                <div><div className="label">Effort (person-days)</div><strong>{range(s.effortWithContingency)}</strong>
+                {agent && (
+                  <div><div className="label">Coding agents (hours)</div><strong>{one(s.agentHours ?? 0)}</strong>
+                    <div className="small">in {s.waves ?? 0} waves · {version.settings.agentSlots ?? 1} at once</div></div>
+                )}
+                <div><div className="label">{agent ? 'People’s review (person-days)' : 'Effort (person-days)'}</div><strong>{range(s.effortWithContingency)}</strong>
                   <div className="small">incl. {s.contingencyPercent}% contingency</div></div>
                 <div><div className="label">Timeline (weeks)</div><strong>{range(s.weeks)}</strong>
-                  <div className="small">for the team in the settings</div></div>
+                  <div className="small">{agent ? 'agents, reviewers and outside waits' : 'for the team in the settings'}</div></div>
+                {agent && (s.external ?? 0) > 0 && (
+                  <div><div className="label">Outside work</div><strong>{s.external}</strong>
+                    <div className="small">longest wait {one(s.longestLeadDays ?? 0)} days</div></div>
+                )}
                 {s.costP50 != null && s.costP85 != null && s.currency && (
                   <div><div className="label">Cost</div><strong>{money(s.currency, s.costP50)} – {money(s.currency, s.costP85)}</strong>
-                    <div className="small">from the day rates</div></div>
+                    <div className="small">{agent && s.aiCost != null ? `incl. ${money(s.currency, s.aiCost)} AI cost` : 'from the day rates'}</div></div>
                 )}
               </div>
               <p className="small">
@@ -336,7 +392,7 @@ export function EstimatePanel({ requirementId }: { requirementId: string }) {
               </p>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Role</th><th>People</th><th>Person-days</th><th>Weeks</th>{s.costP50 != null && <th>Cost</th>}</tr></thead>
+                  <thead><tr><th>Role</th><th>{agent ? 'Reviewers' : 'People'}</th><th>{agent ? 'Review days' : 'Person-days'}</th><th>Weeks</th>{s.costP50 != null && <th>Cost</th>}</tr></thead>
                   <tbody>
                     {s.byRole.map((r) => (
                       <tr key={r.role}>
@@ -383,8 +439,11 @@ export function EstimatePanel({ requirementId }: { requirementId: string }) {
                   <li key={item.itemKey} className={item.flags.length > 0 && !item.accepted && item.adjustments.length === 0 ? 'support-flagged' : ''}>
                     <span className="label">{ROLE_LABEL[item.role] ?? item.role}</span> <strong>{item.title}</strong>
                     <div style={{ margin: '0.2rem 0' }}>{item.detail}</div>
+                    {agent && (item.kind === 'EXTERNAL'
+                      ? <div><Badge tone="warning">Outside work: a person or supplier, waits about {one(item.leadDays ?? 0)} days</Badge></div>
+                      : <div><Badge tone="info">Coding agent · about {one(item.agentHours ?? 0)} hours</Badge></div>)}
                     <div className="small">
-                      {one(item.low)} / {one(item.likely)} / {one(item.high)} days (low / likely / high) · expected {one(item.expected)}
+                      {one(item.low)} / {one(item.likely)} / {one(item.high)} {agent ? (item.kind === 'EXTERNAL' ? 'days of the owner’s effort' : 'review days') : 'days'} (low / likely / high) · expected {one(item.expected)}
                       {item.dependsOn.length > 0 && ` · after: ${item.dependsOn.join('; ')}`}
                     </div>
                     {item.adjustments.slice(-1).map((a) => (
@@ -395,7 +454,7 @@ export function EstimatePanel({ requirementId }: { requirementId: string }) {
                     ))}
                     {item.assumptions.length > 0 && <div className="small">Assumes: {item.assumptions.join('; ')}</div>}
                     {item.risk && <div className="small">Risk: {item.risk}</div>}
-                    {item.flags.map((f) => <div key={f}><Badge tone="warning">{FLAG_LABEL[f] ?? f}</Badge></div>)}
+                    {item.flags.map((f) => <div key={f}><Badge tone="warning">{flagLabel[f] ?? f}</Badge></div>)}
                     {review.canAdjust && adjusting !== item.itemKey && (
                       <div className="row" style={{ marginTop: '0.3rem' }}>
                         <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => setAdjusting(item.itemKey)}>Adjust</button>
@@ -408,7 +467,7 @@ export function EstimatePanel({ requirementId }: { requirementId: string }) {
                       </div>
                     )}
                     {adjusting === item.itemKey && (
-                      <AdjustForm item={item} busy={busy} onCancel={() => setAdjusting(null)}
+                      <AdjustForm item={item} busy={busy} agent={agent} onCancel={() => setAdjusting(null)}
                         onSave={(low, likely, high, reason) => void act(`items/${encodeURIComponent(item.itemKey)}/adjust`,
                           { low, likely, high, reason }, 'Adjustment saved.')} />
                     )}
@@ -442,6 +501,15 @@ export function EstimatePanel({ requirementId }: { requirementId: string }) {
               )}
               {review.canRequestChanges && !changesOpen && (
                 <button type="button" className="btn-secondary" disabled={busy} onClick={() => setChangesOpen(true)}>Request a new version</button>
+              )}
+              {review.canRequestChanges && !agent && (
+                <button type="button" className="btn-secondary" disabled={busy}
+                  onClick={() => void act('request-changes', {
+                    text: 'Re-estimate for delivery by coding agents with human review: the same scope, as agent tasks, review time and outside work.',
+                    settings: { ...version.settings, deliveryMode: 'AGENT', agentSlots: version.settings.agentSlots ?? 4 },
+                  }, 'Re-estimating for coding agents. You are notified when the new version is ready.')}>
+                  Re-estimate for coding agents
+                </button>
               )}
             </div>
             {review.canRequestChanges && changesOpen && (

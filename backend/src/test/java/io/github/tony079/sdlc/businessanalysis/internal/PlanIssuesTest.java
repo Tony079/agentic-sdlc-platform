@@ -15,7 +15,7 @@ class PlanIssuesTest {
 
     private static PlanIssues.Issue issue(List<String> criteria, List<PlanIssues.Dependency> deps) {
         return new PlanIssues.Issue("story-b", "As a user, I want pages", "Portfolio", "Pages for every section.", 2,
-                "14 Dec 2026 to 20 Dec 2026", "Backend", "MUST", 3.0, criteria, deps, List.of("garuda"), "sprint-2");
+                "14 Dec 2026 to 20 Dec 2026", "Backend", "MUST", 3.0, criteria, deps, List.of("garuda"), "sprint-2", null);
     }
 
     @Test
@@ -38,5 +38,20 @@ class PlanIssuesTest {
         String ticked = fresh.replace("- [ ] Pages load fast", "- [x] Pages load fast");
         assertThat(PlanIssues.body(PAYLOAD, i, Map.of("story-a", 7), ticked))
                 .contains("- [x] Pages load fast").contains("- [ ] Every section is shown");
+    }
+
+    @Test
+    void agentDeliveryIssuesBriefTheCodingAgentAndMarkOutsideWork() {
+        PlanIssues.Issue built = new PlanIssues.Issue("story-a", "As a user, I want sign-in", "Accounts", "Sign-in.", 1,
+                "23 Nov 2026 to 24 Nov 2026", "Backend", "MUST", 0.5, List.of("Login works"), List.of(),
+                List.of("garuda", "agent-ready"), "wave-1", new PlanIssues.Agent(6, false, null));
+        String body = PlanIssues.body(PAYLOAD, built, Map.of(), null);
+        assertThat(body).contains("**Wave:** 1").contains("Built by:** a coding agent (about 6.0 agent hours)")
+                .contains("one pull request").contains("- [ ] Login works");
+        PlanIssues.Issue outside = new PlanIssues.Issue("story-x", "As an operator, I want OAuth apps registered",
+                null, null, 0, "23 Nov 2026 to 4 Dec 2026", "DevOps", "MUST", 0.5, List.of("Apps exist"), List.of(),
+                List.of("garuda", "outside-work"), "wave-0", new PlanIssues.Agent(0, true, 10.0));
+        assertThat(PlanIssues.body(PAYLOAD, outside, Map.of(), null)).contains("**Outside work**")
+                .contains("not a coding agent").contains("10.0 working days");
     }
 }

@@ -20,14 +20,24 @@ const FLAG_LABEL: Record<string, string> = {
   OVERSIZED: 'Larger than one sprint for this role: consider splitting it',
   CYCLE: 'Part of a dependency cycle',
   BEFORE_DEPENDENCY: 'Pinned to a sprint before a story it depends on',
+  AGENT_OVERSIZED: 'More than 16 agent hours: big for one agent task, consider splitting it',
 };
 
-interface Settings { sprintWeeks: number; startDate: string; daysPerWeek: number; team: Partial<Record<Role, number>> }
+interface Settings {
+  sprintWeeks: number; startDate: string; daysPerWeek: number; team: Partial<Record<Role, number>>;
+  /** GD-35: follows the estimate; AGENT plans waves for coding agents, the team are reviewers. */
+  deliveryMode?: 'AGENT' | 'HUMAN'; agentSlots?: number;
+}
 interface Edit { changes: Record<string, unknown>; reason: string; by: string; at: string }
 interface Story {
   storyKey: string; ordinal: number; epicKey: string; title: string; acceptanceCriteria: string[]; estimateRefs: string[];
   brdRefs: string[]; role: string; priority: string; dependsOn: string[]; effortDays: number; sprint: number | null;
   pinned: boolean; flags: string[]; accepted: boolean; edits: Edit[];
+  agentHours?: number; external?: boolean; leadDays?: number | null;
+}
+interface Wave {
+  number: number; start: string; end: string; stories: number; agentHours: number; buildDays: number;
+  reviewDays: number; reviewByRole: Record<string, number>; waitDays: number;
 }
 interface Epic { epicKey: string; title: string; goal: string; stories: number; effortDays: number }
 interface Gap { key: string; kind: 'ESTIMATE_ITEM' | 'BRD_CRITERION'; title: string; accepted: boolean }
@@ -40,6 +50,7 @@ interface PlanVersion {
   changeRequest: string | null; failureCode: string | null; attempts: number; createdAt: string; settings: Settings;
   risks: string[]; epics: Epic[]; stories: Story[]; sprints: Sprint[]; gaps: Gap[]; totalEffortDays: number;
   estimateEffortDays: number | null; notes: string[];
+  deliveryMode?: 'AGENT' | 'HUMAN'; waves?: Wave[]; agentHours?: number;
 }
 type Stage = 'ESTIMATE_NOT_APPROVED' | 'NOT_STARTED' | 'GENERATING' | 'FAILED' | 'IN_REVIEW' | 'APPROVED';
 interface PlanReview {
@@ -136,17 +147,29 @@ function SettingsForm({ initial, busy, onStart, submitLabel = 'Start delivery pl
   initial: Settings; busy: boolean; onStart: (s: Settings) => void; submitLabel?: string; intro?: string; onCancel?: () => void;
 }) {
   const [s, setS] = useState<Settings>(initial);
+  const agent = s.deliveryMode === 'AGENT';
   return (
     <form className="stack" onSubmit={(e) => { e.preventDefault(); onStart(s); }}>
+      {agent && (
+        <p className="small"><strong>Coding agents, reviewed by people</strong> (from the estimate): the plan is laid out
+          in waves of work the agents build in parallel, not in sprints.</p>
+      )}
       <p className="small">
         {intro ?? 'The Planning agent writes epics and user stories; Garuda gives each story its effort from the approved '
           + 'estimate and lays the stories out in sprints for this team. These settings are remembered for the project.'}
       </p>
       <div className="row" style={{ gap: '1rem', flexWrap: 'wrap' }}>
-        <label>Sprint length (weeks)
-          <input type="number" min={1} max={4} value={s.sprintWeeks} onChange={(e) => setS({ ...s, sprintWeeks: Number(e.target.value) })} style={{ width: '5rem' }} />
-        </label>
-        <label>First sprint starts
+        {!agent && (
+          <label>Sprint length (weeks)
+            <input type="number" min={1} max={4} value={s.sprintWeeks} onChange={(e) => setS({ ...s, sprintWeeks: Number(e.target.value) })} style={{ width: '5rem' }} />
+          </label>
+        )}
+        {agent && (
+          <label>Coding agents working at once
+            <input type="number" min={1} max={50} value={s.agentSlots ?? 4} onChange={(e) => setS({ ...s, agentSlots: Number(e.target.value) })} style={{ width: '5rem' }} />
+          </label>
+        )}
+        <label>{agent ? 'Work starts' : 'First sprint starts'}
           <input type="date" value={s.startDate} onChange={(e) => setS({ ...s, startDate: e.target.value })} />
         </label>
         <label>Working days per week
@@ -155,16 +178,17 @@ function SettingsForm({ initial, busy, onStart, submitLabel = 'Start delivery pl
       </div>
       <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
         {ROLES.map((role) => (
-          <label key={role}>{ROLE_LABEL[role]} people
-            <input type="number" min={0} max={50} aria-label={`${ROLE_LABEL[role]} people`} value={s.team[role] ?? 0}
+          <label key={role}>{ROLE_LABEL[role]} {agent ? 'reviewers' : 'people'}
+            <input type="number" min={0} max={50} aria-label={`${ROLE_LABEL[role]} ${agent ? 'reviewers' : 'people'}`} value={s.team[role] ?? 0}
               onChange={(e) => setS({ ...s, team: { ...s.team, [role]: Number(e.target.value) } })} style={{ width: '5rem' }} />
           </label>
         ))}
       </div>
       <p className="small">
-        Each role can take {s.daysPerWeek} × {s.sprintWeeks} = {s.daysPerWeek * s.sprintWeeks} days per person per sprint;
-        a story bigger than that is flagged for splitting.
-        {s.startDate && !isMonday(s.startDate) && ' The first sprint does not start on a Monday.'}
+        {agent
+          ? 'Each wave starts when the previous one is reviewed and any outside work it needs has arrived; reviewers of each role share the review time.'
+          : `Each role can take ${s.daysPerWeek} × ${s.sprintWeeks} = ${s.daysPerWeek * s.sprintWeeks} days per person per sprint; a story bigger than that is flagged for splitting.`}
+        {s.startDate && !isMonday(s.startDate) && (agent ? ' Work does not start on a Monday.' : ' The first sprint does not start on a Monday.')}
       </p>
       <div className="row">
         <button type="submit" className="btn-primary" disabled={busy}>{submitLabel}</button>
@@ -174,8 +198,9 @@ function SettingsForm({ initial, busy, onStart, submitLabel = 'Start delivery pl
   );
 }
 
-function EditForm({ story, busy, onSave, onCancel }: {
+function EditForm({ story, busy, onSave, onCancel, agent = false }: {
   story: Story; busy: boolean; onSave: (changes: Record<string, unknown>, reason: string) => void; onCancel: () => void;
+  agent?: boolean;
 }) {
   const [title, setTitle] = useState(story.title);
   const [criteria, setCriteria] = useState(story.acceptanceCriteria.join('\n'));
@@ -190,7 +215,7 @@ function EditForm({ story, busy, onSave, onCancel }: {
       const lines = criteria.split('\n').map((l) => l.trim()).filter(Boolean);
       if (lines.join('\n') !== story.acceptanceCriteria.join('\n')) changes.acceptanceCriteria = lines;
       if (priority !== story.priority) changes.priority = priority;
-      if (sprint !== story.sprint) changes.sprint = sprint;
+      if (!agent && sprint !== story.sprint) changes.sprint = sprint;
       onSave(changes, reason.trim());
     }}>
       <label>Story<input value={title} maxLength={300} onChange={(e) => setTitle(e.target.value)} /></label>
@@ -201,7 +226,7 @@ function EditForm({ story, busy, onSave, onCancel }: {
             <option value="MUST">Must</option><option value="SHOULD">Should</option><option value="COULD">Could</option>
           </select>
         </label>
-        <label>Sprint<input type="number" min={1} value={sprint} onChange={(e) => setSprint(Number(e.target.value))} style={{ width: '5rem' }} /></label>
+        {!agent && <label>Sprint<input type="number" min={1} value={sprint} onChange={(e) => setSprint(Number(e.target.value))} style={{ width: '5rem' }} /></label>}
       </div>
       <label>Reason (10 to 1000 characters; shown with the plan)<textarea value={reason} rows={2} maxLength={1000} onChange={(e) => setReason(e.target.value)} /></label>
       <div className="row">
@@ -259,6 +284,40 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
   const showContent = data.canSee && version && version.status !== 'GENERATING' && version.status !== 'FAILED';
   const epicTitle = (key: string) => version?.epics.find((e) => e.epicKey === key)?.title ?? '';
   const openGaps = version?.gaps.filter((g) => !g.accepted) ?? [];
+  const agent = version?.deliveryMode === 'AGENT';
+  const renderStory = (s: Story) => (
+                  <li key={s.storyKey} className={s.flags.length > 0 && !s.accepted && s.edits.length === 0 ? 'support-flagged' : ''}>
+                    <Badge tone={PRIORITY_TONE[s.priority] ?? 'neutral'}>{s.priority.toLowerCase()}</Badge>{' '}
+                    <span className="label">{ROLE_LABEL[s.role] ?? s.role}</span> <strong>{s.title}</strong>
+                    {(() => {
+                      const url = data.push?.issueUrls[s.storyKey];
+                      return url ? <> <a href={url} target="_blank" rel="noopener noreferrer" className="small">#{issueNumber(url)}</a></> : null;
+                    })()}
+                    <div className="small">{epicTitle(s.epicKey)} · {agent
+                      ? (s.external ? `outside work, waits about ${one(s.leadDays ?? 0)} days · ${one(s.effortDays)} days of the owner’s effort`
+                        : `coding agent about ${one(s.agentHours ?? 0)} h · review ${one(s.effortDays)} days`)
+                      : `${one(s.effortDays)} days`}{s.pinned && !agent && ' · sprint set by an Estimator'}
+                      {s.dependsOn.length > 0 && ` · after: ${s.dependsOn.join('; ')}`}</div>
+                    <ul className="small" style={{ margin: '0.2rem 0 0', paddingLeft: '1.1rem' }}>
+                      {s.acceptanceCriteria.map((c) => <li key={c}>{c}</li>)}
+                    </ul>
+                    {s.edits.slice(-1).map((e) => <div key={e.at} className="small">Edited by {e.by}: “{e.reason}”</div>)}
+                    {s.flags.map((f) => <div key={f}><Badge tone="warning">{FLAG_LABEL[f] ?? f}</Badge></div>)}
+                    {review.canEdit && editing !== s.storyKey && (
+                      <div className="row" style={{ marginTop: '0.3rem' }}>
+                        <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => setEditing(s.storyKey)}>Edit</button>
+                        {s.flags.length > 0 && !s.accepted && s.edits.length === 0 && (
+                          <button type="button" className="btn-ghost btn-sm" disabled={busy}
+                            onClick={() => void act(`flags/${encodeURIComponent(s.storyKey)}/accept`, {}, 'Story kept as proposed.')}>Keep as proposed</button>
+                        )}
+                      </div>
+                    )}
+                    {editing === s.storyKey && (
+                      <EditForm story={s} busy={busy} agent={agent} onCancel={() => setEditing(null)}
+                        onSave={(changes, reason) => void act(`stories/${encodeURIComponent(s.storyKey)}/edit`, { changes, reason }, 'Story updated.')} />
+                    )}
+                  </li>
+  );
   // Undecided flags by kind, so an Estimator can keep every story with the same flag in one go.
   const undecided: Record<string, number> = {};
   version?.stories.filter((st) => st.flags.length > 0 && !st.accepted && st.edits.length === 0)
@@ -269,7 +328,7 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
       label="Delivery plan"
       title="Delivery plan"
       foldKey={`fold:${requirementId}:plan`}
-      summary={showContent && version ? `${version.stories.length} stories · ${version.sprints.length} sprints` : undefined}
+      summary={showContent && version ? `${version.stories.length} stories · ${agent ? `${(version.waves ?? []).filter((w) => w.number > 0).length} waves` : `${version.sprints.length} sprints`}` : undefined}
       actions={
         <>
           {data.canSee && review.stage === 'APPROVED' && (
@@ -329,29 +388,44 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
           </p>
           <div className="row" style={{ gap: '1.5rem', flexWrap: 'wrap' }}>
             <div><div className="label">Stories</div><strong>{version.stories.length}</strong><div className="small">in {version.epics.length} epics</div></div>
-            <div><div className="label">Sprints</div><strong>{version.sprints.length}</strong>
-              <div className="small">{(() => {
-                const first = version.sprints[0];
-                const last = version.sprints[version.sprints.length - 1];
-                return first && last ? `${day(first.start)} – ${day(last.end)}` : '';
-              })()}</div></div>
-            <div><div className="label">Effort (person-days)</div><strong>{one(version.totalEffortDays)}</strong>
+            {agent ? (
+              <>
+                <div><div className="label">Waves</div><strong>{(version.waves ?? []).filter((w) => w.number > 0).length}</strong>
+                  <div className="small">{(() => {
+                    const all = version.waves ?? [];
+                    const first = all[0];
+                    const last = all.reduce<Wave | undefined>((a, w) => (!a || w.end > a.end ? w : a), undefined);
+                    return first && last ? `${day(first.start)} – ${day(last.end)}` : '';
+                  })()}</div></div>
+                <div><div className="label">Coding agents (hours)</div><strong>{one(version.agentHours ?? 0)}</strong>
+                  <div className="small">{version.settings.agentSlots ?? 1} at once</div></div>
+              </>
+            ) : (
+              <div><div className="label">Sprints</div><strong>{version.sprints.length}</strong>
+                <div className="small">{(() => {
+                  const first = version.sprints[0];
+                  const last = version.sprints[version.sprints.length - 1];
+                  return first && last ? `${day(first.start)} – ${day(last.end)}` : '';
+                })()}</div></div>
+            )}
+            <div><div className="label">{agent ? 'People’s review (person-days)' : 'Effort (person-days)'}</div><strong>{one(version.totalEffortDays)}</strong>
               <div className="small">{version.estimateEffortDays != null ? `estimate: ${one(version.estimateEffortDays)}` : 'from the approved estimate'}</div></div>
           </div>
           {version.notes.map((n) => <p key={n} className="small">{n}</p>)}
           {review.canEdit && !review.estimateOutdated && !settingsOpen && (
             <div className="row">
               <button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => setSettingsOpen(true)}>
-                Change sprint settings
+                {agent ? 'Change plan settings' : 'Change sprint settings'}
               </button>
               <span className="small">
-                {version.settings.sprintWeeks}-week sprints from {day(version.settings.startDate)},{' '}
+                {agent ? `${version.settings.agentSlots ?? 1} coding agents at once from ${day(version.settings.startDate)}, reviewers: `
+                  : `${version.settings.sprintWeeks}-week sprints from ${day(version.settings.startDate)}, `}
                 {Object.entries(version.settings.team).filter(([, n]) => (n ?? 0) > 0).map(([r, n]) => `${n} ${ROLE_LABEL[r] ?? r}`).join(', ')}
               </span>
             </div>
           )}
           {review.canEdit && settingsOpen && (
-            <SettingsForm initial={version.settings} busy={busy} submitLabel="Apply new sprint settings"
+            <SettingsForm initial={version.settings} busy={busy} submitLabel={agent ? 'Apply new settings' : 'Apply new sprint settings'}
               intro="Garuda makes a new version with the same stories and your edits, and lays out the sprints again. No new writing by the agent; decisions on flags are made again because the flags change with the sprints."
               onCancel={() => setSettingsOpen(false)}
               onStart={(settings) => void act('settings', { settings }, 'Laying out the sprints again with the same stories.')} />
@@ -385,6 +459,23 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
             </Callout>
           )}
 
+          {agent && (version.waves ?? []).map((w) => (
+            <section key={w.number} aria-label={w.number === 0 ? 'Outside work' : `Wave ${w.number}`}>
+              <h3>
+                {w.number === 0 ? 'Outside work: start now' : `Wave ${w.number}`}{' '}
+                <span className="small">{day(w.start)} – {day(w.end)}</span>
+              </h3>
+              <p className="small">
+                {w.number === 0
+                  ? `Waits on people or suppliers outside the code; the longest wait is about ${one(w.waitDays)} working days.`
+                  : `${w.stories} stories · coding agents about ${one(w.agentHours)} h (${one(w.buildDays)} days) · people’s review ${one(w.reviewDays)} days`
+                    + (w.waitDays > 0 ? ` · waits ${one(w.waitDays)} days for outside work` : '')}
+              </p>
+              <ul className="brd-items">
+                {version.stories.filter((s) => s.sprint === w.number).map(renderStory)}
+              </ul>
+            </section>
+          ))}
           {version.sprints.map((sp) => (
             <section key={sp.number} aria-label={`Sprint ${sp.number}`}>
               <h3>
@@ -395,36 +486,7 @@ export function PlanPanel({ requirementId }: { requirementId: string }) {
                 {Object.entries(sp.load).map(([role, load]) => `${ROLE_LABEL[role] ?? role} ${one(load)} of ${one(sp.capacity[role] ?? 0)} days`).join(' · ')}
               </p>
               <ul className="brd-items">
-                {version.stories.filter((s) => s.sprint === sp.number).map((s) => (
-                  <li key={s.storyKey} className={s.flags.length > 0 && !s.accepted && s.edits.length === 0 ? 'support-flagged' : ''}>
-                    <Badge tone={PRIORITY_TONE[s.priority] ?? 'neutral'}>{s.priority.toLowerCase()}</Badge>{' '}
-                    <span className="label">{ROLE_LABEL[s.role] ?? s.role}</span> <strong>{s.title}</strong>
-                    {(() => {
-                      const url = data.push?.issueUrls[s.storyKey];
-                      return url ? <> <a href={url} target="_blank" rel="noopener noreferrer" className="small">#{issueNumber(url)}</a></> : null;
-                    })()}
-                    <div className="small">{epicTitle(s.epicKey)} · {one(s.effortDays)} days{s.pinned && ' · sprint set by an Estimator'}
-                      {s.dependsOn.length > 0 && ` · after: ${s.dependsOn.join('; ')}`}</div>
-                    <ul className="small" style={{ margin: '0.2rem 0 0', paddingLeft: '1.1rem' }}>
-                      {s.acceptanceCriteria.map((c) => <li key={c}>{c}</li>)}
-                    </ul>
-                    {s.edits.slice(-1).map((e) => <div key={e.at} className="small">Edited by {e.by}: “{e.reason}”</div>)}
-                    {s.flags.map((f) => <div key={f}><Badge tone="warning">{FLAG_LABEL[f] ?? f}</Badge></div>)}
-                    {review.canEdit && editing !== s.storyKey && (
-                      <div className="row" style={{ marginTop: '0.3rem' }}>
-                        <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => setEditing(s.storyKey)}>Edit</button>
-                        {s.flags.length > 0 && !s.accepted && s.edits.length === 0 && (
-                          <button type="button" className="btn-ghost btn-sm" disabled={busy}
-                            onClick={() => void act(`flags/${encodeURIComponent(s.storyKey)}/accept`, {}, 'Story kept as proposed.')}>Keep as proposed</button>
-                        )}
-                      </div>
-                    )}
-                    {editing === s.storyKey && (
-                      <EditForm story={s} busy={busy} onCancel={() => setEditing(null)}
-                        onSave={(changes, reason) => void act(`stories/${encodeURIComponent(s.storyKey)}/edit`, { changes, reason }, 'Story updated.')} />
-                    )}
-                  </li>
-                ))}
+                {version.stories.filter((s) => s.sprint === sp.number).map(renderStory)}
               </ul>
             </section>
           ))}

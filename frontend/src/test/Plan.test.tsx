@@ -110,4 +110,29 @@ describe('PlanPanel (GD-34)', () => {
     const post = calls.find((c) => c.url.endsWith('/plan/settings'));
     expect(JSON.parse(String(post?.init.body)).settings).toMatchObject({ sprintWeeks: 2, startDate: '2026-12-07', team: { BACKEND: 1 } });
   });
+
+  it('shows an agent-delivery plan in waves, with outside work first (GD-35)', async () => {
+    const waves = {
+      ...version, deliveryMode: 'AGENT', agentHours: 14, sprints: [],
+      settings: { ...version.settings, deliveryMode: 'AGENT', agentSlots: 2, startDate: '2026-11-23' },
+      stories: [
+        story({ storyKey: 'oauth', title: 'As an operator, I want OAuth apps', sprint: 0, external: true, leadDays: 5, effortDays: 0.5 }),
+        story({ storyKey: 'story-a', sprint: 1, agentHours: 6, effortDays: 1 }),
+      ],
+      waves: [
+        { number: 0, start: '2026-11-23', end: '2026-11-27', stories: 1, agentHours: 0, buildDays: 0, reviewDays: 0.5, reviewByRole: {}, waitDays: 5 },
+        { number: 1, start: '2026-11-23', end: '2026-11-24', stories: 1, agentHours: 6, buildDays: 0.75, reviewDays: 1, reviewByRole: {}, waitDays: 0 },
+      ],
+    };
+    mockFetch((url) => ({ status: 200, body: url.endsWith('/plan')
+      ? { requirementId: 'r1', canSee: true, insider: true, review: review({ unacceptedFlags: [] }), version: waves, history: [], defaults: null, push: null }
+      : [] }));
+    renderWithProviders(<PlanPanel requirementId="r1" />);
+    const outside = await screen.findByRole('region', { name: 'Outside work' });
+    expect(within(outside).getByText(/waits about 5 days/)).toBeInTheDocument();
+    const wave1 = screen.getByRole('region', { name: 'Wave 1' });
+    expect(within(wave1).getByText(/coding agent about 6 h · review 1 days/)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /Sprint/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change plan settings' })).toBeInTheDocument();
+  });
 });

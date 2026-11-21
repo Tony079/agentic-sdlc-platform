@@ -47,6 +47,9 @@ class EstimateGenerationHandler implements JobHandler<EstimateGenerationHandler.
     static final String JOB_TYPE = "ESTIMATE_GENERATION";
     static final int PREVIOUS_MAX_CHARS = 80_000;
 
+    /** GD-35: settings of an agent-mode estimate (canonical JSON written by EstimateService.validSettings). */
+    static final java.util.regex.Pattern AGENT_MODE = java.util.regex.Pattern.compile("\"deliveryMode\"\\s*:\\s*\"AGENT\"");
+
     record Outcome(UUID versionId, String assumptionsJson, String excludedJson, List<ItemRow> items,
                    String contentHash, String provider, String modelId) {
     }
@@ -124,14 +127,34 @@ class EstimateGenerationHandler implements JobHandler<EstimateGenerationHandler.
             }
             activity.step(requirementId, stage, versionId, "Breaking the design into work items with effort ranges. "
                     + "This takes from about a minute to several minutes for a large design.");
-            ModelResponse<EstimateContracts.Proposal> response = gateway.generate(new ModelRequest<>(
-                    BaPrompts.EST_ITEMS, data, EstimateContracts.Proposal.class, requirementId,
-                    BaAnalysisHandler.LONG_OUTPUT_TOKENS, BaAnalysisHandler.LONG_CALL_TIMEOUT)
-                    .withProgress(DraftWatcher.estimate(activity, requirementId, versionId, json)));
-            describer.repaired(activity, requirementId, stage, versionId, response);
+            boolean agentMode = AGENT_MODE.matcher(inputs.version().settingsJson()).find();
             Set<String> designKeys = new LinkedHashSet<>();
             inputs.design().forEach(i -> designKeys.add(i.itemKey()));
-            List<EstimateCalculator.Prepared> prepared = EstimateCalculator.prepare(response.output().items(), designKeys);
+            List<EstimateCalculator.Prepared> prepared;
+            ModelResponse<?> response;
+            List<String> assumptionList;
+            List<String> excludedList;
+            if (agentMode) {
+                // GD-35: coding agents build, people review; outside work is listed with its calendar wait.
+                ModelResponse<EstimateContracts.AgentProposal> r = gateway.generate(new ModelRequest<>(
+                        BaPrompts.EST_ITEMS_AGENT, data, EstimateContracts.AgentProposal.class, requirementId,
+                        BaAnalysisHandler.LONG_OUTPUT_TOKENS, BaAnalysisHandler.LONG_CALL_TIMEOUT)
+                        .withProgress(DraftWatcher.estimate(activity, requirementId, versionId, json)));
+                response = r;
+                prepared = EstimateCalculator.prepareAgent(r.output().items(), designKeys);
+                assumptionList = r.output().assumptions();
+                excludedList = r.output().excluded();
+            } else {
+                ModelResponse<EstimateContracts.Proposal> r = gateway.generate(new ModelRequest<>(
+                        BaPrompts.EST_ITEMS, data, EstimateContracts.Proposal.class, requirementId,
+                        BaAnalysisHandler.LONG_OUTPUT_TOKENS, BaAnalysisHandler.LONG_CALL_TIMEOUT)
+                        .withProgress(DraftWatcher.estimate(activity, requirementId, versionId, json)));
+                response = r;
+                prepared = EstimateCalculator.prepare(r.output().items(), designKeys);
+                assumptionList = r.output().assumptions();
+                excludedList = r.output().excluded();
+            }
+            describer.repaired(activity, requirementId, stage, versionId, response);
             List<ItemRow> items = new ArrayList<>();
             int ordinal = 0;
             for (EstimateCalculator.Prepared p : prepared) {
@@ -140,7 +163,9 @@ class EstimateGenerationHandler implements JobHandler<EstimateGenerationHandler.
                         json.writeValueAsString(p.designRefs()), BigDecimal.valueOf(p.low()),
                         BigDecimal.valueOf(p.likely()), BigDecimal.valueOf(p.high()),
                         json.writeValueAsString(p.assumptions()), p.risk(), json.writeValueAsString(p.dependsOn()),
-                        json.writeValueAsString(p.flags())));
+                        json.writeValueAsString(p.flags()), p.kind(),
+                        p.agentHours() == null ? null : BigDecimal.valueOf(p.agentHours()),
+                        p.leadDays() == null ? null : BigDecimal.valueOf(p.leadDays())));
             }
             long flagged = prepared.stream().filter(p -> !p.flags().isEmpty()).count();
             Set<String> covered = new LinkedHashSet<>();
@@ -150,8 +175,8 @@ class EstimateGenerationHandler implements JobHandler<EstimateGenerationHandler.
                     + ActivityLog.count(items.size(), "work item") + ". " + flagged + " flagged for review; "
                     + (gaps == 0 ? "every design item is covered." : ActivityLog.count((int) gaps, "design item")
                     + " not covered yet."));
-            String assumptions = json.writeValueAsString(response.output().assumptions());
-            String excluded = json.writeValueAsString(response.output().excluded());
+            String assumptions = json.writeValueAsString(assumptionList);
+            String excluded = json.writeValueAsString(excludedList);
             return new Outcome(versionId, assumptions, excluded, items, contentHash(items, assumptions, excluded),
                     response.provider(), response.modelId());
         } catch (ModelException e) {

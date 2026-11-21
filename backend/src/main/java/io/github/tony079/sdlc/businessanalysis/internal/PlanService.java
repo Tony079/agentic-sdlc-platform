@@ -58,7 +58,12 @@ class PlanService {
     record StoryV(String storyKey, int ordinal, String epicKey, String title, List<String> acceptanceCriteria,
                   List<String> estimateRefs, List<String> brdRefs, String role, String priority, List<String> dependsOn,
                   double effortDays, Integer sprint, boolean pinned, List<String> flags, boolean accepted,
-                  List<EditV> edits) {
+                  List<EditV> edits, double agentHours, boolean external, Double leadDays) {
+    }
+
+    /** GD-35: one wave of agent delivery (0: outside work). */
+    record WaveV(int number, java.time.LocalDate start, java.time.LocalDate end, int stories, double agentHours,
+                 double buildDays, double reviewDays, Map<String, Double> reviewByRole, double waitDays) {
     }
 
     record EpicV(String epicKey, String title, String goal, int stories, double effortDays) {
@@ -75,7 +80,7 @@ class PlanService {
                     String changeRequest, String failureCode, int attempts, OffsetDateTime createdAt,
                     Map<String, Object> settings, List<String> risks, List<EpicV> epics, List<StoryV> stories,
                     List<SprintV> sprints, List<GapV> gaps, double totalEffortDays, Double estimateEffortDays,
-                    List<String> notes) {
+                    List<String> notes, String deliveryMode, List<WaveV> waves, double agentHours) {
     }
 
     record ReviewV(String stage, boolean isEstimator, boolean isApprover, boolean canStart, boolean canRetry,
@@ -253,7 +258,9 @@ class PlanService {
             }
             effective.put(s.storyKey(), new Object[] {title, criteria, priority, pinned});
             schedulable.add(new PlanCalculator.Schedulable(s.storyKey(), s.title(), s.role(), priority,
-                    s.effortDays().doubleValue(), strings(s.dependsOnJson()), pinned, s.ordinal()));
+                    s.effortDays().doubleValue(), strings(s.dependsOnJson()), pinned, s.ordinal(),
+                    s.agentHours() == null ? 0 : s.agentHours().doubleValue(), s.external(),
+                    s.leadDays() == null ? 0 : s.leadDays().doubleValue()));
         }
         PlanCalculator.Schedule schedule = PlanCalculator.schedule(schedulable, settings);
         List<StoryV> stories = new ArrayList<>();
@@ -269,7 +276,9 @@ class PlanService {
                     insider ? strings(s.estimateRefsJson()) : List.of(), strings(s.brdRefsJson()), s.role(),
                     (String) e[2], strings(s.dependsOnJson()), s.effortDays().doubleValue(),
                     schedule.sprintOf().get(s.storyKey()), e[3] != null, flags, acceptedFlags.contains(s.storyKey()),
-                    insider ? edits.getOrDefault(s.storyKey(), List.of()) : List.of()));
+                    insider ? edits.getOrDefault(s.storyKey(), List.of()) : List.of(),
+                    s.agentHours() == null ? 0 : s.agentHours().doubleValue(), s.external(),
+                    s.leadDays() == null ? null : s.leadDays().doubleValue()));
         }
         stories.sort(java.util.Comparator.comparingInt(s -> position.getOrDefault(s.storyKey(), Integer.MAX_VALUE)));
         List<EpicV> epics = new ArrayList<>();
@@ -313,7 +322,11 @@ class PlanService {
         }
         return new VersionV(v.id(), v.versionNo(), v.status(), estimateNo, v.contentHash(), reviewHash(v, stories),
                 v.changeRequest(), v.failureCode(), v.attempts(), v.createdAt(), settingsMap(v.settingsJson()),
-                strings(v.risksJson()), epics, stories, sprints, gaps, total, estimateTotal, schedule.notes());
+                strings(v.risksJson()), epics, stories, sprints, gaps, total, estimateTotal, schedule.notes(),
+                settings.agentMode() ? EstimateCalculator.AGENT : "HUMAN",
+                schedule.waves().stream().map(w -> new WaveV(w.number(), w.start(), w.end(), w.stories(), w.agentHours(),
+                        w.buildDays(), w.reviewDays(), w.reviewByRole(), w.waitDays())).toList(),
+                EstimateCalculator.round(stories.stream().mapToDouble(StoryV::agentHours).sum()));
     }
 
     /** The approved BRD's acceptance criteria (item key to statement) behind the design the estimate rests on. */
@@ -357,7 +370,7 @@ class PlanService {
     String defaultSettings(UUID projectId, UUID approvedEstimate) {
         String saved = plans.defaults(projectId).orElse(null);
         if (saved != null) {
-            return saved;
+            return approvedEstimate == null ? saved : withEstimateMode(saved, approvedEstimate);
         }
         Map<String, Object> s = new LinkedHashMap<>();
         Map<String, Object> team = new LinkedHashMap<>();
@@ -374,7 +387,8 @@ class PlanService {
         s.put("startDate", LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY)).toString());
         s.put("daysPerWeek", days);
         s.put("team", team);
-        return json.writeValueAsString(s);
+        return approvedEstimate == null ? json.writeValueAsString(s)
+                : withEstimateMode(json.writeValueAsString(s), approvedEstimate);
     }
 
     @SuppressWarnings("unchecked")
@@ -393,7 +407,27 @@ class PlanService {
             start = LocalDate.now();
         }
         return new PlanCalculator.Settings(node.path("sprintWeeks").asInt(2), start, node.path("daysPerWeek").asInt(5),
-                team);
+                team, EstimateCalculator.AGENT.equals(node.path("deliveryMode").asString("")) ? EstimateCalculator.AGENT
+                        : "HUMAN", node.path("agentSlots").asInt(4));
+    }
+
+    /**
+     * GD-35: a plan is delivered the way its estimate was made: the delivery mode (and, unless set, the number of
+     * coding agents working at once) comes from the estimate's settings.
+     */
+    @SuppressWarnings("unchecked")
+    String withEstimateMode(String settingsJson, UUID estimateVersionId) {
+        Map<String, Object> out = json.readValue(settingsJson, LinkedHashMap.class);
+        JsonNode estimate = estimates.find(estimateVersionId, false).map(e -> json.readTree(e.settingsJson()))
+                .orElse(null);
+        boolean agent = estimate != null && EstimateCalculator.AGENT.equals(estimate.path("deliveryMode").asString(""));
+        out.put("deliveryMode", agent ? EstimateCalculator.AGENT : "HUMAN");
+        if (agent) {
+            out.putIfAbsent("agentSlots", estimate.path("agentSlots").asInt(4));
+        } else {
+            out.remove("agentSlots");
+        }
+        return json.writeValueAsString(out);
     }
 
     String validSettings(Map<String, Object> input, String fallback) {
@@ -432,6 +466,13 @@ class PlanService {
             }
         }
         out.put("team", team);
+        if (input.get("agentSlots") != null) {
+            int slots = input.get("agentSlots") instanceof Number n ? n.intValue() : -1;
+            if (slots < 1 || slots > 50) {
+                errors.add(new FieldError("agentSlots", "RANGE"));
+            }
+            out.put("agentSlots", slots);
+        }
         if (!errors.isEmpty()) {
             throw ApiException.validation(errors);
         }
@@ -449,7 +490,8 @@ class PlanService {
         if (plans.open(requirementId, true).isPresent()) {
             throw ApiException.conflict("PLAN_IN_PROGRESS", "A delivery plan is already in progress.");
         }
-        String settings = validSettings(settingsInput, defaultSettings(a.projectId(), estimate));
+        String settings = withEstimateMode(validSettings(settingsInput, defaultSettings(a.projectId(), estimate)),
+                estimate);
         plans.saveDefaults(TenantContext.requireTenant(), a.projectId(), settings, a.me());
         UUID id = plans.insert(TenantContext.requireTenant(), a.projectId(), requirementId, estimate, settings, null,
                 a.me());
@@ -542,7 +584,7 @@ class PlanService {
             throw ApiException.conflict("PLAN_ESTIMATE_OUTDATED", "This plan was made from an older estimate. Re-plan "
                     + "it from the approved estimate instead; the new sprint settings can be changed after that.");
         }
-        String settings = validSettings(settingsInput, v.settingsJson());
+        String settings = withEstimateMode(validSettings(settingsInput, v.settingsJson()), v.estimateVersionId());
         if (json.readTree(settings).equals(json.readTree(v.settingsJson()))) {
             throw ApiException.conflict("PLAN_SETTINGS_UNCHANGED", "These are the plan's current sprint settings.");
         }
@@ -679,8 +721,8 @@ class PlanService {
         plans.setStatus(v.id(), "SUPERSEDED");
         UUID estimate = plans.approvedEstimate(requirementId).orElseThrow(() ->
                 ApiException.conflict("ESTIMATE_NOT_APPROVED", "The delivery plan starts from an approved estimate."));
-        UUID next = plans.insert(TenantContext.requireTenant(), a.projectId(), requirementId, estimate, v.settingsJson(),
-                text.strip(), a.me());
+        UUID next = plans.insert(TenantContext.requireTenant(), a.projectId(), requirementId, estimate,
+                withEstimateMode(v.settingsJson(), estimate), text.strip(), a.me());
         audit.record(AuditAction.PLAN_DECIDED, "PLAN_VERSION", v.id(), AuditResult.SUCCESS);
         request(requirementId, next, 1);
         return state(requirementId);
@@ -807,10 +849,14 @@ class PlanService {
     static String csv(VersionV v) {
         Map<String, String> epicTitle = new LinkedHashMap<>();
         v.epics().forEach(e -> epicTitle.put(e.epicKey(), e.title()));
-        StringBuilder out = new StringBuilder("Sprint,Sprint start,Epic,Story,Role,Priority,Effort days,"
-                + "Acceptance criteria,Depends on\r\n");
+        boolean agent = EstimateCalculator.AGENT.equals(v.deliveryMode());
+        StringBuilder out = new StringBuilder(agent
+                ? "Wave,Wave start,Epic,Story,Role,Priority,Review days,Acceptance criteria,Depends on,Agent hours,"
+                + "Outside work\r\n"
+                : "Sprint,Sprint start,Epic,Story,Role,Priority,Effort days,Acceptance criteria,Depends on\r\n");
         Map<Integer, LocalDate> starts = new LinkedHashMap<>();
         v.sprints().forEach(s -> starts.put(s.number(), s.start()));
+        v.waves().forEach(w -> starts.put(w.number(), w.start()));
         for (StoryV s : v.stories()) {
             out.append(s.sprint() == null ? "" : s.sprint()).append(',')
                     .append(s.sprint() == null || starts.get(s.sprint()) == null ? "" : starts.get(s.sprint())).append(',')
@@ -819,7 +865,11 @@ class PlanService {
                     .append(EstimateService.ROLE_LABELS.getOrDefault(s.role(), s.role())).append(',')
                     .append(s.priority()).append(',').append(s.effortDays()).append(',')
                     .append(EstimateService.cell(String.join(" | ", s.acceptanceCriteria()))).append(',')
-                    .append(EstimateService.cell(String.join("; ", s.dependsOn()))).append("\r\n");
+                    .append(EstimateService.cell(String.join("; ", s.dependsOn())));
+            if (agent) {
+                out.append(',').append(s.agentHours()).append(',').append(s.external() ? "Yes" : "No");
+            }
+            out.append("\r\n");
         }
         return out.toString();
     }
@@ -835,6 +885,16 @@ class PlanService {
         sections.add(new BrdDocument.Section("Epics", view.epics().stream().map(e -> new BrdDocument.Entry("Epic",
                 e.title() + ". " + e.goal(), e.stories() + " stories, " + e.effortDays() + " person-days", List.of()))
                 .toList()));
+        for (WaveV w : view.waves()) {
+            List<BrdDocument.Entry> entries = view.stories().stream()
+                    .filter(s -> Integer.valueOf(w.number()).equals(s.sprint()))
+                    .map(s -> new BrdDocument.Entry(s.priority(), s.title(), EstimateService.ROLE_LABELS.getOrDefault(
+                            s.role(), s.role()) + (s.external() ? " · outside work, waits " + s.leadDays() + " days"
+                            : " · agent ~" + s.agentHours() + " h") + " · review " + s.effortDays() + " days · "
+                            + epicTitle.getOrDefault(s.epicKey(), ""), s.acceptanceCriteria())).toList();
+            sections.add(new BrdDocument.Section((w.number() == 0 ? "Outside work, start now" : "Wave " + w.number())
+                    + " (" + day.format(w.start()) + " to " + day.format(w.end()) + ")", entries));
+        }
         for (SprintV sp : view.sprints()) {
             List<BrdDocument.Entry> entries = view.stories().stream()
                     .filter(s -> Integer.valueOf(sp.number()).equals(s.sprint()))
@@ -864,7 +924,11 @@ class PlanService {
                 new BrdDocument.Field("Plan version", view.versionNo() + ", produced " + when.format(view.createdAt())),
                 new BrdDocument.Field("Based on", "Approved estimate version " + view.estimateVersionNo()),
                 new BrdDocument.Field("Exported", exported + " by " + by));
-        String summary = view.stories().size() + " stories in " + view.epics().size() + " epics over "
+        String summary = EstimateCalculator.AGENT.equals(view.deliveryMode())
+                ? view.stories().size() + " stories in " + view.epics().size() + " epics, built by coding agents in "
+                + view.waves().stream().filter(w -> w.number() > 0).count() + " waves (" + view.agentHours()
+                + " agent hours) and reviewed by people (" + view.totalEffortDays() + " person-days)."
+                : view.stories().size() + " stories in " + view.epics().size() + " epics over "
                 + view.sprints().size() + " sprints, " + view.totalEffortDays() + " person-days of expected effort.";
         return new BrdDocument(BrdDocument.DocKind.PLAN, cover, h.organisation(), h.project(), h.requirementKey(),
                 h.title(), List.of(), view.versionNo(), "APPROVED".equals(view.status()) ? "Approved"
