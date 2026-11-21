@@ -217,10 +217,13 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
                     return unfinished(in, session, workspace, branch, baseSha, startSha, "AGENT_STALLED", last, log);
                 }
             }
-            if (last == null || last.status() == DevContracts.Status.GIVE_UP) {
-                return new Outcome(taskId, false, last == null ? "AGENT_NO_ANSWER" : "AGENT_GAVE_UP",
-                        last == null ? null : last.summary() + (last.nextSteps() == null ? "" : " " + last.nextSteps()),
-                        null, null, null, 0, null, null, 0, logText(log), false);
+            if (last == null) {
+                return new Outcome(taskId, false, "AGENT_NO_ANSWER", null, null, null, null, 0, null, null, 0,
+                        logText(log), false);
+            }
+            if (last.status() == DevContracts.Status.GIVE_UP) {
+                // What it did write is kept on a draft, as when it runs out of sessions: a person can finish it.
+                return unfinished(in, session, workspace, branch, baseSha, startSha, "AGENT_GAVE_UP", last, log);
             }
             if (last.status() == DevContracts.Status.CONTINUE) {
                 return unfinished(in, session, workspace, branch, baseSha, startSha, "AGENT_OUT_OF_SESSIONS", last, log);
@@ -274,7 +277,8 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
     private Outcome unfinished(Inputs in, CodeHost.Session session, String workspace, String branch, String baseSha,
                                String startSha, String code, DevContracts.Step last, List<String> log)
             throws TrackerException, Devbox.DevboxException {
-        String summary = last == null ? null : last.summary();
+        String summary = last == null ? null : last.summary() + ("AGENT_GAVE_UP".equals(code)
+                && last.nextSteps() != null ? " " + last.nextSteps() : "");
         String logText = logText(log);
         List<Devbox.ChangedFile> changes = devbox.changes(workspace);
         if (check(changes) != null) {

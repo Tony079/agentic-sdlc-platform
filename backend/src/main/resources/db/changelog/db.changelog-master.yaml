@@ -118,3 +118,5 @@ databaseChangeLog:
   - include: { file: changes/0062-dev-unfinished-work.sql, relativeToChangelogFile: true }
   # GD-36 follow-up (2026-11-21): pull requests go into the environment's branch.
   - include: { file: changes/0063-dev-base-branch.sql, relativeToChangelogFile: true }
+  # GD-36 follow-up (2026-11-21): Developer agent prompt v3 (no Docker in the workspace).
+  - include: { file: changes/0064-dev-story-v3.sql, relativeToChangelogFile: true }
