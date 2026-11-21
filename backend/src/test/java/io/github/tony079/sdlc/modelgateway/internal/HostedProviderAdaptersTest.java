@@ -153,13 +153,31 @@ class HostedProviderAdaptersTest {
         assertThat(lastBody.get().path("response_format").path("json_schema").path("strict").asBoolean()).isTrue();
         assertThat(result.usage()).isEqualTo(new ModelProvider.Usage(70, 9, false));
         assertThat(provider.name()).isEqualTo("azure-openai");
-        assertThat(lastBody.get().has("reasoning_effort")).as("only with tools").isFalse();
-        // GD-36: with tools, reasoning is turned off (reasoning models refuse function tools otherwise), and the
-        // tools' arguments are declared.
-        provider.complete(call(true));
-        assertThat(lastBody.get().path("reasoning_effort").asString()).isEqualTo("none");
-        assertThat(lastBody.get().path("tools").path(0).path("function").path("parameters").path("properties")
-                .has("path")).isTrue();
+        // GD-36: a call with tools goes to the Responses API (reasoning models refuse function tools in chat
+        // completions): instructions, data as input, earlier tool calls replayed, tools with declared arguments.
+        reply.set("""
+                {"status":"completed","output":[
+                  {"type":"reasoning","id":"rs_1","summary":[]},
+                  {"type":"function_call","id":"fc_1","call_id":"call_9","name":"repo.read_range",
+                   "arguments":"{\\"path\\":\\"B.java\\",\\"start\\":3}"},
+                  {"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\\"ok\\":3}"}]}],
+                 "usage":{"input_tokens":200,"output_tokens":40}}""");
+        ModelProvider.Result tooled = provider.complete(call(true));
+        JsonNode body = lastBody.get();
+        assertThat(lastPath.get()).isEqualTo("/openai/v1/responses");
+        assertThat(body.path("instructions").asString()).isEqualTo("Answer with JSON only.");
+        assertThat(body.path("store").asBoolean(true)).isFalse();
+        assertThat(body.has("reasoning_effort")).isFalse();
+        assertThat(body.path("tools").path(0).path("name").asString()).isEqualTo("repo.read_range");
+        assertThat(body.path("tools").path(0).path("parameters").path("properties").has("path")).isTrue();
+        assertThat(body.path("input").valueStream().map(i -> i.path("type").asString("")).toList())
+                .contains("function_call", "function_call_output");
+        assertThat(tooled.toolCalls()).singleElement().satisfies(c -> {
+            assertThat(c.id()).isEqualTo("call_9");
+            assertThat(c.arguments()).containsEntry("path", "B.java").containsEntry("start", "3");
+        });
+        assertThat(tooled.text()).isEqualTo("{\"ok\":3}");
+        assertThat(tooled.usage()).isEqualTo(new ModelProvider.Usage(200, 40, false));
         // Only Azure hosts, over HTTPS.
         assertThatThrownBy(() -> AzureOpenAiModelProvider.uri("https://example.com/openai/v1", false))
                 .isInstanceOf(IllegalStateException.class);

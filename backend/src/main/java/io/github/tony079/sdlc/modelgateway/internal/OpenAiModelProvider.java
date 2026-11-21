@@ -38,11 +38,12 @@ public class OpenAiModelProvider implements ModelProvider {
     static final java.time.Duration STREAMING_PAUSE = java.time.Duration.ofMinutes(15);
 
     /**
-     * GD-36: sent as {@code reasoning_effort} on requests that carry tools. OpenAI reasoning models (and Azure OpenAI
-     * deployments of them) refuse function tools in chat completions unless reasoning is off ("none"). Empty: not sent.
+     * GD-36: requests that carry tools go to the Responses API, which (unlike chat completions) accepts function tools
+     * together with a reasoning model's reasoning. Optional reasoning effort for them (minimal, low, medium, high);
+     * empty or "none": the model's default.
      */
-    @org.springframework.beans.factory.annotation.Value("${sdlc.model.tools-reasoning-effort:none}")
-    private String toolsReasoningEffort = "none";
+    @org.springframework.beans.factory.annotation.Value("${sdlc.model.tools-reasoning-effort:}")
+    private String toolsReasoningEffort = "";
 
     public OpenAiModelProvider(SecretsProvider secrets, JsonMapper json,
                         @Value("${sdlc.model.openai.base-url:https://api.openai.com}") String baseUrl,
@@ -67,6 +68,12 @@ public class OpenAiModelProvider implements ModelProvider {
         return HttpModelProviderSupport.endpoint(baseUrl, "/v1/chat/completions", allowLoopbackHttp);
     }
 
+    /** GD-36: the Responses API, next to chat completions. */
+    protected java.net.URI responsesUri() {
+        String chat = chatCompletionsUri().toString();
+        return java.net.URI.create(chat.substring(0, chat.lastIndexOf("/chat/completions")) + "/responses");
+    }
+
     protected Map<String, String> authHeaders(String key) {
         return Map.of("Authorization", "Bearer " + key);
     }
@@ -74,6 +81,9 @@ public class OpenAiModelProvider implements ModelProvider {
     @Override
     public Result complete(Call call) throws Failure {
         String key = secrets.secret(secretName()).orElseThrow(() -> new Failure(Failure.Kind.ERROR));
+        if (!call.tools().isEmpty()) {
+            return responses(call, key);
+        }
         List<Map<String, Object>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content", call.instructions()));
         for (DataBlock block : call.data()) {
@@ -99,9 +109,6 @@ public class OpenAiModelProvider implements ModelProvider {
         } else {
             body.put("tools", call.tools().stream().map(t -> Map.of("type", "function", "function", Map.of(
                     "name", t.name(), "description", t.description(), "parameters", t.schema()))).toList());
-            if (toolsReasoningEffort != null && !toolsReasoningEffort.isBlank()) {
-                body.put("reasoning_effort", toolsReasoningEffort.strip());
-            }
         }
         boolean paused = streamingPaused && System.nanoTime() - streamingPausedUntil < 0;
         if (call.progress() != null && call.tools().isEmpty() && !paused) {
@@ -202,5 +209,80 @@ public class OpenAiModelProvider implements ModelProvider {
         }
         call.progress().accept(text.toString());
         return new Result(text.isEmpty() ? null : text.toString(), usage[0], List.of());
+    }
+
+    /**
+     * GD-36: a tool-using call through the Responses API. Instructions as {@code instructions}; data as user input
+     * items; earlier tool calls replayed as {@code function_call} and {@code function_call_output} items (no stored
+     * state: {@code store} false). The answer is the concatenated {@code output_text}; {@code function_call} items are
+     * the model's tool calls.
+     */
+    private Result responses(Call call, String key) throws Failure {
+        List<Map<String, Object>> input = new ArrayList<>();
+        for (DataBlock block : call.data()) {
+            input.add(Map.of("role", "user", "content", HttpModelProviderSupport.dataText(block)));
+        }
+        for (ToolExchange exchange : call.exchanges()) {
+            input.add(Map.of("type", "function_call", "call_id", exchange.call().id(), "name", exchange.call().name(),
+                    "arguments", json.writeValueAsString(exchange.call().arguments())));
+            input.add(Map.of("type", "function_call_output", "call_id", exchange.call().id(),
+                    "output", HttpModelProviderSupport.dataText(exchange.result())));
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", call.modelId());
+        body.put("instructions", call.instructions());
+        body.put("input", input);
+        body.put("max_output_tokens", call.maxOutputTokens());
+        body.put("store", false);
+        body.put("tools", call.tools().stream().map(t -> {
+            Map<String, Object> tool = new LinkedHashMap<>();
+            tool.put("type", "function");
+            tool.put("name", t.name());
+            tool.put("description", t.description());
+            tool.put("parameters", t.schema());
+            tool.put("strict", false);
+            return tool;
+        }).toList());
+        String effort = toolsReasoningEffort == null ? "" : toolsReasoningEffort.strip();
+        if (!effort.isEmpty() && !"none".equalsIgnoreCase(effort)) {
+            body.put("reasoning", Map.of("effort", effort));
+        }
+        String response = HttpModelProviderSupport.post(responsesUri(), authHeaders(key), json.writeValueAsString(body),
+                call.timeout());
+        JsonNode root = json.readTree(response);
+        if ("incomplete".equals(root.path("status").asString(""))) {
+            String reason = root.path("incomplete_details").path("reason").asString("");
+            if ("content_filter".equals(reason)) {
+                throw new Failure(Failure.Kind.ERROR);
+            }
+            LOG.warn("{} answer incomplete ({})", name(), reason.matches("^[a-z_]{1,40}$") ? reason : "?");
+        }
+        List<ToolCall> toolCalls = new ArrayList<>();
+        StringBuilder text = new StringBuilder();
+        for (JsonNode item : root.path("output")) {
+            String type = item.path("type").asString("");
+            if ("function_call".equals(type)) {
+                Map<String, String> args = new LinkedHashMap<>();
+                try {
+                    json.readTree(item.path("arguments").asString("{}")).properties()
+                            .forEach(e -> args.put(e.getKey(),
+                                    e.getValue().isString() ? e.getValue().asString() : e.getValue().toString()));
+                } catch (RuntimeException e) {
+                    // Malformed arguments: passed on empty; the tool refuses invalid arguments itself.
+                }
+                String id = item.path("call_id").asString(item.path("id").asString(""));
+                toolCalls.add(new ToolCall(id, item.path("name").asString(""), args));
+            } else if ("message".equals(type)) {
+                for (JsonNode part : item.path("content")) {
+                    if ("output_text".equals(part.path("type").asString(""))) {
+                        text.append(part.path("text").asString(""));
+                    }
+                }
+            }
+        }
+        JsonNode usage = root.path("usage");
+        Usage measured = usage.isObject() ? new Usage(usage.path("input_tokens").asInt(0),
+                usage.path("output_tokens").asInt(0), false) : null;
+        return new Result(text.isEmpty() ? null : text.toString(), measured, toolCalls);
     }
 }
