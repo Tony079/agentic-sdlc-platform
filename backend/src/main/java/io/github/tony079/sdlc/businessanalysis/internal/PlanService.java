@@ -1,12 +1,10 @@
 package io.github.tony079.sdlc.businessanalysis.internal;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -366,7 +364,7 @@ class PlanService {
 
     // --- settings -----------------------------------------------------------------------------------------------
 
-    /** Project defaults, else the approved estimate's team and calendar, two-week sprints from next Monday. */
+    /** Project defaults, else the approved estimate's team and calendar, two-week sprints from today (any day can start). */
     String defaultSettings(UUID projectId, UUID approvedEstimate) {
         String saved = plans.defaults(projectId).orElse(null);
         if (saved != null) {
@@ -384,7 +382,7 @@ class PlanService {
             }
         }
         s.put("sprintWeeks", 2);
-        s.put("startDate", LocalDate.now().with(TemporalAdjusters.next(DayOfWeek.MONDAY)).toString());
+        s.put("startDate", LocalDate.now().toString());
         s.put("daysPerWeek", days);
         s.put("team", team);
         return approvedEstimate == null ? json.writeValueAsString(s)

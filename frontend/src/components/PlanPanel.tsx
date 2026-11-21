@@ -141,8 +141,6 @@ function exportUrl(requirementId: string, format: 'pdf' | 'docx' | 'csv'): strin
   return `/api/v1/requirements/${requirementId}/plan/export?format=${format}&tz=${encodeURIComponent(tz)}`;
 }
 
-const isMonday = (iso: string) => new Date(`${iso}T00:00:00`).getDay() === 1;
-
 function SettingsForm({ initial, busy, onStart, submitLabel = 'Start delivery plan', intro, onCancel }: {
   initial: Settings; busy: boolean; onStart: (s: Settings) => void; submitLabel?: string; intro?: string; onCancel?: () => void;
 }) {
@@ -188,7 +186,6 @@ function SettingsForm({ initial, busy, onStart, submitLabel = 'Start delivery pl
         {agent
           ? 'Each wave starts when the previous one is reviewed and any outside work it needs has arrived; reviewers of each role share the review time.'
           : `Each role can take ${s.daysPerWeek} × ${s.sprintWeeks} = ${s.daysPerWeek * s.sprintWeeks} days per person per sprint; a story bigger than that is flagged for splitting.`}
-        {s.startDate && !isMonday(s.startDate) && (agent ? ' Work does not start on a Monday.' : ' The first sprint does not start on a Monday.')}
       </p>
       <div className="row">
         <button type="submit" className="btn-primary" disabled={busy}>{submitLabel}</button>
