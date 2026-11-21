@@ -15,6 +15,7 @@ import { BrdPanel } from '../components/BrdPanel';
 import { DesignPanel } from '../components/DesignPanel';
 import { EstimatePanel } from '../components/EstimatePanel';
 import { PlanPanel } from '../components/PlanPanel';
+import { DevelopmentPanel } from '../components/DevelopmentPanel';
 import { RepositoryLinkPanel } from '../components/RepositoryLinkPanel';
 import { SourcesPanel } from '../components/SourcesPanel';
 import { AnalysisRetryPanel } from '../components/AnalysisRetryPanel';
@@ -320,6 +321,7 @@ export function RequirementDetailPage() {
             // GD-34: an approved estimate moves on to the Delivery plan.
             <div className="card">
               <PlanPanel requirementId={detail.id} />
+              <DevelopmentPanel requirementId={detail.id} />
             </div>
           )}
           {detail.content.repositoryUrl && (

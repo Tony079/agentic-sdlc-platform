@@ -29,6 +29,9 @@ const KINDS: Record<string, string> = {
   PLAN_APPROVED: 'A delivery plan was approved.',
   PLAN_FAILED: 'A delivery plan could not be written. You can try again from the requirement.',
   PLAN_PUSHED: 'A delivery plan was pushed to GitHub Issues.',
+  DEV_PR_OPEN: 'The Developer agent opened a pull request to review.',
+  DEV_STORY_FAILED: 'A story could not be coded by the Developer agent.',
+  DEV_DELIVERED: 'Every story is merged: development is complete.',
   PLAN_PUSH_FAILED: 'A delivery plan push to GitHub did not complete. The plan says why; you can push again.',
 };
 

@@ -22,6 +22,10 @@ What a push does: one issue per story (acceptance criteria as a checklist, epic,
 
 The token for a push is narrowed to the one repository with *Issues: Read and write* and *Metadata: Read*, never *Contents*. Writes are spaced by `SDLC_GITHUB_ISSUE_WRITE_PAUSE` (default 1 s) to respect GitHub's limits on content creation; a rate limit waits and continues where it stopped.
 
+## Developer agent (GD-36)
+
+Garuda's Developer agent writes code: it needs the App's **Contents: Read and write** and **Pull requests: Read and write** permissions (accepted by the installation owner) and the sandbox containers `devbox` and `devbox-proxy` (started by Docker Compose; set `SDLC_DEVBOX_TOKEN` in `.env`). It only ever pushes `garuda/...` branches and opens pull requests; a person merges. See `docs/architecture/garuda-developer-agent.md`.
+
 ## Environments
 
 - The Organisation Admin names one **Environment Manager** per project (Project › Members).

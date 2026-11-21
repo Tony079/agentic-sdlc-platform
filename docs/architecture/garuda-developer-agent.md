@@ -1,6 +1,6 @@
 # Garuda: Developer agent (GD-36)
 
-Status: **design agreed, being built** (2026-11-21).
+Status: **implemented** (2026-11-21). Not yet tried against real GitHub and a real model: tested end to end with the real devbox, a fake GitHub and a scripted model.
 
 Garuda's own coding agent writes the code for an approved, pushed delivery plan in agent delivery mode (GD-35), one
 pull request per story, wave by wave. People review and merge in GitHub; Garuda never merges and never writes to a
@@ -23,7 +23,7 @@ default branch.
 | **devbox** (sandbox) | New container, its own image, on an internal network only | Holds one workspace per story: the repository files at the base commit. Lists, reads, searches and writes files; runs build and test commands as an unprivileged user with time, output and resource limits; returns the changed files. Never holds a credential. |
 | **egress proxy** | New container | The devbox's only way out: an allowlist of package-registry hosts. |
 | **GitHub broker** (extended) | Worker | A token narrowed to the one repository with Contents: write, Pull requests: write, Issues: read, Metadata: read. Creates a commit through the Git data API on a new `refs/heads/garuda/<requirement>/<story>` branch (any other ref is refused), opens a pull request that closes the story's issue, and reads pull request and issue state. |
-| **Developer agent** | Worker job `DEV_STORY` | Gives the model the story, its acceptance criteria, the design and the repository tools; the model explores, edits and runs the tests in the devbox until the tests pass or it gives up; Garuda checks the change and opens the pull request. |
+| **Developer agent** | Worker job `DEV_STORY` | Gives the model the story, its acceptance criteria, the design and the repository tools; the model explores, edits and runs the tests in the devbox until the tests pass or it gives up; Garuda checks the change and opens the pull request. It works in **sessions** of at most 10 tool rounds (the gateway's limit), up to 8 per story; between sessions it gets its work log and the list of changed files, so each session starts with a small, fresh context. |
 | **Orchestrator** | Worker job `DEV_TICK` (periodic) | Starts development after a successful push, reads pull request and issue state, starts the next wave (up to the plan's number of agents at once), marks the requirement delivered when every story is merged. |
 | **Development card** | Requirement page | Waves and stories with their status (waiting, coding, pull request open, merged, failed), links, the agent's summary and test result; pause, resume, retry and skip. |
 
@@ -53,3 +53,17 @@ default branch.
 `dev_run` (one per requirement and plan version: status RUNNING, PAUSED, DELIVERED, FAILED), `dev_task` (one per
 story: wave, status QUEUED, CODING, PR_OPEN, MERGED, FAILED, SKIPPED, branch, pull request number and URL, the
 agent's summary and test result, failure code), job types `DEV_STORY` and `DEV_TICK`, prompt `dev.story` v1.
+
+## Operations
+
+- **GitHub App permissions:** Contents: Read and write, Pull requests: Read and write, Issues: Read and write,
+  Metadata: Read. The installation owner must accept the new permissions. Without them a story fails with "the Garuda
+  GitHub App has not been granted Contents and Pull requests: Read and write"; grant them, then **Retry**.
+- **Recommended in GitHub:** protect the default branch (require a pull request review before merging), so nothing
+  reaches it without a person.
+- **`.env`:** `SDLC_DEVBOX_TOKEN`, any random string of 32 or more characters (`openssl rand -hex 24`). Docker Compose
+  builds and starts `devbox` and `devbox-proxy` with the rest.
+- **Registries:** to allow another package registry (for example a company mirror), add its host to
+  `devbox-proxy/allowlist` and rebuild `devbox-proxy`.
+- **Starting development for a plan pushed before this release:** push the plan again; development starts after a
+  successful push of an approved plan made for coding agents.

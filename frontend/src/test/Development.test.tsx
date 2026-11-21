@@ -1,0 +1,49 @@
+import { describe, expect, it } from 'vitest';
+import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { DevelopmentPanel } from '../components/DevelopmentPanel';
+import { mockFetch, renderWithProviders } from './render';
+
+const task = (over: Record<string, unknown>) => ({
+  id: 't1', storyKey: 'story-a', title: 'As a developer, I want the API skeleton', wave: 1, external: false,
+  issueNumber: 7, status: 'PR_OPEN', attempts: 1, branch: 'garuda/req-000003/story-a', prNumber: 12,
+  prUrl: 'https://github.com/acme/site/pull/12', summary: 'Added the health endpoint with a test.', testsPassed: true,
+  filesChanged: 3, failureCode: null, reason: null, updatedAt: '2026-11-21T10:00:00Z', ...over,
+});
+
+const run = {
+  id: 'r1', status: 'RUNNING', repository: 'acme/site', currentWave: 1, agentSlots: 2, startedAt: '2026-11-21T09:00:00Z',
+  finishedAt: null, counts: {},
+  tasks: [
+    task({}),
+    task({ id: 't2', storyKey: 'story-b', title: 'As an author, I want a dark theme', status: 'FAILED', prNumber: null,
+      prUrl: null, summary: null, testsPassed: null, filesChanged: null, failureCode: 'GITHUB_CODE_PERMISSION',
+      reason: 'the Garuda GitHub App has not been granted Contents and Pull requests: Read and write on this repository' }),
+    task({ id: 't3', storyKey: 'story-c', title: 'As an author, I want my pages', wave: 2, status: 'WAITING', prNumber: null, prUrl: null }),
+    task({ id: 'o1', storyKey: 'oauth', title: 'Register the OAuth apps', wave: 0, external: true, status: 'WAITING', prNumber: null, prUrl: null }),
+  ],
+};
+
+describe('DevelopmentPanel (GD-36)', () => {
+  it('explains how development starts when there is none yet', async () => {
+    mockFetch(() => ({ status: 200, body: { requirementId: 'x', canControl: false, run: null } }));
+    renderWithProviders(<DevelopmentPanel requirementId="x" />);
+    expect(await screen.findByText(/starts on its own when an approved delivery plan for coding agents is pushed/)).toBeInTheDocument();
+  });
+
+  it('shows waves, pull requests and outside work, and lets a Technical Approver retry a failed story', async () => {
+    document.cookie = 'XSRF-TOKEN=d1; path=/';
+    const body = { requirementId: 'x', canControl: true, run };
+    const calls = mockFetch((url) => ({ status: 200, body: url.endsWith('/development') || url.includes('/development/') ? body : [] }));
+    renderWithProviders(<DevelopmentPanel requirementId="x" />);
+    expect(await screen.findByRole('link', { name: 'pull request #12' })).toHaveAttribute('href', 'https://github.com/acme/site/pull/12');
+    const outside = screen.getByRole('region', { name: 'Outside work' });
+    expect(within(outside).getByText('Register the OAuth apps')).toBeInTheDocument();
+    const wave1 = screen.getByRole('region', { name: 'Wave 1' });
+    const failed = within(wave1).getByText('As an author, I want a dark theme').closest('li') as HTMLElement;
+    expect(within(failed).getByText(/Contents and Pull requests/)).toBeInTheDocument();
+    await userEvent.setup().click(within(failed).getByRole('button', { name: 'Retry' }));
+    expect(calls.some((c) => c.url.endsWith('/development/tasks/t2/retry'))).toBe(true);
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+  });
+});
