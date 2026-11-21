@@ -58,9 +58,36 @@ final class HttpModelProviderSupport {
             throw new Failure(Failure.Kind.UNAVAILABLE);
         }
         if (status != 200 || response.body().length > MAX_RESPONSE_BYTES) {
+            logRefusal(uri, status, response.body());
             throw new Failure(Failure.Kind.ERROR);
         }
         return new String(response.body(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Logs why a provider refused a request: the HTTP status and the error's code, type and parameter name (short
+     * identifiers), never its message, which can quote the request's data.
+     */
+    static void logRefusal(URI uri, int status, byte[] body) {
+        String code = "";
+        String type = "";
+        String param = "";
+        try {
+            tools.jackson.databind.JsonNode error = tools.jackson.databind.json.JsonMapper.builder().build()
+                    .readTree(body).path("error");
+            code = identifier(error.path("code").asString(""));
+            type = identifier(error.path("type").asString(""));
+            param = identifier(error.path("param").asString(""));
+        } catch (RuntimeException ignored) {
+            // not JSON: the status is enough
+        }
+        org.slf4j.LoggerFactory.getLogger(HttpModelProviderSupport.class).warn(
+                "Model provider refused the request: HTTP {} from {} (code={}, type={}, param={})", status,
+                uri.getHost(), code, type, param);
+    }
+
+    private static String identifier(String value) {
+        return value != null && value.matches("^[A-Za-z0-9_.\\[\\]-]{1,80}$") ? value : "";
     }
 
     /**

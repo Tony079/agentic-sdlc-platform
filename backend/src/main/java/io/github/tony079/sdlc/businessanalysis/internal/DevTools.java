@@ -22,24 +22,27 @@ final class DevTools {
     static List<ModelTool> forWorkspace(Devbox devbox, String workspaceId) {
         return List.of(
                 tool(devbox, workspaceId, "list_files", "List directories and files. Arguments: path (relative, \"\" "
-                        + "for the repository root), depth (1 to 4).", "list", 12 * 1024,
+                        + "for the repository root), depth (1 to 4).", "list", 12 * 1024, List.of("path", "depth"),
                         a -> Map.of("path", text(a, "path"), "depth", number(a, "depth", 2))),
                 tool(devbox, workspaceId, "read_file", "Read part of a text file. Arguments: path, start_line "
                         + "(default 1), max_lines (default 400, at most 2000).", "read", 32 * 1024,
+                        List.of("path", "start_line", "max_lines"),
                         a -> Map.of("path", text(a, "path"), "startLine", number(a, "start_line", 1),
                                 "maxLines", number(a, "max_lines", 400))),
                 tool(devbox, workspaceId, "search", "Find lines that contain a text. Arguments: pattern, path "
                         + "(default the root), regex (\"true\" for a regular expression).", "search", 16 * 1024,
+                        List.of("pattern", "path", "regex"),
                         a -> Map.of("pattern", text(a, "pattern"), "path", text(a, "path"),
                                 "regex", "true".equalsIgnoreCase(text(a, "regex")))),
                 tool(devbox, workspaceId, "write_file", "Create or replace a whole file. Arguments: path, content.",
-                        "write", 1024, a -> Map.of("path", text(a, "path"), "content", text(a, "content"))),
+                        "write", 1024, List.of("path", "content"),
+                        a -> Map.of("path", text(a, "path"), "content", text(a, "content"))),
                 tool(devbox, workspaceId, "delete_file", "Delete a file. Arguments: path.", "delete", 1024,
-                        a -> Map.of("path", text(a, "path"))),
+                        List.of("path"), a -> Map.of("path", text(a, "path"))),
                 tool(devbox, workspaceId, "run_command", "Run one program with its arguments in the repository, "
                         + "without a shell. Arguments: command (for example \"mvn -q -B test\" or \"npm test\"), "
                         + "cwd (optional, relative directory), timeout_seconds (optional, at most 900).", "exec",
-                        16 * 1024, a -> {
+                        16 * 1024, List.of("command", "cwd", "timeout_seconds"), a -> {
                             Map<String, Object> args = new LinkedHashMap<>();
                             args.put("argv", split(text(a, "command")));
                             args.put("cwd", text(a, "cwd"));
@@ -53,8 +56,13 @@ final class DevTools {
     }
 
     private static ModelTool tool(Devbox devbox, String workspaceId, String name, String description, String action,
-                                  int maxBytes, Mapper mapper) {
+                                  int maxBytes, List<String> parameters, Mapper mapper) {
         return new ModelTool() {
+            @Override
+            public List<String> parameters() {
+                return parameters;
+            }
+
             @Override
             public String name() {
                 return name;

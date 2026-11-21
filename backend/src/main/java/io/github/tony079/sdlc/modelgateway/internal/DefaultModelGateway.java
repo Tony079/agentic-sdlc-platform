@@ -163,7 +163,7 @@ class DefaultModelGateway implements ModelGateway {
         boolean repaired = false;
         String rejection = null;
         List<ModelProvider.ToolSpec> specs = request.tools().stream()
-                .map(t -> new ModelProvider.ToolSpec(t.name(), t.description())).toList();
+                .map(t -> new ModelProvider.ToolSpec(t.name(), t.description(), t.parameters())).toList();
         List<ModelProvider.ToolExchange> exchanges = new ArrayList<>();
         Map<String, Integer> toolCounts = new TreeMap<>();
         int rounds = 0;

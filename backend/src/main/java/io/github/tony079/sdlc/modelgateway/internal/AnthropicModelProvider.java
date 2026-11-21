@@ -79,7 +79,7 @@ public class AnthropicModelProvider implements ModelProvider {
         body.put("messages", messages);
         if (!call.tools().isEmpty()) {
             body.put("tools", call.tools().stream().map(t -> Map.of("name", t.name(), "description", t.description(),
-                    "input_schema", Map.of("type", "object", "additionalProperties", Map.of("type", "string"))))
+                    "input_schema", t.schema()))
                     .toList());
         }
         String response = HttpModelProviderSupport.post(

@@ -55,7 +55,20 @@ public interface ModelProvider {
     }
 
     /** A tool offered to the model: trusted name and description only. */
-    record ToolSpec(String name, String description) {
+    record ToolSpec(String name, String description, java.util.List<String> parameters) {
+        public ToolSpec(String name, String description) {
+            this(name, description, java.util.List.of());
+        }
+
+        /** JSON Schema of the arguments: the declared names as optional strings, nothing else. */
+        public java.util.Map<String, Object> schema() {
+            if (parameters == null || parameters.isEmpty()) {
+                return java.util.Map.of("type", "object", "additionalProperties", java.util.Map.of("type", "string"));
+            }
+            java.util.Map<String, Object> properties = new java.util.LinkedHashMap<>();
+            parameters.forEach(p -> properties.put(p, java.util.Map.of("type", "string")));
+            return java.util.Map.of("type", "object", "properties", properties, "additionalProperties", false);
+        }
     }
 
     /** A tool call the model asked for. {@code id} is the provider's call id (echoed back), arguments are untrusted. */

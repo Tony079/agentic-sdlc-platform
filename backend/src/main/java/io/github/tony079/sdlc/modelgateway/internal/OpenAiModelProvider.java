@@ -91,8 +91,7 @@ public class OpenAiModelProvider implements ModelProvider {
             body.put("response_format", Map.of("type", "json_object"));
         } else {
             body.put("tools", call.tools().stream().map(t -> Map.of("type", "function", "function", Map.of(
-                    "name", t.name(), "description", t.description(), "parameters",
-                    Map.of("type", "object", "additionalProperties", Map.of("type", "string"))))).toList());
+                    "name", t.name(), "description", t.description(), "parameters", t.schema()))).toList());
         }
         boolean paused = streamingPaused && System.nanoTime() - streamingPausedUntil < 0;
         if (call.progress() != null && call.tools().isEmpty() && !paused) {

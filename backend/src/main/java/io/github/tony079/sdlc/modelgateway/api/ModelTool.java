@@ -24,6 +24,14 @@ public interface ModelTool {
      */
     String invoke(Map<String, String> arguments) throws Refused;
 
+    /**
+     * The argument names the tool takes (all strings); the provider declares them so the model uses exactly these.
+     * Empty: any string arguments (the description names them).
+     */
+    default java.util.List<String> parameters() {
+        return java.util.List.of();
+    }
+
     /** Result size cap in bytes (UTF-8); longer results are cut. TDD 12.5: 64 KB repository range, 16 KB chunk. */
     default int maxResultBytes() {
         return 16 * 1024;
