@@ -146,6 +146,10 @@ services:
       # Spending caps in USD (empty = no cap): analysis stops with COST_CAP when reached.
       SDLC_MODEL_BUDGET_TENANT_MONTHLY_USD: ${SDLC_MODEL_BUDGET_TENANT_MONTHLY_USD:-}
       SDLC_MODEL_BUDGET_REQUIREMENT_USD: ${SDLC_MODEL_BUDGET_REQUIREMENT_USD:-}
+      # GD-36: the Developer agent's sandbox (internal network only).
+      SDLC_DEVBOX_URL: http://devbox:8090
+      SDLC_DEVBOX_TOKEN: ${SDLC_DEVBOX_TOKEN:?set SDLC_DEVBOX_TOKEN in .env (any random string of 32+ characters)}
+    networks: [default, devbox]
     volumes:
       - doc-store:/var/lib/sdlc/documents
       - ./secrets:/run/secrets/garuda:ro
@@ -160,6 +164,40 @@ services:
       timeout: 5s
       retries: 8
       start_period: 60s
+    restart: unless-stopped
+
+  # GD-36: the Developer agent's sandbox. Client code is built and tested here, never in the worker: non-root, no
+  # credentials, CPU/memory/process limits, and no network except the registry-only egress proxy.
+  devbox:
+    build: ./devbox
+    image: sdlc-devbox:local
+    environment:
+      DEVBOX_TOKEN: ${SDLC_DEVBOX_TOKEN:?set SDLC_DEVBOX_TOKEN in .env (any random string of 32+ characters)}
+      HTTP_PROXY: http://devbox-proxy:8888
+      HTTPS_PROXY: http://devbox-proxy:8888
+      GRADLE_OPTS: >-
+        -Dorg.gradle.daemon=false -Xmx1g -Dhttps.proxyHost=devbox-proxy -Dhttps.proxyPort=8888
+        -Dhttp.proxyHost=devbox-proxy -Dhttp.proxyPort=8888
+    networks: [devbox]
+    volumes:
+      - devbox-work:/workspaces
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 6g
+    cpus: 2
+    pids_limit: 1024
+    depends_on:
+      devbox-proxy:
+        condition: service_started
+    restart: unless-stopped
+
+  # The devbox's only way out: package registries (devbox-proxy/allowlist), HTTPS CONNECT only.
+  devbox-proxy:
+    build: ./devbox-proxy
+    image: sdlc-devbox-proxy:local
+    networks: [devbox, default]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
 
   # Development malware scanner (clamd on 3310, internal network only). Downloads signatures at start-up; until it is
@@ -178,6 +216,13 @@ services:
       - api
     restart: unless-stopped
 
+networks:
+  default:
+  # GD-36: no route out; the devbox reaches only the worker and the egress proxy.
+  devbox:
+    internal: true
+
 volumes:
   db-data:
   doc-store:
+  devbox-work:

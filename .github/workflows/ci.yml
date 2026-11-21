@@ -103,6 +103,7 @@ jobs:
             echo "SDLC_DEV_SEED=true"
             echo "SDLC_DEV_SEED_PASSWORD=ci-demo-password-1"
             echo "SDLC_WEB_PORT=8080"
+            echo "SDLC_DEVBOX_TOKEN=$(openssl rand -hex 24)"
           } > .env
       - name: Start stack
         run: docker compose up -d --build

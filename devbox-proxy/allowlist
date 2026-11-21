@@ -1,0 +1,13 @@
+^repo1\.maven\.org$
+^repo\.maven\.apache\.org$
+^plugins\.gradle\.org$
+^plugins-artifacts\.gradle\.org$
+^services\.gradle\.org$
+^downloads\.gradle\.org$
+^downloads\.gradle-dn\.com$
+^registry\.npmjs\.org$
+^registry\.yarnpkg\.com$
+^repo\.yarnpkg\.com$
+^pypi\.org$
+^files\.pythonhosted\.org$
+^nodejs\.org$
