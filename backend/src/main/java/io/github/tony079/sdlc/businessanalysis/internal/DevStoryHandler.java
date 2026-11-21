@@ -280,7 +280,8 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
 
     private Inputs load(UUID taskId) {
         DevRepository.TaskRow task = devs.task(taskId, false).orElse(null);
-        if (task == null || !"QUEUED".equals(task.status()) || task.external()) {
+        // CODING: an earlier attempt of this job stopped (a model error, a crash); this attempt carries on.
+        if (task == null || !("QUEUED".equals(task.status()) || "CODING".equals(task.status())) || task.external()) {
             return null;
         }
         DevRepository.RunRow run = devs.run(task.devRunId(), false).orElseThrow();

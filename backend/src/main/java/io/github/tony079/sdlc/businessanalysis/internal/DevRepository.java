@@ -110,6 +110,14 @@ class DevRepository {
                 .query(DevRepository::task).optional();
     }
 
+    /** Whether a DEV_STORY job for the task is queued or running. */
+    boolean liveStoryJob(UUID taskId) {
+        return jdbc.sql("""
+                SELECT EXISTS (SELECT 1 FROM app.job WHERE job_type = 'DEV_STORY' AND idempotency_key LIKE :k
+                               AND status IN ('QUEUED', 'LEASED'))
+                """).param("k", "dev-story:" + taskId + ":%").query(Boolean.class).single();
+    }
+
     void setRun(UUID id, String status, int wave, boolean finished) {
         jdbc.sql("UPDATE app.dev_run SET status = :s, current_wave = :w" + (finished ? ", finished_at = clock_timestamp()"
                 : "") + " WHERE id = :id").param("s", status).param("w", wave).param("id", id).update();

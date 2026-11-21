@@ -252,6 +252,16 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
             }
             return;
         }
+        // A story left CODING without a live job (its job ended without a result) is queued again.
+        for (DevRepository.TaskRow t : tasks) {
+            if (t.wave() == wave && "CODING".equals(t.status()) && !devs.liveStoryJob(t.id())) {
+                devs.setTask(t.id(), "QUEUED", null);
+                activity.warn(requirementId, stage, run.id(), "\"" + t.title() + "\" stopped without a result; "
+                        + "the Developer agent starts it again.");
+                jobs.enqueue(story(t.id(), requirementId, t.attempts()));
+            }
+        }
+        tasks = devs.tasks(run.id());
         long busy = tasks.stream().filter(t -> t.wave() == wave && Set.of("QUEUED", "CODING").contains(t.status()))
                 .count();
         int free = (int) Math.max(0, run.agentSlots() - busy);

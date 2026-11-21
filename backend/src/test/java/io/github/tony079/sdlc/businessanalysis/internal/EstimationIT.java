@@ -564,8 +564,17 @@ class EstimationIT extends ApiIntegrationTest {
         fake.reset();
         fake.enqueue(writeAndDone("hello.py", "print('hello')\n"), done(), writeAndDone("theme.css", "body{}\n"),
                 done(), writeAndDone("pages.py", "PAGES = ['about']\n"), done());
+        // One story is retried by a person; the other is left CODING with no job behind it (as when a job ends
+        // without a result): the orchestrator queues it again on its next look.
+        boolean first = true;
         for (JsonNode t : tasks) {
-            if (t.path("wave").asInt() == 1) {
+            if (t.path("wave").asInt() != 1) {
+                continue;
+            }
+            if (first) {
+                admin.update("UPDATE app.dev_task SET status = 'CODING' WHERE id = ?::uuid", t.path("id").asString());
+                first = false;
+            } else {
                 assertThat(tina.post(dev + "/tasks/" + t.path("id").asString() + "/retry", Map.of()).status())
                         .isEqualTo(200);
             }
