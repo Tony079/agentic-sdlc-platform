@@ -209,7 +209,9 @@ class RequirementRepository {
                        (SELECT e.status FROM app.estimate_version e WHERE e.requirement_id = r.id
                         ORDER BY e.version_no DESC LIMIT 1) AS estimate_status,
                        (SELECT p.status FROM app.plan_version p WHERE p.requirement_id = r.id
-                        ORDER BY p.version_no DESC LIMIT 1) AS plan_status
+                        ORDER BY p.version_no DESC LIMIT 1) AS plan_status,
+                       (SELECT d.status FROM app.dev_run d WHERE d.requirement_id = r.id
+                        ORDER BY d.started_at DESC LIMIT 1) AS development_status
                 FROM app.requirement r
                 JOIN app.requirement_revision rev ON rev.requirement_id = r.id AND rev.revision_no = r.current_revision_no
                 JOIN app.workflow_instance wi ON wi.requirement_id = r.id
@@ -239,7 +241,8 @@ class RequirementRepository {
                         rs.getString("title"), WorkflowState.valueOf(rs.getString("projected_state")),
                         rs.getObject("project_id", UUID.class), rs.getInt("current_revision_no"),
                         rs.getObject("updated_at", OffsetDateTime.class), rs.getString("design_status"),
-                        rs.getString("estimate_status"), rs.getString("plan_status")))
+                        rs.getString("estimate_status"), rs.getString("plan_status"),
+                        rs.getString("development_status")))
                 .list();
     }
 

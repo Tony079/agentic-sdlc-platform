@@ -13,6 +13,15 @@ describe('deliveryStatus (GD-27, GD-33, GD-34)', () => {
     expect(deliveryStatus('APPROVED', 'FAILED', 'APPROVED').label).toBe('Estimate failed');
   });
 
+  it('moves on to development once it has started (GD-36)', () => {
+    expect(deliveryStatus('APPROVED', 'APPROVED', 'APPROVED', null).label).toBe('Delivery plan approved');
+    expect(deliveryStatus('APPROVED', 'APPROVED', 'APPROVED', 'RUNNING').label).toBe('In development');
+    expect(deliveryStatus('APPROVED', 'APPROVED', 'APPROVED', 'PAUSED').label).toBe('Development paused');
+    expect(deliveryStatus('APPROVED', 'APPROVED', 'APPROVED', 'DELIVERED').label).toBe('Delivered');
+    // A newer plan in review takes precedence over the earlier development.
+    expect(deliveryStatus('APPROVED', 'APPROVED', 'IN_REVIEW', 'RUNNING').label).toBe('Delivery plan in review');
+  });
+
   it('falls back to the last known stage while a later status is unknown', () => {
     expect(deliveryStatus('APPROVED').label).toBe('Design approved');
     expect(deliveryStatus('APPROVED', 'APPROVED').label).toBe('Estimate approved');

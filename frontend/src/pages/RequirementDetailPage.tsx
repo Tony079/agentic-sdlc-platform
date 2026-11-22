@@ -153,7 +153,7 @@ export function RequirementDetailPage() {
   // then the plan stage stays current, since the plan is pushed from there.
   const development = useQuery({
     queryKey: ['development', id],
-    queryFn: () => api.get<{ run: unknown | null }>(`/api/v1/requirements/${id}/development`),
+    queryFn: () => api.get<{ run: { status: string } | null }>(`/api/v1/requirements/${id}/development`),
     enabled: plan.data?.review.stage === 'APPROVED',
   });
   const started = (stage: string | undefined) =>
@@ -272,7 +272,8 @@ export function RequirementDetailPage() {
             <span className="sr-only">State:</span>
             <StatePill state={detail.state} designStatus={design.isSuccess ? designStatus : undefined}
               estimateStatus={estimate.isSuccess ? started(estimate.data.review.stage) : undefined}
-              planStatus={plan.isSuccess ? started(plan.data.review.stage) : undefined} />
+              planStatus={plan.isSuccess ? started(plan.data.review.stage) : undefined}
+              developmentStatus={development.data?.run?.status ?? null} />
             <span className="small">Revision {detail.currentRevisionNo}</span>
             {detail.restricted && (
               <Badge tone="warning">

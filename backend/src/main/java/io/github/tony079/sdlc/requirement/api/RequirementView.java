@@ -22,10 +22,12 @@ public final class RequirementView {
      * @param designStatus   GD-27: status of the latest technical design version, or null when none was started
      * @param estimateStatus GD-33: status of the latest estimate version, or null
      * @param planStatus     GD-34: status of the latest delivery plan version, or null
+     * @param developmentStatus GD-36: status of the latest development run (RUNNING, PAUSED, DELIVERED, STOPPED), or
+     *                          null when development has not started
      */
     public record Summary(UUID id, String key, String title, WorkflowState state, UUID projectId,
                           int currentRevisionNo, OffsetDateTime updatedAt, String designStatus, String estimateStatus,
-                          String planStatus) {
+                          String planStatus, String developmentStatus) {
     }
 
     public record SummaryPage(List<Summary> items, String nextCursor) {

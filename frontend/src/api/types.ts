@@ -304,6 +304,8 @@ export interface RequirementSummary {
   /** GD-33 / GD-34: status of the latest estimate and delivery plan versions, or null when none was started. */
   estimateStatus?: 'GENERATING' | 'IN_REVIEW' | 'APPROVED' | 'FAILED' | 'SUPERSEDED' | null;
   planStatus?: 'GENERATING' | 'IN_REVIEW' | 'APPROVED' | 'FAILED' | 'SUPERSEDED' | null;
+  /** GD-36: the latest development run's status; null until development starts. */
+  developmentStatus?: 'RUNNING' | 'PAUSED' | 'DELIVERED' | 'STOPPED' | null;
 }
 
 export interface RequirementPage {

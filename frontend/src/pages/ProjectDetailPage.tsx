@@ -317,7 +317,8 @@ function RequirementsTab({ project }: { project: Project }) {
                     </Link>
                   </td>
                   <td>
-                    <StatePill state={r.state} designStatus={r.designStatus ?? null} estimateStatus={r.estimateStatus ?? null} planStatus={r.planStatus ?? null} />
+                    <StatePill state={r.state} designStatus={r.designStatus ?? null} estimateStatus={r.estimateStatus ?? null} planStatus={r.planStatus ?? null}
+                    developmentStatus={r.developmentStatus ?? null} />
                   </td>
                   <td className="small">{relativeTime(r.updatedAt)}</td>
                 </tr>

@@ -87,7 +87,8 @@ export function HomePage() {
                       {projectName(r.projectId)} · updated {relativeTime(r.updatedAt)}
                     </span>
                   </div>
-                  <StatePill state={r.state} designStatus={r.designStatus ?? null} estimateStatus={r.estimateStatus ?? null} planStatus={r.planStatus ?? null} />
+                  <StatePill state={r.state} designStatus={r.designStatus ?? null} estimateStatus={r.estimateStatus ?? null} planStatus={r.planStatus ?? null}
+                    developmentStatus={r.developmentStatus ?? null} />
                 </li>
               ))}
             </ul>

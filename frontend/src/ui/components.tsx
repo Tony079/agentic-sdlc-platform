@@ -216,22 +216,30 @@ function stageStatus(noun: string, status: string | null): Status {
  * "Delivery plan approved" when all are. Null statuses mean the stage has not started; undefined means unknown.
  */
 export function deliveryStatus(designStatus: string | null, estimateStatus?: string | null,
-  planStatus?: string | null): Status {
+  planStatus?: string | null, developmentStatus?: string | null): Status {
   const design = DESIGN_STATUS[designStatus ?? 'NONE'] ?? { label: 'Waiting for technical design', cls: 'internal_review' };
   if (designStatus !== 'APPROVED' || estimateStatus === undefined) return design;
   if (estimateStatus !== 'APPROVED' || planStatus === undefined) return stageStatus('estimate', estimateStatus);
-  return stageStatus('delivery plan', planStatus);
+  if (planStatus !== 'APPROVED' || !developmentStatus) return stageStatus('delivery plan', planStatus);
+  // GD-36: once development has started, its status is where the requirement has got to.
+  switch (developmentStatus) {
+    case 'RUNNING': return { label: 'In development', cls: 'analysing' };
+    case 'PAUSED': return { label: 'Development paused', cls: 'internal_review' };
+    case 'DELIVERED': return { label: 'Delivered', cls: 'shared_with_client' };
+    default: return { label: 'Development stopped', cls: 'cancelled' };
+  }
 }
 
 /**
  * Workflow state of a requirement, coloured by meaning (waiting, in progress, done, failed). After BRD approval it
  * shows how far design, estimate and delivery plan have got when {@code designStatus} is given (null = not started).
  */
-export function StatePill({ state, designStatus, estimateStatus, planStatus }: {
+export function StatePill({ state, designStatus, estimateStatus, planStatus, developmentStatus }: {
   state: string; designStatus?: string | null; estimateStatus?: string | null; planStatus?: string | null;
+  developmentStatus?: string | null;
 }) {
   if (state === 'SHARED_WITH_CLIENT' && designStatus !== undefined) {
-    const d = deliveryStatus(designStatus, estimateStatus, planStatus);
+    const d = deliveryStatus(designStatus, estimateStatus, planStatus, developmentStatus);
     return (
       <span className={`state state-${d.cls}`} title={`BRD approved · ${d.label}`}>
         {d.label}
