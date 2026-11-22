@@ -63,6 +63,11 @@ export interface RequirementFormValues extends RequirementContent {
   projectId: string;
   /** GD-23: the project environment an existing product is analysed against (PROD by default). */
   targetEnvironmentId?: string | null;
+  /**
+   * GD-36: the environment a new product's code is delivered into (the Developer agent works on its branch). Never
+   * analysed; an existing product is delivered into the environment it is analysed against.
+   */
+  deliveryEnvironmentId?: string | null;
 }
 
 interface Props {
@@ -94,6 +99,7 @@ export function RequirementForm({ initial, projects, projectLocked, kindLocked =
       kind,
       repositoryUrl: kind === 'NEW_PRODUCT' ? null : current.repositoryUrl,
       targetEnvironmentId: kind === 'NEW_PRODUCT' ? null : current.targetEnvironmentId,
+      deliveryEnvironmentId: kind === 'NEW_PRODUCT' ? current.deliveryEnvironmentId : null,
     }));
   }
 
@@ -137,7 +143,7 @@ export function RequirementForm({ initial, projects, projectLocked, kindLocked =
   const environments = useQuery({
     queryKey: ['environments', values.projectId],
     queryFn: () => api.get<EnvironmentOverview>(`/api/v1/projects/${values.projectId}/environments`),
-    enabled: Boolean(values.projectId) && existingProduct,
+    enabled: Boolean(values.projectId),
   });
   const envList = [...(environments.data?.environments ?? [])].sort((a, b) => Number(b.production) - Number(a.production));
   const prodId = envList.find((e) => e.production)?.id;
@@ -191,7 +197,7 @@ export function RequirementForm({ initial, projects, projectLocked, kindLocked =
         {kindLocked && <p className="hint">The requirement type cannot be changed after submission.</p>}
         {values.kind === 'NEW_PRODUCT' && (
           <p className="notice" role="note">
-            A new product has no existing code, so no environment is needed. The BA agent writes the BRD from this
+            A new product has no existing code, so nothing is analysed. The BA agent writes the BRD from this
             requirement and the documents you upload (describe the product well and attach any briefs, mock-ups or
             examples). After BRD approval, the Technical Approver&apos;s design proposes the technology stack, structure and
             deployment from scratch.
@@ -200,6 +206,35 @@ export function RequirementForm({ initial, projects, projectLocked, kindLocked =
       </fieldset>
 
       {textField('title')}
+      {values.kind === 'NEW_PRODUCT' && values.projectId && envList.length > 0 && (
+        <div className="field">
+          <label htmlFor="field-deliveryEnvironmentId">Deliver into environment (optional)</label>
+          <select
+            id="field-deliveryEnvironmentId"
+            value={values.deliveryEnvironmentId ?? ''}
+            disabled={environments.isPending}
+            onChange={(e) => set('deliveryEnvironmentId', e.target.value || null)}
+          >
+            <option value="">Decide later</option>
+            {envList.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+                {e.production ? ' (PROD)' : ''}
+              </option>
+            ))}
+          </select>
+          <p className="hint">
+            {(() => {
+              const env = envList.find((e) => e.id === values.deliveryEnvironmentId);
+              if (!env) return 'Where the Developer agent writes the code once the plan is approved. It is not analysed.';
+              return env.branches.length === 0
+                ? 'This environment has no branches yet; the Developer agent would use the repository\'s default branch.'
+                : `The Developer agent works on ${env.branches.map((b) => `${b.repository} @ ${b.branch}`).join(', ')}. `
+                  + 'It is not analysed.';
+            })()}
+          </p>
+        </div>
+      )}
       {existingProduct && (
         <div className="field">
           <label htmlFor="field-targetEnvironmentId">Environment to analyse</label>

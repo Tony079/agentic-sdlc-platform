@@ -102,7 +102,8 @@ class PlanService {
     }
 
     /** A repository to push to, with the branches development may work from (the suggested one first). */
-    record RepositoryV(UUID id, String fullName, List<PlanPushRepository.BranchOption> branches) {
+    record RepositoryV(UUID id, String fullName, List<PlanPushRepository.BranchOption> branches,
+                       DevRepository.EnvironmentBranch fromRequirement) {
     }
 
     /**
@@ -757,7 +758,8 @@ class PlanService {
         List<PlanPushRepository.PushRow> rows = pushes.recent(requirementId, PUSH_HISTORY);
         List<PushV> recent = rows.stream().map(PlanService::pushView).toList();
         List<RepositoryV> repositories = a.estimator() ? pushes.verifiedRepositories(a.projectId()).stream()
-                .map(r -> new RepositoryV(r.id(), r.fullName(), suggestedFirst(requirementId, a.projectId(), r.id())))
+                .map(r -> new RepositoryV(r.id(), r.fullName(), suggestedFirst(requirementId, a.projectId(), r.id()),
+                        devs.environmentBranch(requirementId, r.id())))
                 .toList() : List.of();
         String unavailable = !a.estimator() ? null : repositories.isEmpty()
                 ? "The project has no verified GitHub repository. Its Environment Manager connects one on the "

@@ -110,6 +110,12 @@ class EnvironmentController {
         return environments.targetEnvironment(id);
     }
 
+    @PutMapping("/api/v1/requirements/{id}/delivery-environment")
+    ResponseEntity<Void> delivery(@PathVariable UUID id, @RequestBody TargetBody body) {
+        environments.setDeliveryEnvironment(id, body.environmentId());
+        return ResponseEntity.noContent().build();
+    }
+
     @PutMapping("/api/v1/requirements/{id}/target-environment")
     ResponseEntity<Void> target(@PathVariable UUID id, @RequestBody TargetBody body) {
         environments.setTargetEnvironment(id, body.environmentId());

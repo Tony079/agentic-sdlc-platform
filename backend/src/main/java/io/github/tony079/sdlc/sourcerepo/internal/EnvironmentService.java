@@ -191,6 +191,8 @@ class EnvironmentService {
             refuseIfAnalysed(environmentId);
             jdbc.sql("UPDATE app.requirement SET target_environment_id = NULL WHERE target_environment_id = :id")
                     .param("id", environmentId).update();
+            jdbc.sql("UPDATE app.requirement SET delivery_environment_id = NULL WHERE delivery_environment_id = :id")
+                    .param("id", environmentId).update();
             jdbc.sql("DELETE FROM app.environment WHERE id = :id").param("id", environmentId).update();
             return new Result(true, null);
         }));
@@ -324,7 +326,7 @@ class EnvironmentService {
     Map<String, Object> targetEnvironment(UUID requirementId) {
         CurrentUser me = ClientUsers.require();
         return tx.execute(s -> jdbc.sql("""
-                SELECT r.target_environment_id, r.created_by = :me AS mine, r.project_id
+                SELECT r.target_environment_id, r.created_by = :me AS mine, r.project_id, r.delivery_environment_id
                 FROM app.requirement r WHERE r.id = :id""")
                 .param("id", requirementId).param("me", me.userId())
                 .query((rs, n) -> {
@@ -332,6 +334,7 @@ class EnvironmentService {
                     m.put("environmentId", rs.getObject(1, UUID.class));
                     m.put("canChange", rs.getBoolean(2));
                     m.put("projectId", rs.getObject(3, UUID.class));
+                    m.put("deliveryEnvironmentId", rs.getObject(4, UUID.class));
                     return m;
                 }).optional()
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Requirement not found.")));
@@ -372,6 +375,32 @@ class EnvironmentService {
         });
     }
 
+    /**
+     * GD-36: a requirement's owner names the environment its code is delivered into (the Developer agent works on that
+     * environment's branch). Never analysed; changeable until development starts (then the Development card's branch
+     * choice applies).
+     */
+    void setDeliveryEnvironment(UUID requirementId, UUID environmentId) {
+        CurrentUser me = ClientUsers.require();
+        tx.executeWithoutResult(s -> {
+            UUID project = jdbc.sql("SELECT project_id FROM app.requirement WHERE id = :id AND created_by = :me")
+                    .param("id", requirementId).param("me", me.userId()).query(UUID.class).optional()
+                    .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "OWNER_REQUIRED",
+                            "Only the requirement's owner can choose where its code is delivered."));
+            if (environmentId != null && !jdbc.sql("SELECT EXISTS (SELECT 1 FROM app.environment WHERE id = :e AND project_id = :p)")
+                    .param("e", environmentId).param("p", project).query(Boolean.class).single()) {
+                throw ApiException.validation("Choose an environment of the requirement's project.");
+            }
+            if (jdbc.sql("SELECT EXISTS (SELECT 1 FROM app.dev_run WHERE requirement_id = :id)")
+                    .param("id", requirementId).query(Boolean.class).single()) {
+                throw ApiException.conflict("DEVELOPMENT_STARTED", "Development has started: change the branch it "
+                        + "works on from the Development card.");
+            }
+            jdbc.sql("UPDATE app.requirement SET delivery_environment_id = :e WHERE id = :id").param("e", environmentId)
+                    .param("id", requirementId).update();
+        });
+    }
+
     /** An environment that a requirement was analysed against is part of that requirement's evidence. */
     private void refuseIfAnalysed(UUID environmentId) {
         if (Boolean.TRUE.equals(jdbc.sql(
@@ -393,6 +422,8 @@ class EnvironmentService {
             case "REMOVE_ENVIRONMENT" -> {
                 refuseIfAnalysed(r.environmentId());
                 jdbc.sql("UPDATE app.requirement SET target_environment_id = NULL WHERE target_environment_id = :id")
+                        .param("id", r.environmentId()).update();
+                jdbc.sql("UPDATE app.requirement SET delivery_environment_id = NULL WHERE delivery_environment_id = :id")
                         .param("id", r.environmentId()).update();
                 jdbc.sql("DELETE FROM app.environment WHERE id = :id").param("id", r.environmentId()).update();
             }

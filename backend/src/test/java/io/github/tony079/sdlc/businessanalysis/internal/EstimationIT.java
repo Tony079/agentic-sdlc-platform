@@ -345,7 +345,7 @@ class EstimationIT extends ApiIntegrationTest {
 
         Pushed pushed = pushToGitHubIssues(tenant, projectId, plan, eve, aaron, victor);
         agentDelivery(tenant, estimate, plan, eve, aaron);
-        development(tenant, id, plan, eve, aaron, tina, victor, pushed);
+        development(tenant, id, plan, alice, eve, aaron, tina, victor, pushed);
     }
 
     record Pushed(UUID repositoryId, String name) {
@@ -512,7 +512,8 @@ class EstimationIT extends ApiIntegrationTest {
      * everything is merged the requirement is delivered. A missing GitHub permission fails the story with a reason, and
      * a Technical Approver retries it.
      */
-    private void development(UUID tenant, String id, String plan, ApiClient eve, ApiClient aaron, ApiClient tina,
+    private void development(UUID tenant, String id, String plan, ApiClient alice, ApiClient eve, ApiClient aaron,
+                             ApiClient tina,
                              ApiClient victor, Pushed pushed) {
         FakeGitHub github = FakeGitHub.get();
         github.put(new FakeGitHub.Repo("acme-org", pushed.name(), 900_000_001L + Math.abs(pushed.name().hashCode() % 1000),
@@ -536,8 +537,8 @@ class EstimationIT extends ApiIntegrationTest {
                 p.path("version").path("reviewHash").asString(), "confirmApproveAlone", true));
         assertThat(approved.status()).as(approved.body().toString()).isEqualTo(200);
 
-        // A new-product requirement names no environment; the project's QC environment maps the repository to
-        // releases/qc. The Estimator picks that branch when pushing: work starts there and pull requests go into it.
+        // The project's QC environment maps the repository to releases/qc. The new-product requirement names QC as the
+        // environment its code is delivered into (never analysed): work starts there and pull requests go into it.
         UUID requirementUuid = UUID.fromString(id);
         admin.update("""
                 DO $$ DECLARE e uuid; BEGIN
@@ -550,7 +551,19 @@ class EstimationIT extends ApiIntegrationTest {
                     SELECT tenant_id, project_id, e, '%s', 'releases/qc', created_by, 'VERIFIED', repeat('c', 40), now()
                     FROM app.requirement WHERE id = '%s';
                 END $$""".formatted(requirementUuid, pushed.repositoryId(), requirementUuid));
+        UUID qc = admin.queryForObject("SELECT id FROM app.environment WHERE name = 'QC for development' AND project_id = "
+                + "(SELECT project_id FROM app.requirement WHERE id = ?::uuid)", UUID.class, id);
+        assertThat(eve.put("/api/v1/requirements/" + id + "/delivery-environment", Map.of("environmentId",
+                qc.toString())).errorCode()).isEqualTo("OWNER_REQUIRED");
+        assertThat(alice.put("/api/v1/requirements/" + id + "/delivery-environment", Map.of("environmentId",
+                qc.toString())).status()).isEqualTo(204);
+        assertThat(alice.get("/api/v1/requirements/" + id + "/target-environment").body()
+                .path("deliveryEnvironmentId").asString()).isEqualTo(qc.toString());
+        // Not analysed: the requirement still names no analysed environment.
+        assertThat(admin.queryForObject("SELECT target_environment_id FROM app.requirement WHERE id = ?::uuid",
+                UUID.class, id)).isNull();
         JsonNode pushOptions = eve.get(plan).body().path("push").path("repositories");
+        assertThat(pushOptions.get(0).path("fromRequirement").path("branch").asString()).isEqualTo("releases/qc");
         assertThat(pushOptions.valueStream().filter(r -> r.path("id").asString().equals(
                 pushed.repositoryId().toString())).findFirst().orElseThrow().path("branches").valueStream()
                 .map(b -> b.path("branch").asString())).contains("releases/qc", "main");
@@ -567,8 +580,9 @@ class EstimationIT extends ApiIntegrationTest {
                 done());
         assertThat(eve.post(plan + "/push", Map.of("repositoryId", pushed.repositoryId().toString(),
                 "baseBranch", "releases/nope")).errorCode()).isEqualTo("VALIDATION_FAILED");
-        assertThat(eve.post(plan + "/push", Map.of("repositoryId", pushed.repositoryId().toString(),
-                "baseBranch", "releases/qc")).status()).isEqualTo(200);
+        // Pushed without choosing a branch: the delivery environment's branch is used.
+        assertThat(eve.post(plan + "/push", Map.of("repositoryId", pushed.repositoryId().toString())).status())
+                .isEqualTo(200);
         drive(tenant);
         JsonNode state = victor.get(dev).body();
         assertThat(state.path("run").path("status").asString()).as(state.toString()).isEqualTo("RUNNING");
@@ -614,6 +628,10 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(String.valueOf(pr.get("body"))).contains("Closes #").contains("Garuda never merges");
         assertThat(pr.get("base")).isEqualTo("releases/qc");
         assertThat(state.path("run").path("baseBranch").asString()).isEqualTo("releases/qc");
+        assertThat(state.path("run").path("branchFrom").asString()).isEqualTo("from the QC for development environment");
+        // Once development has started, the branch is changed on the Development card, not on the requirement.
+        assertThat(alice.put("/api/v1/requirements/" + id + "/delivery-environment", Map.of("environmentId",
+                qc.toString())).errorCode()).isEqualTo("DEVELOPMENT_STARTED");
         // The branch can be changed on a running development (to an option only), by those who control it.
         assertThat(victor.post(dev + "/base-branch", Map.of("branch", "main")).errorCode())
                 .isEqualTo("DEV_CONTROL_NOT_ALLOWED");

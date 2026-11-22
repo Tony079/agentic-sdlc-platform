@@ -25,6 +25,8 @@ interface DevRun {
   baseBranch?: string | null;
   /** Branches it may be changed to (for those who control development). */
   branchOptions?: BranchOption[];
+  /** Where the branch comes from, in words ("from the QC environment"). */
+  branchFrom?: string;
 }
 interface DevState {
   requirementId: string; canControl: boolean; run: DevRun | null; canStart?: boolean; notStarted?: string | null;
@@ -123,6 +125,7 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
     refetchInterval: (q) => (q.state.data?.run?.status === 'RUNNING' ? 10000 : starting && !q.state.data?.run ? 3000 : false),
   });
   const [busy, setBusy] = useState(false);
+  const [changingBranch, setChangingBranch] = useState(false);
   const [message, setMessage] = useState<{ tone: 'info' | 'danger'; text: string } | null>(null);
 
   async function act(path: string, done: string, body: Record<string, unknown> = {}) {
@@ -214,7 +217,10 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
     >
       <p className="small">
         Garuda’s Developer agent codes each story in a sandbox and opens a pull request on {run.repository} into{' '}
-        <code>{run.baseBranch ?? 'the default branch'}</code> ({run.agentSlots} at
+        <code>{run.baseBranch ?? 'the default branch'}</code>{run.branchFrom ? ` (${run.branchFrom})` : ''}
+        {controls && (run.branchOptions?.length ?? 0) > 0 && !changingBranch && (
+          <> <button type="button" className="btn-ghost btn-sm" onClick={() => setChangingBranch(true)}>Change</button></>
+        )}{' '}({run.agentSlots} at
         a time). Review and merge them in GitHub; the next wave starts once the current one is merged. Started{' '}
         {formatDateTime(run.startedAt)}{run.finishedAt && ` · finished ${formatDateTime(run.finishedAt)}`}.
       </p>
@@ -224,11 +230,11 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
           {run.status === 'RUNNING'
             ? <button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => void act('pause', 'Development paused.')}>Pause</button>
             : <button type="button" className="btn-primary btn-sm" disabled={busy} onClick={() => void act('resume', 'Development resumed.')}>Resume</button>}
-          {(run.branchOptions?.length ?? 0) > 0 && (
+          {changingBranch && (run.branchOptions?.length ?? 0) > 0 && (
             <label className="small">Works on branch
               <select value={run.baseBranch ?? ''} disabled={busy}
-                onChange={(e) => void act('base-branch', `Stories not yet coded (and retries) now use ${e.target.value}. `
-                  + 'Pull requests already open keep their target; change it in GitHub if needed.', { branch: e.target.value })}>
+                onChange={(e) => { setChangingBranch(false); void act('base-branch', `Stories not yet coded (and retries) now use ${e.target.value}. `
+                  + 'Pull requests already open keep their target; change it in GitHub if needed.', { branch: e.target.value }); }}>
                 {!run.baseBranch && <option value="">default branch</option>}
                 {run.branchOptions!.map((b) => <option key={`${b.environment ?? ""}:${b.branch}`} value={b.branch}>{branchLabel(b)}</option>)}
               </select>

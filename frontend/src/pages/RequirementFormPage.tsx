@@ -54,7 +54,8 @@ export function RequirementFormPage() {
   });
   const target = useQuery({
     queryKey: ['target-environment', id],
-    queryFn: () => api.get<{ environmentId: string | null }>(`/api/v1/requirements/${id}/target-environment`),
+    queryFn: () => api.get<{ environmentId: string | null; deliveryEnvironmentId?: string | null }>(
+      `/api/v1/requirements/${id}/target-environment`),
     enabled: Boolean(id),
   });
 
@@ -71,7 +72,8 @@ export function RequirementFormPage() {
 
   const current = saved ?? existing.data ?? null;
   const initial: RequirementFormValues = current
-    ? { projectId: current.projectId, ...current.content, targetEnvironmentId: target.data?.environmentId ?? null }
+    ? { projectId: current.projectId, ...current.content, targetEnvironmentId: target.data?.environmentId ?? null,
+        deliveryEnvironmentId: target.data?.deliveryEnvironmentId ?? null }
     : { ...EMPTY, projectId: search.get('projectId') ?? EMPTY.projectId };
   // GD-02: new requirements only in active projects where the user is a Requester or Approver (checked again by the
   // server). Projects without a role are absent for members; legacy responses without roles keep every project.
@@ -105,6 +107,13 @@ export function RequirementFormPage() {
           && values.targetEnvironmentId !== (target.data?.environmentId ?? null)) {
         await api.put(`/api/v1/requirements/${detail.id}/target-environment`, { environmentId: values.targetEnvironmentId });
         queryClient.setQueryData(['target-environment', detail.id], { environmentId: values.targetEnvironmentId });
+      }
+      // GD-36: where a new product's code is delivered (an existing product is delivered where it is analysed).
+      const delivery = values.kind === 'NEW_PRODUCT' ? values.deliveryEnvironmentId ?? null : null;
+      if (delivery !== (target.data?.deliveryEnvironmentId ?? null)) {
+        await api.put(`/api/v1/requirements/${detail.id}/delivery-environment`, { environmentId: delivery });
+        queryClient.setQueryData(['target-environment', detail.id], {
+          ...(target.data ?? { environmentId: null }), deliveryEnvironmentId: delivery });
       }
       setSaved(detail);
       draftSaved = true;

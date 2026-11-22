@@ -156,18 +156,29 @@ class DevRepository {
                 .param("f", failureCode).param("id", id).update();
     }
 
+    /** The branch a requirement's environment names for a repository, and that environment's name. */
+    record EnvironmentBranch(String branch, String environment) {
+    }
+
     /**
-     * The branch the requirement's environment names for the repository (pull requests go into it); null when the
-     * requirement names no environment or the environment has no branch for this repository.
+     * The branch the requirement's environment names for the repository (pull requests go into it): the environment
+     * its code is delivered into, else the one it was analysed against. Null when neither names a branch for it.
      */
     String baseBranch(UUID requirementId, UUID repositoryId) {
+        EnvironmentBranch b = environmentBranch(requirementId, repositoryId);
+        return b == null ? null : b.branch();
+    }
+
+    EnvironmentBranch environmentBranch(UUID requirementId, UUID repositoryId) {
         return jdbc.sql("""
-                SELECT eb.branch FROM app.requirement r
-                JOIN app.environment_branch eb ON eb.environment_id = r.target_environment_id
-                                              AND eb.repository_id = :repo
+                SELECT eb.branch, e.name FROM app.requirement r
+                JOIN app.environment_branch eb
+                  ON eb.environment_id = coalesce(r.delivery_environment_id, r.target_environment_id)
+                 AND eb.repository_id = :repo
+                JOIN app.environment e ON e.id = eb.environment_id
                 WHERE r.id = :r
-                """).param("r", requirementId).param("repo", repositoryId).query(String.class).optional()
-                .orElse(null);
+                """).param("r", requirementId).param("repo", repositoryId)
+                .query((rs, n) -> new EnvironmentBranch(rs.getString(1), rs.getString(2))).optional().orElse(null);
     }
 
     void startCoding(UUID id) {

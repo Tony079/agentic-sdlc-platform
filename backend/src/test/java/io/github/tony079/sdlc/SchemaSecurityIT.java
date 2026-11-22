@@ -177,7 +177,8 @@ class SchemaSecurityIT {
                 WHERE grantee = 'sdlc_app' AND table_schema = 'app' AND table_name = 'requirement'
                   AND privilege_type = 'UPDATE' ORDER BY column_name
                 """, String.class);
-        assertThat(requirementColumns).containsExactly("current_revision_no", "restricted", "target_environment_id", "updated_at", "version");
+        assertThat(requirementColumns).containsExactly("current_revision_no", "delivery_environment_id", "restricted",
+                "target_environment_id", "updated_at", "version");
         List<String> instanceColumns = admin.queryForList("""
                 SELECT column_name FROM information_schema.column_privileges
                 WHERE grantee = 'sdlc_app' AND table_schema = 'app' AND table_name = 'workflow_instance'
@@ -247,8 +248,8 @@ class SchemaSecurityIT {
         // R1-M5 (TDD 12.3): the BA agent analyses the requirement revision, so the worker reads it (read-only) and five
         // identity columns of requirement; it still cannot write either (checked above).
         assertThat(columns("sdlc_worker", "requirement", "SELECT"))
-                .containsExactly("created_by", "current_revision_no", "id", "project_id", "target_environment_id",
-                        "tenant_id");
+                .containsExactly("created_by", "current_revision_no", "delivery_environment_id", "id", "project_id",
+                        "target_environment_id", "tenant_id");
         assertThat(columns("sdlc_worker", "tenant", "SELECT")).containsExactly("id", "status");
     }
 

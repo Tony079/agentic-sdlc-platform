@@ -78,7 +78,11 @@ export function branchLabel(o: BranchOption) {
 interface PushInfo {
   canPush: boolean; unavailableReason: string | null;
   /** branches: where development may work from (an environment's branch, or the default with environment null). */
-  repositories: { id: string; fullName: string; branches?: BranchOption[] }[];
+  repositories: {
+    id: string; fullName: string; branches?: BranchOption[];
+    /** The branch the requirement's own environment names for this repository (used unless changed). */
+    fromRequirement?: { branch: string; environment: string } | null;
+  }[];
   pushes: PlanPush[]; issueUrls: Record<string, string>;
 }
 interface PlanState {
@@ -97,8 +101,11 @@ function PushSection({ push, busy, onPush }: {
   push: PushInfo; busy: boolean; onPush: (repositoryId: string, baseBranch: string | null) => void;
 }) {
   const [repositoryId, setRepositoryId] = useState(push.repositories[0]?.id ?? '');
-  const branches = push.repositories.find((r) => r.id === repositoryId)?.branches ?? [];
+  const repository = push.repositories.find((r) => r.id === repositoryId);
+  const branches = repository?.branches ?? [];
+  const own = repository?.fromRequirement ?? null;
   const [picked, setPicked] = useState<string | null>(null);
+  const [changing, setChanging] = useState(false);
   // The suggested branch (the server lists it first) until someone picks another.
   const baseBranch = picked !== null && branches.some((b) => b.branch === picked) ? picked : branches[0]?.branch ?? null;
   const running = pushing(push);
@@ -115,11 +122,18 @@ function PushSection({ push, busy, onPush }: {
           </p>
           <div className="row" style={{ gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <label>Repository
-              <select value={repositoryId} onChange={(e) => { setRepositoryId(e.target.value); setPicked(null); }}>
+              <select value={repositoryId} onChange={(e) => { setRepositoryId(e.target.value); setPicked(null); setChanging(false); }}>
                 {push.repositories.map((r) => <option key={r.id} value={r.id}>{r.fullName}</option>)}
               </select>
             </label>
-            {branches.length > 0 && (
+            {branches.length > 0 && own && !changing && (
+              <p className="small" style={{ margin: 0 }}>
+                The Developer agent works on <code>{baseBranch}</code>
+                {baseBranch === own.branch ? ` (from the ${own.environment} environment)` : ''}.{' '}
+                <button type="button" className="btn-ghost btn-sm" onClick={() => setChanging(true)}>Change</button>
+              </p>
+            )}
+            {branches.length > 0 && (!own || changing) && (
               <label>Developer agent works on
                 <select value={baseBranch ?? ''} onChange={(e) => setPicked(e.target.value)}>
                   {branches.map((b) => <option key={`${b.environment ?? ""}:${b.branch}`} value={b.branch}>{branchLabel(b)}</option>)}

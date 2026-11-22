@@ -35,7 +35,16 @@ class DevService {
 
     record RunV(UUID id, String status, String repository, int currentWave, int agentSlots, OffsetDateTime startedAt,
                 OffsetDateTime finishedAt, List<TaskV> tasks, Map<String, Long> counts, String baseBranch,
-                List<PlanPushRepository.BranchOption> branchOptions) {
+                List<PlanPushRepository.BranchOption> branchOptions, String branchFrom) {
+    }
+
+    /** Where the run's branch comes from, in words. */
+    private String branchFrom(DevRepository.RunRow run) {
+        if (run.baseBranch() != null) {
+            return "chosen for this development";
+        }
+        DevRepository.EnvironmentBranch env = devs.environmentBranch(run.requirementId(), run.repositoryId());
+        return env != null ? "from the " + env.environment() + " environment" : "the repository's default branch";
     }
 
     /**
@@ -102,7 +111,7 @@ class DevService {
         return new DevState(requirementId, controls(v), new RunV(run.id(), run.status(), run.repository(),
                 run.currentWave(), run.agentSlots(), run.startedAt(), run.finishedAt(), tasks, counts,
                 devs.baseBranch(run), controls(v) ? pushes.branchOptions(run.projectId(), run.repositoryId())
-                        : List.of()), false, null);
+                        : List.of(), branchFrom(run)), false, null);
     }
 
     private boolean forAgents(PlanPushRepository.PushRow push) {

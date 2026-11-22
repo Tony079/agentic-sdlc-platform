@@ -72,7 +72,11 @@ describe('RequirementForm', () => {
     expect(screen.getByText('Analyses acme/loans @ release/qc.')).toBeInTheDocument();
     await user.click(screen.getByLabelText('New product'));
     expect(screen.queryByLabelText('Environment to analyse')).not.toBeInTheDocument();
-    expect(screen.getByRole('note')).toHaveTextContent('A new product has no existing code, so no environment is needed');
+    expect(screen.getByRole('note')).toHaveTextContent('A new product has no existing code, so nothing is analysed');
+    // GD-36: a new product may name where its code is delivered; it is not analysed.
+    const delivery = screen.getByLabelText('Deliver into environment (optional)');
+    expect(delivery).toHaveValue('');
+    expect(screen.getByText(/Where the Developer agent writes the code/)).toBeInTheDocument();
   });
 
   it('saves the chosen environment with the draft', async () => {

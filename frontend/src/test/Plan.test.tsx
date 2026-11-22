@@ -65,7 +65,8 @@ describe('PlanPanel (GD-34)', () => {
     const push = {
       canPush: true, unavailableReason: null, repositories: [{ id: 'repo-1', fullName: 'acme-org/portfolio', branches: [
         { branch: 'main', environment: 'PROD', production: true },
-        { branch: 'releases/qc', environment: 'QC', production: false }] }],
+        { branch: 'releases/qc', environment: 'QC', production: false }],
+        fromRequirement: { branch: 'main', environment: 'PROD' } }],
       pushes: [{ id: 'x1', repository: 'acme-org/portfolio', planVersionNo: 1, status: 'FAILED', itemsTotal: 4, created: 0,
         updated: 0, failed: 0, failureCode: 'GITHUB_ISSUES_PERMISSION', message: 'Not pushed: the Garuda GitHub App has not been granted Issues: Read and write.',
         requestedAt: '2026-11-21T10:00:00Z', finishedAt: '2026-11-21T10:00:05Z' }],
@@ -80,6 +81,10 @@ describe('PlanPanel (GD-34)', () => {
     expect(screen.getByRole('link', { name: '#7' })).toHaveAttribute('href', 'https://github.com/acme-org/portfolio/issues/7');
     // The Developer agent's branch: the suggested one first, here changed to the QC environment's branch.
     const user = userEvent.setup();
+    // The requirement's own environment names the branch: one line, with Change for exceptions.
+    expect(within(section).getByText(/from the PROD environment/)).toBeInTheDocument();
+    expect(within(section).queryByRole('combobox', { name: /Developer agent works on/ })).not.toBeInTheDocument();
+    await user.click(within(section).getByRole('button', { name: 'Change' }));
     const branch = within(section).getByRole('combobox', { name: /Developer agent works on/ });
     expect(branch).toHaveValue('main');
     await user.selectOptions(branch, 'releases/qc');

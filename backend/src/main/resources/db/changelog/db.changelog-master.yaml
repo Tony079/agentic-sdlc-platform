@@ -122,3 +122,5 @@ databaseChangeLog:
   - include: { file: changes/0064-dev-story-v3.sql, relativeToChangelogFile: true }
   # GD-36 follow-up (2026-11-21): chosen development branch; per-story activity.
   - include: { file: changes/0065-dev-branch-and-story-log.sql, relativeToChangelogFile: true }
+  # GD-36 follow-up (2026-11-22): the environment a requirement's code is delivered into.
+  - include: { file: changes/0066-delivery-environment.sql, relativeToChangelogFile: true }

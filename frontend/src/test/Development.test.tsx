@@ -51,7 +51,7 @@ describe('DevelopmentPanel (GD-36)', () => {
     localStorage.clear();
     document.cookie = 'XSRF-TOKEN=d2; path=/';
     const later = {
-      ...run, currentWave: 2, baseBranch: 'main',
+      ...run, currentWave: 2, baseBranch: 'main', branchFrom: "the repository's default branch",
       branchOptions: [{ branch: 'main', environment: 'PROD', production: true },
         { branch: 'releases/qc', environment: 'QC', production: false }],
       tasks: [
@@ -79,8 +79,11 @@ describe('DevelopmentPanel (GD-36)', () => {
     const wave2 = screen.getByRole('region', { name: 'Wave 2' });
     expect(within(wave2).getAllByText('needs attention')).toHaveLength(2); // the wave and the story
     expect(await within(wave2).findByText(/session 1: GIVE_UP/)).toBeInTheDocument();
-    // The branch the agent works on can be changed.
-    await userEvent.setup().selectOptions(screen.getByRole('combobox', { name: /Works on branch/ }), 'releases/qc');
+    // The branch is shown with where it comes from; Change reveals the choice.
+    expect(screen.getByText(/the repository's default branch|from the/)).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Change' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: /Works on branch/ }), 'releases/qc');
     const post = calls.find((c) => c.url.endsWith('/development/base-branch'));
     expect(JSON.parse(String(post?.init.body))).toEqual({ branch: 'releases/qc' });
   });
