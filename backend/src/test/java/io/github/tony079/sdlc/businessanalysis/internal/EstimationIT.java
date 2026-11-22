@@ -724,6 +724,10 @@ class EstimationIT extends ApiIntegrationTest {
         tina.post(dev + "/resume", Map.of());
         drive(tenant);
         assertThat(tina.get(dev).body().path("run").path("status").asString()).isEqualTo("DELIVERED");
+        // Lines about a whole wave name it, so they show inside that wave on the card.
+        assertThat(tina.get("/api/v1/requirements/" + id + "/activity").body().valueStream()
+                .filter(l -> l.path("message").asString().startsWith("Wave 2: the Developer agent starts")))
+                .singleElement().satisfies(l -> assertThat(l.path("wave").asInt()).isEqualTo(2));
         assertThat(github.branches("acme-org", pushed.name())).allMatch(b -> b.startsWith("garuda/"));
         // People can only pause, resume, retry and skip: the database refuses anything else.
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> admin.update("DELETE FROM app.dev_task"))

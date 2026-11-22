@@ -13,6 +13,15 @@ export interface ActivityEntry {
   createdAt: string;
   /** GD-36: the development story the line is about (its own log shows it). */
   taskId?: string | null;
+  /** GD-36: the development wave a line is about (it shows inside that wave). */
+  wave?: number | null;
+}
+
+/** The wave a development line is about: named on the line, or (older lines) in its text ("Wave 4 ..."). */
+export function lineWave(l: ActivityEntry): number | null {
+  if (l.wave != null) return l.wave;
+  const m = /^Wave (\d+)\b/.exec(l.message);
+  return m ? Number(m[1]) : null;
 }
 
 const ICON: Record<ActivityEntry['kind'], IconName> = {
@@ -111,7 +120,7 @@ export function ActivityTimeline({ requirementId, stage, live, title, expanded =
   title: string;
   /** Shown open without polling (for example after a failure). */
   expanded?: boolean;
-  /** GD-36: leave out a story's step-by-step lines (they show under the story); keep its outcomes. */
+  /** GD-36: leave out lines about one story or one wave (they show under that story or wave). */
   milestonesOnly?: boolean;
 }) {
   // After a minute with no line at all, say so: the job is queued but no worker has picked it up.
@@ -127,7 +136,7 @@ export function ActivityTimeline({ requirementId, stage, live, title, expanded =
     refetchInterval: live ? 2000 : false,
   });
   const lines = Array.isArray(activity.data) ? activity.data : [];
-  const all = runs(lines.filter((l) => l.stage === stage && !(milestonesOnly && l.taskId && l.kind === 'STEP')));
+  const all = runs(lines.filter((l) => l.stage === stage && !(milestonesOnly && (l.taskId || lineWave(l) != null))));
   const latest = all[all.length - 1];
   if (!latest) {
     return live ? (

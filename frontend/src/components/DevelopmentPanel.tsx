@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import { Badge, Callout, formatDateTime, type Tone } from '../ui/components';
-import { ActivityLines, ActivityTimeline, type ActivityEntry } from './ActivityTimeline';
+import { ActivityLines, ActivityTimeline, lineWave, type ActivityEntry } from './ActivityTimeline';
 import { FoldSection, FoldToggle, useFold } from '../ui/Fold';
 import { branchLabel, type BranchOption } from './PlanPanel';
 
@@ -89,8 +89,10 @@ function serialWait(tasks: DevTask[]): string | null {
   return null;
 }
 
-function WaveSection({ requirementId, wave, tasks, current, serial, children }: {
-  requirementId: string; wave: number; tasks: DevTask[]; current: boolean; serial: boolean; children: ReactNode;
+function WaveSection({ requirementId, wave, tasks, current, serial, lines, children }: {
+  requirementId: string; wave: number; tasks: DevTask[]; current: boolean; serial: boolean;
+  /** Lines about the wave as a whole (it started, it waits for outside work). */
+  lines: ActivityEntry[]; children: ReactNode;
 }) {
   const finished = tasks.every((t) => FINISHED.includes(t.status));
   const attention = tasks.some(needsAttention);
@@ -111,6 +113,7 @@ function WaveSection({ requirementId, wave, tasks, current, serial, children }: 
         {attention && <Badge tone="danger">needs attention</Badge>}
         <span className="small">{summary}</span>
       </div>
+      {open && lines.length > 0 && <ActivityLines lines={lines} live={false} />}
       {open && current && serial && !finished && serialWait(tasks) && (
         <p className="small notice" role="status">{serialWait(tasks)}</p>
       )}
@@ -155,6 +158,16 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
       setBusy(false);
     }
   }
+
+  // Development lines about a whole wave show inside it (shared with the timeline's query).
+  const activity = useQuery({
+    queryKey: ['activity', requirementId],
+    queryFn: () => api.get<ActivityEntry[]>(`/api/v1/requirements/${requirementId}/activity`),
+    enabled: !!query.data?.run,
+    refetchInterval: query.data?.run?.status === 'RUNNING' ? 10000 : false,
+  });
+  const waveLines = (w: number) => (Array.isArray(activity.data) ? activity.data : [])
+    .filter((l) => l.stage === 'DEVELOPMENT' && !l.taskId && lineWave(l) === w);
 
   const data = query.data;
   if (!data) return null;
@@ -283,14 +296,15 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
         const tasks = code.filter((t) => t.wave === w);
         return (
           <WaveSection key={w} requirementId={requirementId} wave={w} tasks={tasks}
-            current={w === run.currentWave && run.status !== 'DELIVERED'} serial={run.mode !== 'PARALLEL'}>
+            current={w === run.currentWave && run.status !== 'DELIVERED'} serial={run.mode !== 'PARALLEL'}
+            lines={waveLines(w)}>
             <ul className="brd-items">{tasks.map(renderTask)}</ul>
           </WaveSection>
         );
       })}
       <div style={{ marginTop: '1.25rem' }}>
         <ActivityTimeline requirementId={requirementId} stage="DEVELOPMENT" live={run.status === 'RUNNING'} milestonesOnly
-          title="Milestones (each story's own log is under it)" />
+          title="Development as a whole (each wave's and story's own lines are under it)" />
       </div>
       {message && <p className={message.tone === 'danger' ? 'error' : 'notice'} role="status">{message.text}</p>}
     </FoldSection>

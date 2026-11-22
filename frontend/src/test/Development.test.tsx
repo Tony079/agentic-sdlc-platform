@@ -68,9 +68,14 @@ describe('DevelopmentPanel (GD-36)', () => {
     const log = [
       { id: 1, stage: 'DEVELOPMENT', runId: 'r1', taskId: 't2', kind: 'STEP', message: '"Dark theme", session 1: GIVE_UP · no tool calls', createdAt: '2026-11-21T10:00:00Z' },
     ];
+    const activity = [
+      { id: 7, stage: 'DEVELOPMENT', runId: 'r1', taskId: null, wave: 2, kind: 'STEP', message: 'Wave 2: the Developer agent starts, one story at a time.', createdAt: '2026-11-21T10:00:00Z' },
+      { id: 8, stage: 'DEVELOPMENT', runId: 'r1', taskId: null, wave: null, kind: 'STEP', message: 'Wave 1 waits for outside work: OAuth.', createdAt: '2026-11-21T09:00:00Z' },
+      { id: 9, stage: 'DEVELOPMENT', runId: 'r1', taskId: null, wave: null, kind: 'STEP', message: 'Development started on acme/site.', createdAt: '2026-11-21T08:00:00Z' },
+    ];
     const calls = mockFetch((url) => ({
       status: 200,
-      body: url.endsWith('/tasks/t2/log') ? log : url.endsWith('/development') || url.endsWith('/base-branch')
+      body: url.endsWith('/activity') ? activity : url.endsWith('/tasks/t2/log') ? log : url.endsWith('/development') || url.endsWith('/base-branch')
         || url.endsWith('/mode')
         ? { requirementId: 'x', canControl: true, run: later } : [],
     }));
@@ -83,6 +88,10 @@ describe('DevelopmentPanel (GD-36)', () => {
     expect(within(wave1).getByText('As a developer, I want the API skeleton')).toBeInTheDocument();
     // The failed story's own log is open and loaded.
     const wave2 = screen.getByRole('region', { name: 'Wave 2' });
+    // Lines about a wave show inside it (also older ones, named only in their text), not in the overall list.
+    expect(await within(wave2).findByText(/Wave 2: the Developer agent starts/)).toBeInTheDocument();
+    expect(within(wave1).getByText(/Wave 1 waits for outside work/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Wave 2: the Developer agent starts/)).toHaveLength(1);
     expect(within(wave2).getAllByText('needs attention')).toHaveLength(2); // the wave and the story
     expect(await within(wave2).findByText(/session 1: GIVE_UP/)).toBeInTheDocument();
     // One story at a time: why the wave is waiting, and the switch to several at once.

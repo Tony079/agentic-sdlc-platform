@@ -263,8 +263,8 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
         Set<String> waitingFor = blockingOutsideWork(run, tasks, wave);
         if (!waitingFor.isEmpty()) {
             if (wave != run.currentWave()) {
-                activity.step(requirementId, stage, run.id(), "Wave " + wave + " waits for outside work: "
-                        + String.join("; ", waitingFor) + ". Close its GitHub issue when it is done.");
+                activity.wave(requirementId, run.id(), wave, ActivityLog.Kind.STEP, "Wave " + wave + " waits for outside work: "
+                        + String.join("; ", waitingFor) + ". Close each one's GitHub issue, or mark it done on the Development card, when it is done.");
             }
             return;
         }
@@ -284,7 +284,7 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
             if ("WAITING".equals(t.status())) {
                 devs.setTask(t.id(), "QUEUED", null);
                 if (!announced && wave != run.currentWave()) {
-                    activity.step(requirementId, stage, run.id(), "Wave " + wave + ": the Developer agent starts"
+                    activity.wave(requirementId, run.id(), wave, ActivityLog.Kind.STEP, "Wave " + wave + ": the Developer agent starts"
                             + (run.serial() ? ", one story at a time." : "."));
                     announced = true;
                 }

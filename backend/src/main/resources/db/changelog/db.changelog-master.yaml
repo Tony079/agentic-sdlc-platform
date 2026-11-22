@@ -130,3 +130,5 @@ databaseChangeLog:
   - include: { file: changes/0068-dev-serial-mode.sql, relativeToChangelogFile: true }
   # GD-36 follow-up (2026-11-22): Developer agent prompt v4 (edit_file).
   - include: { file: changes/0069-dev-story-v4.sql, relativeToChangelogFile: true }
+  # GD-36 follow-up (2026-11-22): wave-level development activity.
+  - include: { file: changes/0070-activity-wave.sql, relativeToChangelogFile: true }

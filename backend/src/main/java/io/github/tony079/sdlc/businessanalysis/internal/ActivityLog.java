@@ -32,7 +32,7 @@ class ActivityLog {
 
     /** {@code taskId}: the development story a line is about (null for other lines). */
     record Entry(long id, String stage, UUID runId, String kind, String message, OffsetDateTime createdAt,
-                 UUID taskId) {
+                 UUID taskId, Integer wave) {
     }
 
     private final JdbcClient jdbc;
@@ -61,24 +61,31 @@ class ActivityLog {
     }
 
     void add(UUID requirementId, Stage stage, UUID runId, Kind kind, String message) {
-        insert(requirementId, stage, runId, null, kind, message);
+        insert(requirementId, stage, runId, null, null, kind, message);
     }
 
     /** GD-36: a development line about one story; it shows under that story (and milestones also on the timeline). */
     void story(UUID requirementId, UUID runId, UUID taskId, Kind kind, String message) {
-        insert(requirementId, Stage.DEVELOPMENT, runId, taskId, kind, message);
+        insert(requirementId, Stage.DEVELOPMENT, runId, taskId, null, kind, message);
     }
 
-    private void insert(UUID requirementId, Stage stage, UUID runId, UUID taskId, Kind kind, String message) {
+    /** GD-36: a development line about a whole wave (it starts, it waits); it shows inside that wave. */
+    void wave(UUID requirementId, UUID runId, int wave, Kind kind, String message) {
+        insert(requirementId, Stage.DEVELOPMENT, runId, null, wave, kind, message);
+    }
+
+    private void insert(UUID requirementId, Stage stage, UUID runId, UUID taskId, Integer wave, Kind kind,
+                        String message) {
         String text = message.length() <= MAX ? message : message.substring(0, MAX - 1) + "…";
         try {
             tx.executeWithoutResult(s -> jdbc.sql("""
                     INSERT INTO app.analysis_activity (tenant_id, project_id, requirement_id, stage, run_id, kind, message,
-                                                       task_id)
-                    SELECT :t, r.project_id, r.id, :stage, :run, :kind, :msg, :task FROM app.requirement r WHERE r.id = :r
+                                                       task_id, wave)
+                    SELECT :t, r.project_id, r.id, :stage, :run, :kind, :msg, :task, :wave FROM app.requirement r
+                    WHERE r.id = :r
                     """).param("t", TenantContext.requireTenant()).param("r", requirementId)
                     .param("stage", stage.name()).param("run", runId).param("kind", kind.name()).param("msg", text)
-                    .param("task", taskId).update());
+                    .param("task", taskId).param("wave", wave).update());
         } catch (RuntimeException e) {
             log.warn("activity line not recorded: {}", e.getClass().getSimpleName());
         }
@@ -94,28 +101,29 @@ class ActivityLog {
      */
     List<Entry> list(UUID requirementId, long afterId) {
         return jdbc.sql("""
-                SELECT id, stage, run_id, kind, message, created_at, task_id FROM (
-                  SELECT a.id, a.stage, a.run_id, a.kind, a.message, a.created_at, a.task_id,
+                SELECT id, stage, run_id, kind, message, created_at, task_id, wave FROM (
+                  SELECT a.id, a.stage, a.run_id, a.kind, a.message, a.created_at, a.task_id, a.wave,
                          row_number() OVER (PARTITION BY a.stage ORDER BY a.id DESC) AS recent
                   FROM app.analysis_activity a WHERE a.requirement_id = :r AND a.id > :after
                 ) t WHERE recent <= :perStage ORDER BY id
                 """).param("perStage", LINES_PER_STAGE).param("r", requirementId).param("after", afterId)
                 .query((rs, n) -> new Entry(rs.getLong(1), rs.getString(2), rs.getObject(3, UUID.class),
                         rs.getString(4), rs.getString(5), rs.getObject(6, OffsetDateTime.class),
-                        rs.getObject(7, UUID.class))).list();
+                        rs.getObject(7, UUID.class), (Integer) rs.getObject(8))).list();
     }
 
     /** The most recent lines about one development story, oldest first (API, under row-level security). */
     List<Entry> forTask(UUID requirementId, UUID taskId, int limit) {
         return jdbc.sql("""
-                SELECT id, stage, run_id, kind, message, created_at, task_id FROM (
-                  SELECT a.id, a.stage, a.run_id, a.kind, a.message, a.created_at, a.task_id FROM app.analysis_activity a
+                SELECT id, stage, run_id, kind, message, created_at, task_id, wave FROM (
+                  SELECT a.id, a.stage, a.run_id, a.kind, a.message, a.created_at, a.task_id, a.wave
+                  FROM app.analysis_activity a
                   WHERE a.requirement_id = :r AND a.task_id = :task ORDER BY a.id DESC LIMIT :limit
                 ) t ORDER BY id
                 """).param("r", requirementId).param("task", taskId).param("limit", limit)
                 .query((rs, n) -> new Entry(rs.getLong(1), rs.getString(2), rs.getObject(3, UUID.class),
                         rs.getString(4), rs.getString(5), rs.getObject(6, OffsetDateTime.class),
-                        rs.getObject(7, UUID.class))).list();
+                        rs.getObject(7, UUID.class), (Integer) rs.getObject(8))).list();
     }
 
     /** "3 files", "1 file". */
