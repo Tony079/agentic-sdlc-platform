@@ -46,7 +46,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
 
     static final String JOB_TYPE = "DEV_STORY";
-    static final int MAX_SESSIONS = 8;
+    /** Work sessions per story by default ({@code sdlc.dev.max-sessions}, 1 to 30). */
+    static final int MAX_SESSIONS = 12;
     static final int MAX_FILES = 200;
     /** A pull request branch in the same repository can run workflows with the repository's secrets. */
     static final List<String> FORBIDDEN_PREFIXES = List.of(".github/workflows/", ".github/actions/", ".git/");
@@ -80,11 +81,19 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
     private final AuditWriter audit;
     private final JsonMapper json;
     private final TransactionTemplate tx;
+    private final int maxSessions;
+    private final int maxOutputTokens;
 
     DevStoryHandler(ModelGateway gateway, Devbox devbox, CodeHost codeHost, DevRepository devs,
                     PlanPushRepository pushes, PlanRepository plans, EstimateRepository estimates,
                     DesignRepository designs, ReviewRepository reviews, ActivityLog activity, AuditWriter audit,
-                    JsonMapper json, PlatformTransactionManager transactionManager) {
+                    JsonMapper json, PlatformTransactionManager transactionManager,
+                    @org.springframework.beans.factory.annotation.Value("${sdlc.dev.max-sessions:" + MAX_SESSIONS + "}")
+                    int maxSessions,
+                    @org.springframework.beans.factory.annotation.Value("${sdlc.dev.max-output-tokens:16000}")
+                    int maxOutputTokens) {
+        this.maxSessions = Math.max(1, Math.min(30, maxSessions));
+        this.maxOutputTokens = Math.max(1024, Math.min(64_000, maxOutputTokens));
         this.gateway = gateway;
         this.devbox = devbox;
         this.codeHost = codeHost;
@@ -152,7 +161,7 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
             DevContracts.Step last = null;
             String previousChanged = null;
             int idle = 0;
-            for (int n = 1; n <= MAX_SESSIONS; n++) {
+            for (int n = 1; n <= maxSessions; n++) {
                 String changed = devbox.action(workspace, "exec", Map.of("argv", List.of("git", "status", "--short"),
                         "timeoutSeconds", 60));
                 List<DataBlock> data = new ArrayList<>();
@@ -165,12 +174,12 @@ class DevStoryHandler implements JobHandler<DevStoryHandler.Outcome> {
                 data.add(new DataBlock("files changed so far (git status --short, as JSON)", changed));
                 String title = "\"" + in.task().title() + "\"";
                 activity.story(requirementId, in.run().id(), taskId, ActivityLog.Kind.STEP, title + ": session " + n + " of at most "
-                        + MAX_SESSIONS + ".");
+                        + maxSessions + ".");
                 String outcome;
                 int toolCalls;
                 try {
                     ModelResponse<DevContracts.Step> response = gateway.generate(new ModelRequest<>(BaPrompts.DEV_STORY,
-                            data, DevContracts.Step.class, requirementId, 4096, BaAnalysisHandler.LONG_CALL_TIMEOUT,
+                            data, DevContracts.Step.class, requirementId, maxOutputTokens, BaAnalysisHandler.LONG_CALL_TIMEOUT,
                             DevTools.forWorkspace(devbox, workspace)));
                     last = response.output();
                     toolCalls = response.toolCalls().values().stream().mapToInt(Integer::intValue).sum();

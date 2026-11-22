@@ -656,6 +656,13 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(tina.post(dev + "/base-branch", Map.of("branch", "main")).body().path("run").path("baseBranch")
                 .asString()).isEqualTo("main");
         assertThat(tina.post(dev + "/base-branch", Map.of("branch", "releases/qc")).status()).isEqualTo(200);
+        // One story at a time (the default for new developments) or several at once, chosen by those who control it.
+        assertThat(state.path("run").path("mode").asString()).isEqualTo("PARALLEL");
+        assertThat(victor.post(dev + "/mode", Map.of("mode", "SERIAL")).errorCode()).isEqualTo("DEV_CONTROL_NOT_ALLOWED");
+        assertThat(tina.post(dev + "/mode", Map.of("mode", "SOMETIMES")).errorCode()).isEqualTo("VALIDATION_FAILED");
+        assertThat(tina.post(dev + "/mode", Map.of("mode", "SERIAL")).body().path("run").path("mode").asString())
+                .isEqualTo("SERIAL");
+        assertThat(tina.post(dev + "/mode", Map.of("mode", "PARALLEL")).status()).isEqualTo(200);
         // Each story has its own log, session by session.
         JsonNode storyLog = tina.get(dev + "/tasks/" + wave1.get(0).path("id").asString() + "/log").body();
         assertThat(storyLog.valueStream().map(l -> l.path("message").asString()))

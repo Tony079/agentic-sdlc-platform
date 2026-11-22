@@ -16,7 +16,11 @@ class DevRepository {
 
     record RunRow(UUID id, UUID tenantId, UUID projectId, UUID requirementId, UUID planVersionId, UUID repositoryId,
                   String status, int currentWave, int agentSlots, OffsetDateTime startedAt, OffsetDateTime finishedAt,
-                  String repository, String baseBranch) {
+                  String repository, String baseBranch, String mode) {
+
+        boolean serial() {
+            return !"PARALLEL".equals(mode);
+        }
     }
 
     record TaskRow(UUID id, UUID devRunId, String storyKey, String title, int wave, boolean external,
@@ -28,7 +32,7 @@ class DevRepository {
     private static final String RUN_SELECT = """
             SELECT d.id, d.tenant_id, d.project_id, d.requirement_id, d.plan_version_id, d.repository_id, d.status,
                    d.current_wave, d.agent_slots, d.started_at, d.finished_at, r.github_owner || '/' || r.github_name,
-                   d.base_branch
+                   d.base_branch, d.mode
             FROM app.dev_run d JOIN app.repository r ON r.id = d.repository_id
             """;
     private static final String TASK_SELECT = """
@@ -48,7 +52,8 @@ class DevRepository {
         return new RunRow(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getObject(3, UUID.class),
                 rs.getObject(4, UUID.class), rs.getObject(5, UUID.class), rs.getObject(6, UUID.class), rs.getString(7),
                 rs.getInt(8), rs.getInt(9), rs.getObject(10, OffsetDateTime.class),
-                rs.getObject(11, OffsetDateTime.class), rs.getString(12), rs.getString(13));
+                rs.getObject(11, OffsetDateTime.class), rs.getString(12), rs.getString(13),
+                rs.getString(14));
     }
 
     private static TaskRow task(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
@@ -82,14 +87,21 @@ class DevRepository {
     }
 
     UUID insertRun(UUID tenantId, UUID projectId, UUID requirementId, UUID planVersionId, UUID repositoryId,
-                   int agentSlots, String baseBranch) {
+                   int agentSlots, String baseBranch, String mode) {
         return jdbc.sql("""
                 INSERT INTO app.dev_run (tenant_id, project_id, requirement_id, plan_version_id, repository_id, agent_slots,
-                                         base_branch)
-                VALUES (:t, :p, :r, :v, :repo, :slots, :branch) RETURNING id
+                                         base_branch, mode)
+                VALUES (:t, :p, :r, :v, :repo, :slots, :branch, :mode) RETURNING id
                 """).param("t", tenantId).param("p", projectId).param("r", requirementId).param("v", planVersionId)
                 .param("repo", repositoryId).param("slots", Math.max(1, Math.min(50, agentSlots)))
-                .param("branch", baseBranch).query(UUID.class).single();
+                .param("branch", baseBranch).param("mode", "PARALLEL".equals(mode) ? "PARALLEL" : "SERIAL")
+                .query(UUID.class).single();
+    }
+
+    /** A person switches between one story at a time (SERIAL) and several at once (PARALLEL). */
+    void setMode(UUID runId, String mode, UUID member) {
+        jdbc.sql("UPDATE app.dev_run SET mode = :m, status_by = :by WHERE id = :id").param("m", mode)
+                .param("by", member).param("id", runId).update();
     }
 
     /** A person changes the branch a running development works from (stories not yet coded use it). */

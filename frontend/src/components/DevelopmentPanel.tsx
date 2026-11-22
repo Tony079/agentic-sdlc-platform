@@ -27,6 +27,8 @@ interface DevRun {
   branchOptions?: BranchOption[];
   /** Where the branch comes from, in words ("from the QC environment"). */
   branchFrom?: string;
+  /** SERIAL: one story at a time, each after the previous one is merged; PARALLEL: several at once. */
+  mode?: 'SERIAL' | 'PARALLEL';
 }
 interface DevState {
   requirementId: string; canControl: boolean; run: DevRun | null; canStart?: boolean; notStarted?: string | null;
@@ -78,8 +80,17 @@ function StoryLog({ requirementId, task }: { requirementId: string; task: DevTas
  * A wave: open while it is current or something in it needs attention; a finished wave folds to one line
  * ("✓ Wave 1 · 2 merged · #64, #65"). Each person's choice is remembered.
  */
-function WaveSection({ requirementId, wave, tasks, current, children }: {
-  requirementId: string; wave: number; tasks: DevTask[]; current: boolean; children: ReactNode;
+/** Why nothing new starts in a wave run one story at a time (null when something can start). */
+function serialWait(tasks: DevTask[]): string | null {
+  const review = tasks.find((t) => t.status === 'PR_OPEN');
+  if (review) return `One story at a time: the next starts when pull request #${review.prNumber} is merged.`;
+  const draft = tasks.find((t) => t.status === 'FAILED' && t.draft);
+  if (draft) return `One story at a time: "${draft.title}" needs attention first (retry it from its draft or skip it).`;
+  return null;
+}
+
+function WaveSection({ requirementId, wave, tasks, current, serial, children }: {
+  requirementId: string; wave: number; tasks: DevTask[]; current: boolean; serial: boolean; children: ReactNode;
 }) {
   const finished = tasks.every((t) => FINISHED.includes(t.status));
   const attention = tasks.some(needsAttention);
@@ -100,6 +111,9 @@ function WaveSection({ requirementId, wave, tasks, current, children }: {
         {attention && <Badge tone="danger">needs attention</Badge>}
         <span className="small">{summary}</span>
       </div>
+      {open && current && serial && !finished && serialWait(tasks) && (
+        <p className="small notice" role="status">{serialWait(tasks)}</p>
+      )}
       {open && children}
     </section>
   );
@@ -228,8 +242,8 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
         <code>{run.baseBranch ?? 'the default branch'}</code>{run.branchFrom ? ` (${run.branchFrom})` : ''}
         {controls && (run.branchOptions?.length ?? 0) > 0 && !changingBranch && (
           <> <button type="button" className="btn-ghost btn-sm" onClick={() => setChangingBranch(true)}>Change</button></>
-        )}{' '}({run.agentSlots} at
-        a time). Review and merge them in GitHub; the next wave starts once the current one is merged. Started{' '}
+        )}{' '}({run.mode === 'PARALLEL' ? `${run.agentSlots} at a time` : 'one story at a time, each after the previous one is merged'}).
+        Review and merge them in GitHub; the next wave starts once the current one is merged. Started{' '}
         {formatDateTime(run.startedAt)}{run.finishedAt && ` · finished ${formatDateTime(run.finishedAt)}`}.
       </p>
       {run.status === 'PAUSED' && <Callout tone="warning" title="Paused">No new story is started until development is resumed.</Callout>}
@@ -238,6 +252,15 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
           {run.status === 'RUNNING'
             ? <button type="button" className="btn-secondary btn-sm" disabled={busy} onClick={() => void act('pause', 'Development paused.')}>Pause</button>
             : <button type="button" className="btn-primary btn-sm" disabled={busy} onClick={() => void act('resume', 'Development resumed.')}>Resume</button>}
+          <label className="small">Stories
+            <select value={run.mode ?? 'SERIAL'} disabled={busy}
+              onChange={(e) => void act('mode', e.target.value === 'SERIAL'
+                ? 'One story at a time: the next starts after the previous pull request is merged.'
+                : `Several at once: up to ${run.agentSlots} stories of a wave are coded together.`, { mode: e.target.value })}>
+              <option value="SERIAL">One at a time (after each merge)</option>
+              <option value="PARALLEL">Several at once ({run.agentSlots})</option>
+            </select>
+          </label>
           {changingBranch && (run.branchOptions?.length ?? 0) > 0 && (
             <label className="small">Works on branch
               <select value={run.baseBranch ?? ''} disabled={busy}
@@ -260,7 +283,7 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
         const tasks = code.filter((t) => t.wave === w);
         return (
           <WaveSection key={w} requirementId={requirementId} wave={w} tasks={tasks}
-            current={w === run.currentWave && run.status !== 'DELIVERED'}>
+            current={w === run.currentWave && run.status !== 'DELIVERED'} serial={run.mode !== 'PARALLEL'}>
             <ul className="brd-items">{tasks.map(renderTask)}</ul>
           </WaveSection>
         );

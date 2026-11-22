@@ -61,7 +61,8 @@ describe('DevelopmentPanel (GD-36)', () => {
       tasks: [
         task({ status: 'MERGED' }),
         task({ id: 't2', storyKey: 'story-b', title: 'As an author, I want a dark theme', wave: 2, status: 'FAILED',
-          prNumber: null, prUrl: null, failureCode: 'AGENT_GAVE_UP', reason: 'the Developer agent could not implement it' }),
+          prNumber: null, prUrl: null, failureCode: 'AGENT_GAVE_UP', reason: 'the Developer agent could not implement it',
+          draft: true }),
       ],
     };
     const log = [
@@ -70,6 +71,7 @@ describe('DevelopmentPanel (GD-36)', () => {
     const calls = mockFetch((url) => ({
       status: 200,
       body: url.endsWith('/tasks/t2/log') ? log : url.endsWith('/development') || url.endsWith('/base-branch')
+        || url.endsWith('/mode')
         ? { requirementId: 'x', canControl: true, run: later } : [],
     }));
     renderWithProviders(<DevelopmentPanel requirementId="x" />);
@@ -83,6 +85,10 @@ describe('DevelopmentPanel (GD-36)', () => {
     const wave2 = screen.getByRole('region', { name: 'Wave 2' });
     expect(within(wave2).getAllByText('needs attention')).toHaveLength(2); // the wave and the story
     expect(await within(wave2).findByText(/session 1: GIVE_UP/)).toBeInTheDocument();
+    // One story at a time: why the wave is waiting, and the switch to several at once.
+    expect(within(wave2).getByText(/needs attention first/)).toBeInTheDocument();
+    await userEvent.setup().selectOptions(screen.getByRole('combobox', { name: /Stories/ }), 'PARALLEL');
+    expect(JSON.parse(String(calls.find((c) => c.url.endsWith('/development/mode'))?.init.body))).toEqual({ mode: 'PARALLEL' });
     // The branch is shown with where it comes from; Change reveals the choice.
     expect(screen.getByText(/the repository's default branch|from the/)).toBeInTheDocument();
     const user = userEvent.setup();

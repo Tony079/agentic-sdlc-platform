@@ -59,6 +59,15 @@ class DevController {
         return devs.baseBranch(id, body == null ? null : body.branch());
     }
 
+    record ModeBody(String mode) {
+    }
+
+    /** GD-36: one story at a time (SERIAL) or several at once (PARALLEL). */
+    @PostMapping(BASE + "/mode")
+    DevState mode(@PathVariable UUID id, @RequestBody ModeBody body) {
+        return devs.mode(id, body == null ? null : body.mode());
+    }
+
     /** One story's own log, session by session. */
     @GetMapping(BASE + "/tasks/{taskId}/log")
     List<ActivityLog.Entry> log(@PathVariable UUID id, @PathVariable UUID taskId) {

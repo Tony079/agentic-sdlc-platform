@@ -226,6 +226,31 @@ def write_file(base, body):
     return {"written": len(content)}
 
 
+def edit_file(base, body):
+    """Replaces one exact piece of text in an existing file: it must occur exactly once (whitespace counts)."""
+    old = body.get("old")
+    new = body.get("new")
+    if not isinstance(old, str) or not old or not isinstance(new, str) or len(old.encode("utf-8")) > MAX_WRITE \
+            or len(new.encode("utf-8")) > MAX_WRITE:
+        raise Refused(400, "EDIT_INVALID")
+    path = resolve(base, body.get("path", ""), must_exist=True)
+    if not os.path.isfile(path):
+        raise Refused(400, "NOT_A_FILE")
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        text = f.read()
+    count = text.count(old)
+    if count == 0:
+        raise Refused(400, "EDIT_TEXT_NOT_FOUND")
+    if count > 1:
+        raise Refused(400, "EDIT_TEXT_NOT_UNIQUE")
+    updated = text.replace(old, new, 1)
+    if len(updated.encode("utf-8")) > MAX_WRITE:
+        raise Refused(400, "CONTENT_INVALID")
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(updated)
+    return {"edited": True, "size": len(updated)}
+
+
 def delete_file(base, body):
     path = resolve(base, body.get("path", ""), must_exist=True)
     if not os.path.isfile(path):
@@ -369,7 +394,8 @@ def sweep():
                 shutil.rmtree(os.path.join(ROOT, name), ignore_errors=True)
 
 
-ACTIONS = {"list": list_dir, "read": read_file, "write": write_file, "delete": delete_file, "search": search,
+ACTIONS = {"list": list_dir, "read": read_file, "write": write_file, "edit": edit_file, "delete": delete_file,
+           "search": search,
            "exec": run, "changes": changes}
 
 

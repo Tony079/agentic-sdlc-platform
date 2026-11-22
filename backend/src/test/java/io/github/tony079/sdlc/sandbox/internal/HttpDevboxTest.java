@@ -40,6 +40,18 @@ class HttpDevboxTest {
             devbox.action(id, "write", Map.of("path", "out/generated.txt", "content", "ignored"));
             assertThat(devbox.action(id, "exec", Map.of("argv", List.of("python3", "src/app.py"))))
                     .contains("\"exitCode\":0").contains("bye");
+            // edit_file: one exact, unique piece of text; anything else is refused with a reason.
+            devbox.action(id, "write", Map.of("path", "src/conf.py", "content", "A = 1\nB = 2\nC = 2\n"));
+            assertThat(devbox.action(id, "edit", Map.of("path", "src/conf.py", "old", "A = 1\n", "new", "A = 10\n")))
+                    .contains("\"edited\":true");
+            assertThat(devbox.action(id, "edit", Map.of("path", "src/conf.py", "old", "= 2", "new", "= 3")))
+                    .contains("EDIT_TEXT_NOT_UNIQUE");
+            assertThat(devbox.action(id, "edit", Map.of("path", "src/conf.py", "old", "D = 4", "new", "")))
+                    .contains("EDIT_TEXT_NOT_FOUND");
+            assertThat(devbox.action(id, "edit", Map.of("path", "src/missing.py", "old", "x", "new", "y")))
+                    .contains("PATH_NOT_FOUND");
+            assertThat(devbox.action(id, "read", Map.of("path", "src/conf.py"))).contains("A = 10\\nB = 2\\nC = 2");
+            devbox.action(id, "delete", Map.of("path", "src/conf.py"));
             // Refusals come back as data for the model, not as failures.
             assertThat(devbox.action(id, "read", Map.of("path", "../../etc/passwd"))).contains("PATH_INVALID");
             assertThat(devbox.action(id, "exec", Map.of("argv", List.of("sh", "-c", "id"))))

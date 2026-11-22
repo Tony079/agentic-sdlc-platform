@@ -35,7 +35,7 @@ class DevService {
 
     record RunV(UUID id, String status, String repository, int currentWave, int agentSlots, OffsetDateTime startedAt,
                 OffsetDateTime finishedAt, List<TaskV> tasks, Map<String, Long> counts, String baseBranch,
-                List<PlanPushRepository.BranchOption> branchOptions, String branchFrom) {
+                List<PlanPushRepository.BranchOption> branchOptions, String branchFrom, String mode) {
     }
 
     /** Where the run's branch comes from, in words. */
@@ -111,7 +111,7 @@ class DevService {
         return new DevState(requirementId, controls(v), new RunV(run.id(), run.status(), run.repository(),
                 run.currentWave(), run.agentSlots(), run.startedAt(), run.finishedAt(), tasks, counts,
                 devs.baseBranch(run), controls(v) ? pushes.branchOptions(run.projectId(), run.repositoryId())
-                        : List.of(), branchFrom(run)), false, null);
+                        : List.of(), branchFrom(run), run.serial() ? "SERIAL" : "PARALLEL"), false, null);
     }
 
     private boolean forAgents(PlanPushRepository.PushRow push) {
@@ -167,6 +167,27 @@ class DevService {
         }
         if (!chosen.equals(run.baseBranch())) {
             devs.setBaseBranch(run.id(), chosen, TenantContext.currentActor().orElseThrow());
+            changed(requirementId, run.id());
+        }
+        return state(requirementId);
+    }
+
+    /**
+     * One story at a time, each after the previous one is merged (SERIAL), or several at once (PARALLEL). Stories
+     * already being coded or in review are not affected.
+     */
+    @Transactional
+    public DevState mode(UUID requirementId, String mode) {
+        var v = visible(requirementId);
+        require(v);
+        DevRepository.RunRow run = devs.active(requirementId).orElseThrow(() ->
+                ApiException.conflict("DEV_NOT_RUNNING", "Development is not running for this requirement."));
+        if (!"SERIAL".equals(mode) && !"PARALLEL".equals(mode)) {
+            throw ApiException.validation(List.of(new io.github.tony079.sdlc.common.api.ApiError.FieldError("mode",
+                    "INVALID_VALUE")));
+        }
+        if (!mode.equals(run.mode())) {
+            devs.setMode(run.id(), mode, TenantContext.currentActor().orElseThrow());
             changed(requirementId, run.id());
         }
         return state(requirementId);

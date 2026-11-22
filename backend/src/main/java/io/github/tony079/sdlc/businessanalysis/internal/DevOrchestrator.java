@@ -69,10 +69,15 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
     private final TransactionTemplate tx;
     private final long intervalSeconds;
 
+    /** New developments: one story at a time (SERIAL, the default) or several at once (PARALLEL). */
+    private final String defaultMode;
+
     DevOrchestrator(DevRepository devs, PlanPushRepository pushes, CodeHost codeHost, JobQueue jobs,
                     ActivityLog activity, AuditWriter audit, ReviewRepository reviews, EstimateRepository estimates,
                     JsonMapper json, JdbcClient jdbc, PlatformTransactionManager transactionManager,
-                    @Value("${sdlc.worker.development-interval:2m}") java.time.Duration interval) {
+                    @Value("${sdlc.worker.development-interval:2m}") java.time.Duration interval,
+                    @Value("${sdlc.dev.default-mode:SERIAL}") String defaultMode) {
+        this.defaultMode = "PARALLEL".equalsIgnoreCase(defaultMode) ? "PARALLEL" : "SERIAL";
         this.devs = devs;
         this.pushes = pushes;
         this.codeHost = codeHost;
@@ -112,7 +117,7 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
         int slots = jdbc.sql("SELECT coalesce((settings->>'agentSlots')::int, 2) FROM app.plan_version WHERE id = :v")
                 .param("v", push.planVersionId()).query(Integer.class).optional().orElse(2);
         UUID runId = devs.insertRun(push.tenantId(), push.projectId(), push.requirementId(), push.planVersionId(),
-                push.repositoryId(), slots, push.baseBranch());
+                push.repositoryId(), slots, push.baseBranch(), defaultMode);
         DevRepository.RunRow run = devs.run(runId, false).orElseThrow();
         for (PlanIssues.Issue issue : payload.issues()) {
             boolean external = issue.agent() != null && issue.agent().external();
@@ -273,26 +278,45 @@ class DevOrchestrator implements JobHandler<DevOrchestrator.Observed> {
             }
         }
         tasks = devs.tasks(run.id());
-        long busy = tasks.stream().filter(t -> t.wave() == wave && Set.of("QUEUED", "CODING").contains(t.status()))
-                .count();
-        int free = (int) Math.max(0, run.agentSlots() - busy);
+        List<DevRepository.TaskRow> inWave = tasks.stream().filter(t -> t.wave() == wave).toList();
         boolean announced = false;
-        for (DevRepository.TaskRow t : tasks) {
-            if (t.wave() != wave || t.external()) {
-                continue;
-            }
-            if ("WAITING".equals(t.status()) && free > 0) {
+        for (DevRepository.TaskRow t : toStart(run.serial(), run.agentSlots(), inWave)) {
+            if ("WAITING".equals(t.status())) {
                 devs.setTask(t.id(), "QUEUED", null);
-                free--;
                 if (!announced && wave != run.currentWave()) {
-                    activity.step(requirementId, stage, run.id(), "Wave " + wave + ": the Developer agent starts.");
+                    activity.step(requirementId, stage, run.id(), "Wave " + wave + ": the Developer agent starts"
+                            + (run.serial() ? ", one story at a time." : "."));
                     announced = true;
                 }
-                jobs.enqueue(story(t.id(), requirementId, t.attempts()));
-            } else if ("QUEUED".equals(t.status())) {
-                jobs.enqueue(story(t.id(), requirementId, t.attempts())); // after a retry or a lost enqueue: idempotent
             }
+            jobs.enqueue(story(t.id(), requirementId, t.attempts())); // idempotent for a story already queued
         }
+    }
+
+    /**
+     * The stories of a wave to queue now. SERIAL: one at a time, and only once nothing in the wave is being coded,
+     * awaiting review (pull request open) or holding unfinished work on a draft, so each story starts from code that
+     * includes the ones before it; queued stories (retries) go first. PARALLEL: every queued story, plus waiting ones up
+     * to the free agent slots.
+     */
+    static List<DevRepository.TaskRow> toStart(boolean serial, int slots, List<DevRepository.TaskRow> wave) {
+        List<DevRepository.TaskRow> code = wave.stream().filter(t -> !t.external()).toList();
+        List<DevRepository.TaskRow> queued = code.stream().filter(t -> "QUEUED".equals(t.status())).toList();
+        List<DevRepository.TaskRow> waiting = code.stream().filter(t -> "WAITING".equals(t.status())).toList();
+        if (serial) {
+            boolean blocked = code.stream().anyMatch(t -> "CODING".equals(t.status()) || "PR_OPEN".equals(t.status())
+                    || ("FAILED".equals(t.status()) && t.draft()));
+            if (blocked) {
+                return List.of();
+            }
+            return !queued.isEmpty() ? List.of(queued.getFirst()) : waiting.isEmpty() ? List.of()
+                    : List.of(waiting.getFirst());
+        }
+        long busy = code.stream().filter(t -> "QUEUED".equals(t.status()) || "CODING".equals(t.status())).count();
+        int free = (int) Math.max(0, slots - busy);
+        List<DevRepository.TaskRow> out = new java.util.ArrayList<>(queued);
+        out.addAll(waiting.subList(0, Math.min(free, waiting.size())));
+        return out;
     }
 
     static JobRequest story(UUID taskId, UUID requirementId, int attempts) {

@@ -54,6 +54,8 @@ public final class WorkerContext {
                             // GD-36: the real devbox server (python3), started for the test run.
                             "--sdlc.devbox.url=" + TestDevbox.get().url(),
                             "--sdlc.devbox.token=" + TestDevbox.get().token(),
+                            // The development flow tests run a wave's stories together (one at a time is unit-tested).
+                            "--sdlc.dev.default-mode=PARALLEL",
                             "--logging.structured.format.console=");
         }
         return context;

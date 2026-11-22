@@ -32,7 +32,7 @@ import org.springframework.stereotype.Component;
 class HttpDevbox implements Devbox {
 
     private static final Logger log = LoggerFactory.getLogger(HttpDevbox.class);
-    static final Set<String> ACTIONS = Set.of("list", "read", "write", "delete", "search", "exec");
+    static final Set<String> ACTIONS = Set.of("list", "read", "write", "edit", "delete", "search", "exec");
     private static final long MAX_ANSWER = 32L * 1024 * 1024;
     /** The devbox's own upload limit (DEVBOX_MAX_UPLOAD_BYTES). */
     static final int MAX_UPLOAD = 200 * 1024 * 1024;
@@ -88,10 +88,12 @@ class HttpDevbox implements Devbox {
         } catch (RuntimeException e) {
             throw new DevboxException("DEVBOX_INVALID_ANSWER", status >= 500);
         }
-        if (status / 100 == 2 || (refusalsAsJson && status / 100 == 4 && status != 401 && status != 404)) {
+        String code = node.path("code").asString("");
+        // A missing file or directory is an answer for the model; only a missing workspace is "gone".
+        if (status / 100 == 2 || (refusalsAsJson && status / 100 == 4 && status != 401
+                && (status != 404 || "PATH_NOT_FOUND".equals(code)))) {
             return node;
         }
-        String code = node.path("code").asString("");
         log.warn("devbox answered {} ({})", status, code.matches("^[A-Z_]{1,40}$") ? code : "?");
         if (status == 401) {
             throw new DevboxException("DEVBOX_UNAUTHORISED", false);

@@ -18,7 +18,7 @@ public interface Devbox {
     String create(InputStream tarGz) throws DevboxException;
 
     /**
-     * Runs a workspace action ({@code list}, {@code read}, {@code write}, {@code delete}, {@code search},
+     * Runs a workspace action ({@code list}, {@code read}, {@code write}, {@code edit}, {@code delete}, {@code search},
      * {@code exec}) and returns its JSON answer. A refusal (bad path, command not allowed) is returned as JSON with a
      * {@code code} field, not thrown: the model is told and can correct itself.
      */
