@@ -30,7 +30,7 @@ final class BaPrompts {
 
     /** GD-34 Planning agent: epics and stories from the approved design and estimate. */
     /** GD-36: the Developer agent, one session of work on a story. */
-    static final PromptTemplate DEV_STORY = load("dev.story", 4, "prompts/dev-story-v4.txt");
+    static final PromptTemplate DEV_STORY = load("dev.story", 5, "prompts/dev-story-v5.txt");
     static final PromptTemplate PLAN_BACKLOG = load("plan.backlog", 1, "prompts/plan-backlog-v1.txt");
 
     private BaPrompts() {

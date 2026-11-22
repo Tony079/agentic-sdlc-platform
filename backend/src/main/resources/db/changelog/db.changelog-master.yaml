@@ -132,3 +132,5 @@ databaseChangeLog:
   - include: { file: changes/0069-dev-story-v4.sql, relativeToChangelogFile: true }
   # GD-36 follow-up (2026-11-22): wave-level development activity.
   - include: { file: changes/0070-activity-wave.sql, relativeToChangelogFile: true }
+  # GD-36 follow-up (2026-11-22): Developer agent prompt v5 (deliver implemented work a tool cannot verify here).
+  - include: { file: changes/0071-dev-story-v5.sql, relativeToChangelogFile: true }
