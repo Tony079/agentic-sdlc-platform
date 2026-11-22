@@ -56,6 +56,8 @@ services:
     restart: "no"
 
   api:
+    # Same image as migrate; buildable by name too ("docker compose build api" rebuilds the backend).
+    build: ./backend
     image: sdlc-platform-backend:local
     environment:
       SDLC_DB_URL: jdbc:postgresql://db:5432/sdlc
@@ -124,6 +126,8 @@ services:
   # Background worker (Milestone 3): transactional outbox dispatcher and job queue, as login sdlc_worker.
   # Same image, no HTTP port. Healthy while its poll loop keeps the liveness file fresh.
   worker:
+    # Same image as migrate; buildable by name too ("docker compose build worker" rebuilds the backend).
+    build: ./backend
     image: sdlc-platform-backend:local
     environment:
       SPRING_PROFILES_ACTIVE: worker
@@ -150,6 +154,9 @@ services:
       # reasoning effort for them: minimal, low, medium or high; empty uses the model's default.
       SDLC_MODEL_TOOLS_REASONING_EFFORT: ${SDLC_MODEL_TOOLS_REASONING_EFFORT:-}
       # GD-36: the Developer agent's sandbox (internal network only).
+      # GD-36: work sessions per story (1 to 30) and the largest answer per session, in output tokens.
+      SDLC_DEV_MAXSESSIONS: ${SDLC_DEV_MAX_SESSIONS:-16}
+      SDLC_DEV_MAXOUTPUTTOKENS: ${SDLC_DEV_MAX_OUTPUT_TOKENS:-16000}
       SDLC_DEVBOX_URL: http://devbox:8090
       SDLC_DEVBOX_TOKEN: ${SDLC_DEVBOX_TOKEN:?set SDLC_DEVBOX_TOKEN in .env (any random string of 32+ characters)}
     networks: [default, devbox]
