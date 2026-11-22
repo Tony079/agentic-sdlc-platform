@@ -39,6 +39,10 @@ describe('DevelopmentPanel (GD-36)', () => {
     expect(await screen.findByRole('link', { name: 'pull request #12' })).toHaveAttribute('href', 'https://github.com/acme/site/pull/12');
     const outside = screen.getByRole('region', { name: 'Outside work' });
     expect(within(outside).getByText('Register the OAuth apps')).toBeInTheDocument();
+    // Outside work can be marked done here (after a confirmation), releasing the waves that wait for it.
+    window.confirm = () => true;
+    await userEvent.setup().click(within(outside).getByRole('button', { name: 'Mark done' }));
+    expect(calls.some((c) => c.url.endsWith('/development/tasks/o1/done'))).toBe(true);
     const wave1 = screen.getByRole('region', { name: 'Wave 1' });
     const failed = within(wave1).getByText('As an author, I want a dark theme').closest('li') as HTMLElement;
     expect(within(failed).getByText(/Contents and Pull requests/)).toBeInTheDocument();

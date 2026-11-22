@@ -194,6 +194,26 @@ class DevService {
         return control(requirementId, taskId, "SKIPPED", null);
     }
 
+    /**
+     * Outside work done (or deliberately left for later): the waves waiting for it may start, as when its GitHub issue
+     * is closed. Its issue is left as it is.
+     */
+    @Transactional
+    public DevState markDone(UUID requirementId, UUID taskId) {
+        var v = visible(requirementId);
+        require(v);
+        DevRepository.RunRow run = devs.active(requirementId).orElseThrow(() ->
+                ApiException.conflict("DEV_NOT_RUNNING", "Development is not running for this requirement."));
+        DevRepository.TaskRow task = devs.task(taskId, true).filter(t -> t.devRunId().equals(run.id()))
+                .orElseThrow(ApiException::notFound);
+        if (!task.external() || !"WAITING".equals(task.status())) {
+            throw ApiException.conflict("DEV_TASK_STATE", "Only outside work that is still waiting can be marked done.");
+        }
+        devs.controlTask(task.id(), "DONE", TenantContext.currentActor().orElseThrow());
+        changed(requirementId, run.id());
+        return state(requirementId);
+    }
+
     private DevState control(UUID requirementId, UUID taskId, String target, String requiredStatus) {
         var v = visible(requirementId);
         require(v);

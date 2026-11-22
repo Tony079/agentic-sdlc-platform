@@ -202,6 +202,14 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
             <button type="button" className="btn-ghost btn-sm" disabled={busy}
               onClick={() => void act(`tasks/${t.id}/skip`, 'Story skipped.')}>Skip</button>
           )}
+          {t.external && t.status === 'WAITING' && (
+            <button type="button" className="btn-ghost btn-sm" disabled={busy}
+              onClick={() => {
+                if (window.confirm(`Mark "${t.title}" as done? The waves waiting for it start next; its GitHub issue stays as it is.`)) {
+                  void act(`tasks/${t.id}/done`, 'Marked done. Waves waiting for it start within a couple of minutes.');
+                }
+              }}>Mark done</button>
+          )}
         </div>
       )}
     </li>
@@ -244,7 +252,7 @@ export function DevelopmentPanel({ requirementId }: { requirementId: string }) {
       )}
       {outside.length > 0 && (
         <section aria-label="Outside work">
-          <h3>Outside work <span className="small">close each GitHub issue when it is done</span></h3>
+          <h3>Outside work <span className="small">close its GitHub issue or mark it done here when it is done</span></h3>
           <ul className="brd-items">{outside.map(renderTask)}</ul>
         </section>
       )}

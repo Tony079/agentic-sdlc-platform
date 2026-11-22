@@ -593,6 +593,23 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(tasks.get(0).path("reason").asString()).contains("Contents and Pull requests");
         assertThat(victor.post(dev + "/tasks/" + tasks.get(0).path("id").asString() + "/retry", Map.of()).errorCode())
                 .isEqualTo("DEV_CONTROL_NOT_ALLOWED");
+        // Outside work is marked done on the card (as closing its issue does), by those who control development only.
+        // (This plan has no outside work of its own: one is added to the run as Garuda does when development starts.)
+        admin.update("""
+                INSERT INTO app.dev_task (tenant_id, project_id, requirement_id, dev_run_id, story_key, title, wave,
+                                          external, issue_number)
+                SELECT tenant_id, project_id, requirement_id, id, 'outside-oauth', 'Register the OAuth apps', 0, true, 99
+                FROM app.dev_run WHERE id = ?::uuid""", state.path("run").path("id").asString());
+        JsonNode outside = victor.get(dev).body().path("run").path("tasks").valueStream()
+                .filter(t -> t.path("external").asBoolean()).findFirst().orElseThrow();
+        String done = dev + "/tasks/" + outside.path("id").asString() + "/done";
+        assertThat(victor.post(done, Map.of()).errorCode()).isEqualTo("DEV_CONTROL_NOT_ALLOWED");
+        assertThat(tina.post(done, Map.of()).body().path("run").path("tasks").valueStream()
+                .filter(t -> t.path("id").asString().equals(outside.path("id").asString())).findFirst().orElseThrow()
+                .path("status").asString()).isEqualTo("DONE");
+        assertThat(tina.post(done, Map.of()).errorCode()).isEqualTo("DEV_TASK_STATE");
+        assertThat(tina.post(dev + "/tasks/" + tasks.get(0).path("id").asString() + "/done", Map.of()).errorCode())
+                .isEqualTo("DEV_TASK_STATE");
 
         github.codePermission(true);
         fake.reset();
@@ -676,6 +693,7 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(github.committedFiles(draftHead)).containsKey("pages.py");
         // Retry carries on from the branch head with the work log; finishing turns the same pull request ready.
         int downloads = github.tarballShas().size();
+        drive(tenant); // let leftover work finish first, so the scripted answer goes to this story's retry
         fake.enqueue(done());
         assertThat(tina.post(dev + "/tasks/" + wave2.get(0).path("id").asString() + "/retry", Map.of()).status())
                 .isEqualTo(200);
@@ -683,7 +701,7 @@ class EstimationIT extends ApiIntegrationTest {
         assertThat(github.tarballShas().subList(downloads, github.tarballShas().size())).containsExactly(draftHead);
         tasks = tina.get(dev).body().path("run").path("tasks");
         Map<String, Object> ready = github.pulls("acme-org", pushed.name()).get(draftNumber);
-        assertThat(ready.get("draft")).isEqualTo(false);
+        assertThat(ready.get("draft")).as(ready + " / " + tasks).isEqualTo(false);
         assertThat(String.valueOf(ready.get("title"))).doesNotStartWith("[Not finished]");
         assertThat(tasks.valueStream().filter(t -> t.path("wave").asInt() == 2).findFirst().orElseThrow()
                 .path("prNumber").asInt()).isEqualTo(draftNumber);

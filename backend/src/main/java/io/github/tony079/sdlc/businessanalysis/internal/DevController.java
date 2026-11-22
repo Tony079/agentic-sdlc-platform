@@ -65,6 +65,12 @@ class DevController {
         return devs.log(id, taskId);
     }
 
+    /** Outside work done: the waves waiting for it may start. */
+    @PostMapping(BASE + "/tasks/{taskId}/done")
+    DevState done(@PathVariable UUID id, @PathVariable UUID taskId) {
+        return devs.markDone(id, taskId);
+    }
+
     @PostMapping(BASE + "/tasks/{taskId}/skip")
     DevState skip(@PathVariable UUID id, @PathVariable UUID taskId) {
         return devs.skip(id, taskId);

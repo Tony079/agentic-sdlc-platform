@@ -124,3 +124,5 @@ databaseChangeLog:
   - include: { file: changes/0065-dev-branch-and-story-log.sql, relativeToChangelogFile: true }
   # GD-36 follow-up (2026-11-22): the environment a requirement's code is delivered into.
   - include: { file: changes/0066-delivery-environment.sql, relativeToChangelogFile: true }
+  # GD-36 follow-up (2026-11-22): outside work can be marked done on the Development card.
+  - include: { file: changes/0067-outside-work-done.sql, relativeToChangelogFile: true }
